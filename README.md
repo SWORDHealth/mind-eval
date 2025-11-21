@@ -1,5 +1,7 @@
 # Mind-Eval
-Check out our paper: [MindEval: Benchmarking Language Models on Multi-turn Mental Health Support.](tbdlink)
+[MindEval: Benchmarking Language Models on Multi-turn Mental Health Support.](tbdlink)
+
+![mind-eval-diagram](assets/framework.png)
 
 ## Installation
 ```bash
