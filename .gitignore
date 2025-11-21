@@ -1,0 +1,7 @@
+venv*
+__pycache__*
+dev*
+ducttape_outputs*
+artifacts*
+dawn_ducttape_outputs*
+mind-eval
