@@ -68,6 +68,9 @@ print(df.mean())
 bash run_benchmark.sh <YOUR_CLINICIAN_MODEL_API_PARAMS>
 ```
 
+## Meta-evaluation
+Human data for [patient realism](data/human_user_turns.jsonl) and [judge](data/human_annotations.jsonl) meta-evaluation is available.
+
 ## Cite
 ```bibtex
 ```
