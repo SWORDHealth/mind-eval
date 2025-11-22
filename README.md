@@ -63,7 +63,7 @@ df = pd.DataFrame(float_judgments)
 print(df.mean())
 ```
 
-## Do it all in one go (except checking scores; default MindBench settings)
+## Do it all in one go (except checking scores; default MindEval settings)
 ```bash
 bash run_benchmark.sh <YOUR_CLINICIAN_MODEL_API_PARAMS>
 ```
