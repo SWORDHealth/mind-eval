@@ -73,4 +73,13 @@ Human data for [patient realism](data/human_user_turns.jsonl) and [judge](data/h
 
 ## Cite
 ```bibtex
+@misc{pombal2025mindevalbenchmarkinglanguagemodels,
+      title={MindEval: Benchmarking Language Models on Multi-turn Mental Health Support}, 
+      author={José Pombal and Maya D'Eon and Nuno M. Guerreiro and Pedro Henrique Martins and António Farinhas and Ricardo Rei},
+      year={2025},
+      eprint={2511.18491},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2511.18491}, 
+}
 ```
