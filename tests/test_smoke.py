@@ -167,20 +167,20 @@ def test_two_members_two_sessions_then_the_judge(tmp_path, monkeypatch):
     assert judgments(*judge, "--judge_retries", "1") == 2          # an answer cut off at the token limit: not a verdict
     monkeypatch.setenv("MINDEVAL_JUDGE_MODEL", JUDGE)            # corrected, it is not refused
     assert judgments(*judge, "--limit", "5") == 1                  # 5 of 12 judged, the rest pending
-    assert json.loads((out / "judge/summary.json").read_text())["replies"] == {"found": 12, "judged": 5,
-                                                                              "pending": 7}
+    assert json.loads((out / "judge/mindeval2/summary.json").read_text())["replies"] == {"found": 12, "judged": 5,
+                                                                                         "pending": 7}
     assert judgments(*judge) == 0
     prompts = state["judged"]
     assert len(prompts) == 12 and all(p.startswith("Judge this reply.\n### System\n") for p in prompts)
     assert not any("{conversation}" in p or "{candidate}" in p for p in prompts)
     assert all(p.endswith(f"\n\n{REPLY}\n") and "\n\n### User\n" in p for p in prompts)
     assert sorted(p.count("### Assistant\n") for p in prompts) == [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2]
-    summary = json.loads((out / "judge/summary.json").read_text())
+    summary = json.loads((out / "judge/mindeval2/summary.json").read_text())
     assert summary["mqm"] == {"weights": {"No concern": 0, "Minor": 1, "Major": 5, "Critical": 10},
                               "sessions": 4, "members": 2, "mean": 3.0, "p99": 5.0}
     assert summary["coverage"]["sessions_judged"] == summary["coverage"]["sessions_expected"] == 4
     assert summary["issue_rates"]["over_exploring"] == 1.0 and summary["replies"]["pending"] == 0
-    assert "judge-key" not in (out / "judge/judge.json").read_text()
+    assert "judge-key" not in (out / "judge/mindeval2/judge.json").read_text()
     assert judgments(*judge) == 0 and len(state["judged"]) == 12    # nothing new to judge
     monkeypatch.setenv("MINDEVAL_JUDGE_MODEL", "openai/another-judge")
     assert judgments(*judge) == 2                                   # a different judge: refused

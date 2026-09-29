@@ -56,7 +56,9 @@ def parse_judge_scores(output):
 
     Returns:
         List of dictionaries with criterion codes as keys and scores as values.
-        Missing scores default to 3.
+
+    Raises:
+        ValueError: a criterion's score is missing from the text.
     """
     criteria = [
         "Clinical Accuracy & Competence",
@@ -71,14 +73,15 @@ def parse_judge_scores(output):
 
     results = []
     for text in outputs:
+        text = text.split("</think>")[-1]  # a reasoning trace precedes the verdict; only the verdict is parsed
         scores = {}
         for criterion in criteria:
             # Match pattern like "CAC1: 4" with optional whitespace
             match = re.search(rf"{criterion}:\s*(\d+\.?\d*)", text)
-            if match:
-                scores[criterion] = float(match.group(1))
-            else:
-                scores[criterion] = 3  # Default to middle score if not found
+            if match is None:
+                # a silent default would look like a real judgement; the caller retries instead
+                raise ValueError(f"missing {criterion!r} in the judge's answer")
+            scores[criterion] = float(match.group(1))
         overall_score = sum(scores.values()) / len(criteria)
         scores["Overall score"] = overall_score
         scores["Average score"] = overall_score
