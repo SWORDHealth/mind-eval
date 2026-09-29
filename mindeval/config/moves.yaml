@@ -1,14 +1,3 @@
-# The member's move vocabulary: what a turn *does*. Each turn the member commits one move (plus an
-# optional secondary) through the `commit_move` tool, and only then writes the words.
-# Descriptions are member-facing and rendered into the system prompt verbatim.
-#
-#   * Ids are do_<snake_case> and stable: traces key on them.
-#   * Every move sits in exactly one `classes:` bucket (checked at load).
-#   * `level_by_move` gives the disclosure rung a move carries
-#     (withhold < deflect < minimize < partial < full); a move absent from it carries none. It is
-#     recorded on each turn as `inferred_level`. `canonical_move_by_level` names one move per rung,
-#     which the member prompt uses to name the depth moves.
-
 moves:
   do_share: "Introduce new content into the conversation: an update, problem, or event."
   do_agree: "Confirm that something the therapist said fits your experience or feels right."
@@ -27,8 +16,6 @@ moves:
   do_express_overwhelm: "Express feeling swamped, exhausted, or unable to cope with volume or demands."
   do_express_hopelessness: "Express despair, futility, or feeling stuck with no way out."
   do_express_joy: "Express happiness, excitement, hope, or positive surprise."
-  # Disgust and surprise have moves of their own so that a session whose affect is one of them has
-  # something to commit.
   do_express_disgust: "Express revulsion or contempt — at what someone did, at a situation, or at yourself."
   do_express_surprise: "Express being caught off guard by something — it landed differently than you expected."
   do_express_relief: "Express comfort or emotional easing after something was validated, resolved, or processed."
@@ -52,9 +39,6 @@ moves:
   do_set_boundary: "Establish a firm limit on what you are willing to discuss, do, or engage with."
   do_catastrophize: "Spiral into worst-case thinking. Small problems feel enormous."
 
-# Every move in exactly one bucket, recorded on each turn as `move_class`. `disclosing` and
-# `concealing` carry a disclosure rung; `expressive` carries affect; `engaging` keeps the
-# conversation moving without revealing or hiding.
 classes:
   disclosing: [do_share, do_go_deeper, do_insight, do_storytell, do_report_progress,
                do_change_talk]
@@ -68,10 +52,6 @@ classes:
              do_seek_validation, do_revisit, do_question_process, do_resist,
              do_express_constraint, do_test_boundary, do_set_boundary]
 
-# The disclosure rung a move carries. Only `disclosing` and `concealing` moves appear here (checked
-# at load): every rung names a depth, and a move that names a conversational function, such as
-# `do_answer_question`, can be played at any depth. On such a turn the depth rides on
-# `secondary_move`, which `inferred_level` falls back to.
 level_by_move:
   do_disengage: withhold
   do_deflect: deflect
@@ -82,7 +62,6 @@ level_by_move:
   do_go_deeper: full
   do_insight: full
 
-# One move per rung. The member prompt names the minimize/partial/full ones as the depth moves.
 canonical_move_by_level:
   withhold: do_disengage
   deflect: do_deflect

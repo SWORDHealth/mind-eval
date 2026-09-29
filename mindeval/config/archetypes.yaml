@@ -1,15 +1,3 @@
-# The member's archetype: a coping style. Its `avoided_moves` leave this member's repertoire
-# entirely: they are removed from the `commit_move` enum and from the move list in the system
-# prompt, and `avoids_prose` tells the member, in content terms, what it does not do, so the same
-# behaviour cannot come back under a neighbouring move label. `description` is member-facing prose,
-# rendered into the system prompt verbatim.
-#
-# Knobs say how much a member gives; the archetype says which moves exist for giving it. Some
-# archetypes cap disclosure by identity (deflector and storyteller avoid both `full`-rung moves).
-#
-# Ids are lowercase_snake_case and stable (the profile file and the traces key on them), and every
-# avoided move must be in moves.yaml (checked at load).
-
 archetypes:
   intellectualizer:
     name: The Intellectualizer
@@ -211,4 +199,3 @@ archetypes:
       - You do not hand over easy agreement — it would end the test before the answer.
       - You do not offer thanks before trust is settled.
       - You do not commit to anything while you are still probing whether this is safe.
-

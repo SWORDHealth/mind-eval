@@ -1,25 +1,13 @@
-# The member prompt's style layer ("style2"). Against the plain template it:
-#   1. replaces the base orthography rule with an explicit no-dashes / no-"..." rule, and moves casing
-#      and punctuation into each writing style's sentence (`orthography`);
-#   2. replaces the verbosity sentence with one that carries no examples, and follows it with example
-#      turns in the member's own writing style (`examples`), recased per style;
-#   3. turns every " —" in the rendered prompt into "," (profile and situation text included);
-#   4. appends a writing cue to the answer the accepted `commit_move` gets back (`write_cue`,
-#      `write_note`, `write_rule`): the one message the model reads right before it writes;
-#   5. replaces three move descriptions and the secondary-move paragraph.
-
 rule: >-
   No dashes of any kind (no em dash, no en dash, no " - " between clauses) and no "..." in the middle of
   a message: where you would pause, use a comma or start a new sentence.
 
-# Replaces the writing style's own diction sentence (config/knobs.yaml) for the styles listed here.
 diction:
   formal: >-
     You write properly: full sentences, capital letters, no slang, the way you would write a careful message to
     someone you do not know well; contractions are fine. Proper is not eloquent: plain everyday words, no turns of
     phrase, and you say what happened rather than what it means.
 
-# Appended to the writing style's diction sentence.
 orthography:
   formal: >-
     You capitalise and punctuate properly even on your phone; a message without a full stop would
@@ -31,7 +19,6 @@ orthography:
     You type like you text: lowercase is fine, punctuation is optional, and you do not go back to fix
     either.
 
-# Replaces the verbosity sentence: the level's sentence without its examples, which move to `examples`.
 verbosity:
   low: >-
     Short. You answer what was actually asked and stop, without the context around it. A good number
@@ -45,9 +32,6 @@ verbosity:
     the next is the point. Never give the fullest answer you could every time; someone who does that
     is not talking, they are reporting. When you decide your move, decide the one thing you will say; a plan with an "and" in it is two turns.
 
-# Follows the verbosity sentence, by verbosity and writing style. Each set spans its level's range,
-# the short end included (with only mid-length examples a model reads the mid-length as the level),
-# and no example carries a scene, since the member reads them as its own turns.
 examples_intro: "Some of your own turns, in full, this is what they actually look like:"
 examples:
   low:
@@ -83,16 +67,11 @@ examples:
       - works been a lot tbh and i havent really said anything to anyone
       - i keep telling myself its not a big deal and then its all i can think about and i dont even know what part of it is getting to me
 
-# Appended to every write cue: the member's profile and situation are notes about them, not lines to
-# say.
 write_note: >-
   What you know above about your week and about yourself is notes about you, not lines to say: put
   it the way it comes out of you today, in your own words, never in the notes' phrasing. Stop when the
   thought stops: no closing line, no comparison, no neat way of putting it.
 
-# Appended to the answer to an accepted `commit_move`, by verbosity. The verbosity sentence sits far up
-# the system prompt with the whole conversation after it; this puts how much to say at the point of
-# writing, and has the model look at its own recent turns so their length varies.
 write_cue:
   low: >-
     Now write it. Give less than the question asks for: the answer itself, not the explanation around
@@ -110,9 +89,6 @@ write_cue:
     hang a second thought on it with "and", "because" or "which". If your last few turns came out about
     the same size, this one should not.
 
-
-# How each writing style types, appended to the write cue. Fixed per style; the final full stop is
-# formal's alone.
 write_rule:
   formal: >-
     You end each message with a full stop and you do not leave typos.
@@ -122,9 +98,6 @@ write_rule:
     No full stop at the end of the message and no apostrophes: dont, im, cant, its, thats. Typos stay in,
     and when you trail off you end with "...".
 
-# Member-facing move descriptions that replace moves.yaml's (the tool's move list is unchanged). They
-# separate raising something unasked (do_share) from giving what was asked (do_answer_question), and
-# show what disengaging looks like.
 move_descriptions:
   do_share: >-
     Bring up something the counsellor did not ask about: a new update, problem or event, raised on your
@@ -136,9 +109,6 @@ move_descriptions:
     Pull back with a brief, vague or low-effort reply: "ok", "idk", "maybe", a half-answer, or not really
     answering at all.
 
-# Replaces the template's secondary_move paragraph. The secondary is a label, usually empty, and keeps
-# its role of naming how much of yourself a flat move carried; not answering and disagreeing are named
-# as ordinary turns.
 secondary_note: >-
   **`secondary_move`**, optional, and on most turns empty: most turns do one thing. It has two uses: a
   second act that genuinely rides along, or, as below, how much of yourself a flat move carried.

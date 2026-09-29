@@ -263,8 +263,9 @@ def test_judge_prompt_env_required_only_for_mindeval2(tmp_path, monkeypatch, cap
 
 
 def test_fingerprint_is_pinned():
-    # MindEval2 a18de8be's value; a change here means config/*.yaml or prompts/*.j2 changed.
-    assert load_config().fingerprint == "7962e7caed157571"
+    # The config of MindEval2 a18de8be (7962e7caed157571) with the YAML comments removed: the same data,
+    # other bytes. A change here means config/*.yaml or prompts/*.j2 changed.
+    assert load_config().fingerprint == "37868bb5e406de0d"
 
 
 def _wrap(fn):
