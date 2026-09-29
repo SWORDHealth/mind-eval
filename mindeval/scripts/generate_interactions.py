@@ -156,8 +156,9 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
          patient_timeout: float = 600, patient_params: dict | None = None, profiles_path: Path = DEFAULT_PROFILES,
          members: int = 50, sessions: int = 3, max_turns: int = 30, seed: int = 0, max_workers: int = 16,
          dry_run: bool = False) -> int:
-    """Runs the benchmark against one counselor: every member of the profile file through its sessions,
-    with the transcripts written under output_dir. Rerun with the same output_dir to resume — finished
+    """Runs every member of the profile file through its sessions against one counselor.
+
+    The transcripts are written under output_dir. Rerun with the same output_dir to resume: finished
     members are kept and unfinished sessions restart.
 
     Models, endpoints and keys come from the environment (or a .env file in the working directory):

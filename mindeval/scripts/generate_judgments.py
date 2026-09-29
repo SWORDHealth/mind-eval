@@ -23,8 +23,10 @@ def _missing(names: list[str]) -> InputError:
 def main(output_dir: Path, judge_version: Literal["mindeval1", "mindeval2"] = "mindeval2",
          judge_temperature: float | None = 1.0, judge_max_tokens: int = 16384, judge_params: dict = {},
          judge_timeout: float = 1800, judge_retries: int = 3, max_workers: int = 16, limit: int = 0) -> int:
-    """Annotates a run with the chosen judge. Verdicts and the summary are written under
-    output_dir/judge/<judge_version>/; rerun the same command to judge whatever is still pending.
+    """Annotates a run's finished sessions with the judge that judge_version picks.
+
+    Verdicts and the summary are written under output_dir/judge/<judge_version>/; rerun the same
+    command to judge whatever is still pending.
 
     Models, endpoints and keys come from the environment (or a .env file in the working directory):
     MINDEVAL_JUDGE_MODEL, with optional _API_BASE and _API_KEY. mindeval2 also needs
