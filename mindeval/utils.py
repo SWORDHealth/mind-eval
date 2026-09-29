@@ -31,13 +31,6 @@ def release_locks() -> None:
         _HELD.pop().close()
 
 
-def print_messages(messages):
-    role_to_name = {"user": "Member", "assistant": "Clinician", "system": "system"}
-    for m in messages:
-        print(f"{role_to_name[m['role']]}: {m['content']}")
-        print("###########################################")
-
-
 def messages_to_convo_str(lst):
     out_str = ""
     for turn in lst:
@@ -89,32 +82,3 @@ def parse_judge_scores(output):
         results.append(scores)
 
     return results
-
-
-def separate_thinking_from_response(
-    response: str,
-    beginning_thinking_tag: str = "<think>",
-    end_thinking_tag: str = "</think>",
-) -> dict[str, str]:
-    # regex for getting the content between the tags into thinking and the content after the end tag into response. Using only regex (no split) to avoid issues if the tags appear multiple times
-    thinking_match = re.search(
-        f"{re.escape(beginning_thinking_tag)}(.*?){re.escape(end_thinking_tag)}",
-        response,
-        re.DOTALL,
-    )
-    if thinking_match:
-        thinking = thinking_match.group(1).strip()
-        actual_response = (
-            response[thinking_match.end() :].strip()
-            if response[thinking_match.end() :].strip()
-            else ""
-        )
-    else:
-        reponse_parts = response.split(end_thinking_tag)
-        if len(reponse_parts) > 1:
-            thinking = reponse_parts[0].replace(beginning_thinking_tag, "").strip()
-            actual_response = reponse_parts[1].strip()
-        else:
-            thinking = ""
-            actual_response = response.strip()
-    return {"response": actual_response.strip(), "thinking": thinking}
