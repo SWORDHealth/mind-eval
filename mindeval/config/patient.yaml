@@ -1,0 +1,43 @@
+# How the patient model is called: the move (`commit_move`), the words, the between-session
+# compaction of the running log, and the next session's situation. The model and its endpoint come
+# from MINDEVAL2_PATIENT_*. `--patient-timeout` bounds the move, the words and the situation;
+# compaction has a fixed 1800 s timeout (it reads a whole session and has no smaller correct answer).
+
+temperature: 1.0
+
+# Attempts per move and per utterance. A malformed move is also answered and asked for again up to
+# max_retries - 1 times before the session fails. Compaction and the situation each get 3 attempts.
+max_retries: 3
+
+# The running log that both sides read between sessions keeps at most this many entries.
+log_max_entries: 30
+
+# What each kind of model needs, matched on the model name (the first `match` regex that is found in
+# it wins). Every patient call reasons before it answers, because a reasoned turn is much less likely
+# to run past its own end; the entries below say how each provider is asked to. `params` is merged
+# into every patient request, and `--patient-params` is merged over it. A model no entry matches gets
+# no params and a forced move; pass what it needs with `--patient-params`.
+providers:
+  # A vLLM server reads `chat_template_kwargs`. Other providers reject the field, so it is sent here only.
+  - match: "^hosted_vllm/"
+    params:
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: true
+    force_move: true
+
+  # Claude through `anthropic/`, `vertex_ai/` or `bedrock/`. It reasons only when asked, and adaptive
+  # thinking takes temperature 1 only. Its thinking counts against `max_tokens`, so the default of
+  # 4096 is raised far above any turn. A forced tool call is answered without thinking, so the move is
+  # offered with `tool_choice: auto` instead; it is still called every time, and the trace records how
+  # each move arrived (`via`). The system prompt and the latest message carry prompt-cache breakpoints,
+  # which change the bill and not what the model reads.
+  - match: "claude"
+    params:
+      thinking:
+        type: adaptive
+      cache_control_injection_points:
+        - {location: message, role: system}
+        - {location: message, index: -1}
+    max_tokens: 16000
+    force_move: false

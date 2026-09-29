@@ -1,5 +1,34 @@
-import json
 import re
+from pathlib import Path
+
+
+class InputError(Exception):
+    """Bad input or a refused run: printed and exit code 2."""
+
+
+_HELD: list = []
+
+
+def hold_lock(out: Path):
+    """Hold `<out>/.lock` until the command returns, so two invocations never write one run at once.
+    `release_locks()` releases it; the kernel releases it however the process ends."""
+    import fcntl
+
+    out.mkdir(parents=True, exist_ok=True)
+    handle = (out / ".lock").open("w")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        raise InputError(f"another mindeval process is running on {out}") from None
+    _HELD.append(handle)
+    return handle
+
+
+def release_locks() -> None:
+    """Release every lock `hold_lock` is still holding. Call from a `finally`, whatever the outcome."""
+    while _HELD:
+        _HELD.pop().close()
 
 
 def print_messages(messages):
@@ -86,14 +115,3 @@ def separate_thinking_from_response(
             thinking = ""
             actual_response = response.strip()
     return {"response": actual_response.strip(), "thinking": thinking}
-
-
-def save_to_jsonl(data: list[dict], output_path: str):
-    with open(output_path, "w") as f:
-        for conversation in data:
-            f.write(json.dumps(conversation, ensure_ascii=False) + "\n")
-
-
-def load_jsonl(file_path):
-    with open(file_path, "r") as f:
-        return [json.loads(line) for line in f.readlines()]
