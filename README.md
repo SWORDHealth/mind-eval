@@ -1,75 +1,119 @@
 # Mind-Eval
-[MindEval: Benchmarking Language Models on Multi-turn Mental Health Support.](https://www.arxiv.org/abs/2511.18491)
+A benchmark for AI mental-health counselors, played against a simulated patient over multiple sessions.
 
-![mind-eval-diagram](assets/framework.png)
+## What's New
+> **📢 September 2026 — MindEval 2.** `master` is now a multi-session benchmark with a new patient
+> simulator and a new judge. **Scores are not comparable with MindEval 1**, which stays unchanged on
+> the [`legacy`](https://github.com/SWORDHealth/mind-eval/tree/legacy) branch.
+
+- **Multi-session** — 50 synthetic members, 3 sessions each, with a memory log carried between sessions.
+- **Patient simulator** — each member picks its next move with a tool call before it writes its turn,
+  played from a clinical formulation and a situation that evolves between sessions.
+- **MindJudge-27B** — every counselor reply gets an MQM severity; the benchmark reports the mean and
+  p99 conversation severity over every member × session (lower is better).
+- **Both judges** — `--judge_version mindeval1` still scores each session with the original
+  five-criterion rubric.
 
 ## Installation
 ```bash
 git clone https://github.com/SWORDHealth/mind-eval.git
 cd mind-eval
-python -m venv venv
-source venv/bin/activate
-poetry install
+uv sync
+source .venv/bin/activate
+cp .env.example .env
 ```
->Poetry version 2.1.4 ; Python 3.10.12.
+>Python 3.12; [uv](https://docs.astral.sh/uv/).
 
->Make sure credentials to gcloud are set up.
+>Fill in `.env` with the model, endpoint and key of the patient, the counselor and the judge. They
+>are read from the environment only, and keys are never written to the outputs.
 
-**IMPORTANT**: edit `CUSTOM_CLINICIAN_INTERACTION_TEMPLATE` at the end of `mindeval/prompts.py` if you want to use a custom clinician system prompt template. To ensure a fair comparison with other models, only the arguments in `MINDEVAL_CLINICIAN_TEMPLATE` are allowed in any template.
+**IMPORTANT**: the counselor's system prompt is the Jinja template `examples/counselor_system.j2`.
+You can change anything in it, or pass your own with `--counselor_system_prompt_path <file.j2>`, but
+keep the memory field `{{ memory }}` exactly as it is. That is where the counselor receives its log of
+the earlier sessions (in session 1 it says there are none); the comment at the top of the file shows
+what it expands to. To keep the comparison fair, a template may only be text around one `{{ memory }}`:
+no other variables, filters or `{% %}` tags. Anything else is refused before the run starts.
 
-## Run interaction
-
-Assuming you want to evaluate a clinician model with a custom system template on the default mindeval setting.
-
+## Run interactions
 ```bash
-python mindeval/scripts/generate_interactions.py \
-    --profiles_path data/profiles.jsonl \
-    --clinician_system_template_version custom \
-    --clinician_model_api_params <YOUR_MODEL_API_PARAMS> \
-    --member_system_template_version v0_2 \
-    --member_model_api_params "{'model':'PROVIDER/claude-haiku-4-5@20251001','max_completion_tokens':16000,'reasoning_effort':'high','api_base':'API_BASE'}" \
-    --n_turns 10 \
-    --max_workers 50 \
-    --output_path interactions.jsonl
+python mindeval/scripts/generate_interactions.py --output_dir runs/<counselor>
 ```
->Copy the syntax of `--member_model_api_params` for your clinician model.
+>Defaults: the 50 members in `data/profiles.jsonl`, `--sessions 3`, `--max_turns 30` (counselor
+>replies; the member may leave sooner), `--max_workers 16`, `--seed 0`. See `--help`.
 
->If you want to replicate the clinician setup for general-purpose models, set `--clinician_system_template_version v0_1`.
+>The patient is DeepSeek-V4.1-Flash by default, served by vLLM (`hosted_vllm/`) with tool calling that
+>honours a named `tool_choice`. Another model can play it: set `MINDEVAL_PATIENT_MODEL`, e.g.
+>`vertex_ai/claude-sonnet-4-6`. Add anything else a model needs with `--patient_params`. A `vertex_ai/`
+>model needs `uv sync --extra vertex`.
 
->Adjust `--max_workers` according to rate limits.
+>Provider-specific counselor settings go in `--counselor_params`, e.g. `'{"reasoning_effort": "high"}'`.
 
+>Each counselor gets its own earlier replies back as its API returned them, reasoning included, as
+>models trained on preserved thinking expect. OpenAI reasoning models return it only through the
+>Responses API: run them as `azure/responses/<deployment>` (or `openai/responses/<model>`) with
+>`--counselor_params '{"include": ["reasoning.encrypted_content"], "store": false}'`.
+
+>Rerun the same command to resume: finished members are kept, and unfinished sessions restart.
 
 ## Run judgments
-
+Serve MindJudge-27B and download its prompt (the download needs `HF_TOKEN` while the model is private):
 ```bash
-python mindeval/scripts/generate_judgments.py \
-    --interactions_path interactions.jsonl \
-    --judge_template_version v0_1 \
-    --judge_model_api_params "{'model':'PROVIDER/claude-sonnet-4-5@20250929','max_completion_tokens':16000,'reasoning_effort':'high','api_base':'API_BASE'}" \
-    --max_workers 50 \
-    --output_path judgments.jsonl
+vllm serve swordhealth/MindJudge-27B --language-model-only --served-model-name mindjudge \
+    --trust-remote-code --tensor-parallel-size 2 --max-model-len 131072 --gpu-memory-utilization 0.9
+uvx --from huggingface_hub hf download swordhealth/MindJudge-27B mindjudge_prompt.txt --local-dir mindjudge
+```
+Then:
+```bash
+python mindeval/scripts/generate_judgments.py --output_dir runs/<counselor>
+```
+>Rerun to resume. It can run while `generate_interactions.py` is still going: only finished sessions
+>are judged.
+
+The original five-criterion rubric needs no prompt download, just a judge model of your choice in
+`MINDEVAL_JUDGE_*`:
+```bash
+python mindeval/scripts/generate_judgments.py --output_dir runs/<counselor> --judge_version mindeval1
 ```
 
 ## Check scores
-```python
-import pandas as pd
-
-from mindeval.utils import load_jsonl
-
-full_judgments = load_jsonl("judgments.jsonl")
-float_judgments = [j["parsed_judgment"] for j in full_judgments]
-df = pd.DataFrame(float_judgments)
-
-print(df.mean())
-```
-
-## Do it all in one go (except checking scores; default MindEval settings)
 ```bash
-bash run_benchmark.sh <YOUR_CLINICIAN_MODEL_API_PARAMS>
+python -c "import json; print(json.load(open('runs/<counselor>/judge/mindeval2/summary.json'))['mqm'])"
+```
+The score is the **MQM conversation severity**, and lower is better. Each reply is weighted by
+severity: No concern 0, Minor 1, Major 5, Critical 10, averaged within each session and then over
+every member × session, so one long session can't outweigh several short ones. `summary.json` also
+has severity and issue rates.
+
+```bash
+python -c "import json; print(json.load(open('runs/<counselor>/judge/mindeval1/summary.json'))['means'])"
+```
+The v1 rubric scores each session on five criteria plus their mean (`Overall score`), all 1-6 where
+higher is better; `summary.json` gives the mean of each over every member × session.
+
+## Do it all in one go
+```bash
+bash run_benchmark.sh runs/<counselor> [mindeval2|mindeval1]
+```
+>Runs interactions then judgments for the given judge version (default `mindeval2`), then prints the
+>summary.
+
+## Outputs
+```
+runs/<counselor>/
+  run.json                  what ran: models, endpoints, prompt and profile hashes, settings
+  members/<id>/arc/ep00N/   per session: trace.jsonl (every turn), situation.yaml, log.md (the memory after it)
+  judge/mindeval2/          MQM: judge.json, verdicts.jsonl, summary.json
+  judge/mindeval1/          five-criterion rubric: judge.json, verdicts.jsonl, summary.json
 ```
 
-## Meta-evaluation
-Human data for [patient realism](data/human_user_turns.jsonl) and [judge](data/human_annotations.jsonl) meta-evaluation is available.
+## Data and license
+The 50 members are synthetic. Their persona seeds come from
+[nvidia/Nemotron-Personas-USA](https://huggingface.co/datasets/nvidia/Nemotron-Personas-USA)
+(CC BY 4.0). A language model turned them into clinical formulations, Claude Sonnet 4.6 wrote the
+session-1 situations, and a handful of words were edited by hand. The code is MIT; the profiles are
+CC BY 4.0; MindJudge-27B and its prompt are CC BY-NC-SA 4.0. MindEval 1's profiles, human annotations
+and meta-evaluation data are unchanged on the [`legacy`](https://github.com/SWORDHealth/mind-eval/tree/legacy)
+branch.
 
 ## Cite
 ```bibtex
