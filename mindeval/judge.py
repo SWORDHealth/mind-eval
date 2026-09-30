@@ -90,7 +90,10 @@ def read_session(trace: Path) -> dict:
     session still being written, or one whose trace vanished or ends in a torn line, is not finished."""
     turns, system_prompt, finished = [], None, False
     try:
-        lines = [x for x in trace.read_text(encoding="utf-8").split("\n") if x.strip()]
+        # errors="replace": a trace read mid-append (the README says the judge may run alongside
+        # generate_interactions.py) can end inside a multi-byte character. The torn line already means
+        # "not finished" once it fails to parse below; it must not crash the read itself.
+        lines = [x for x in trace.read_text(encoding="utf-8", errors="replace").split("\n") if x.strip()]
     except FileNotFoundError:  # moved aside by a resuming run
         lines = []
     for line in lines:
@@ -386,7 +389,13 @@ def judge_run(out: Path, version: str, spec: CallSpec, *, workers: int, limit: i
     dest = jdir / "verdicts.jsonl"
     done: dict[tuple[str, str], dict] = {}
     if dest.is_file():
-        for line in dest.read_text(encoding="utf-8").splitlines():
+        # .split("\n"), not .splitlines(): JSON leaves U+2028/U+2029/U+0085 raw (ensure_ascii=False),
+        # and .splitlines() treats them as line breaks, tearing a verdict whose text quotes one into
+        # two undecodable halves — read_session and session.read_trace use the same split for it.
+        # errors="replace": a line torn by a killed process can end inside a multi-byte character.
+        for line in dest.read_text(encoding="utf-8", errors="replace").split("\n"):
+            if not line.strip():
+                continue
             try:
                 v = json.loads(line)
             except json.JSONDecodeError:  # a line torn by a killed process; that unit is judged again
@@ -453,17 +462,24 @@ def judge_run(out: Path, version: str, spec: CallSpec, *, workers: int, limit: i
 
     if batch:
         llm._lib()
-        # Preflight: the first unit is judged alone, and a judge that cannot produce one verdict stops
-        # the pass before it spends thousands of calls. Its success pins the identity.
-        first = one(batch[0])
-        if "_error" in first:
-            raise JudgeError(f"preflight: the judge did not return a usable verdict: {first['_error']}")
-        meta_path.write_text(json.dumps({**identity, "api_base": spec.api_base,
-                                         "prompt": str(prompt_path) if prompt_path else "built-in"},
-                                        indent=2) + "\n")
+        rest = batch
+        if not done:
+            # Preflight: while the directory holds no successful verdict yet, the first unit is judged
+            # alone, and a judge that cannot produce one verdict stops the pass before it spends
+            # thousands of calls. Its success pins the identity. Once a verdict exists, the identity is
+            # already pinned, and the first pending unit in sorted order is whatever errored last pass —
+            # treating that as a preflight would let one always-failing unit (a long session, a content
+            # filter, a reasoning trace over max_tokens) stall every later pass forever.
+            first = one(batch[0])
+            if "_error" in first:
+                raise JudgeError(f"preflight: the judge did not return a usable verdict: {first['_error']}")
+            meta_path.write_text(json.dumps({**identity, "api_base": spec.api_base,
+                                             "prompt": str(prompt_path) if prompt_path else "built-in"},
+                                            indent=2) + "\n")
+            rest = batch[1:]
         pool = ThreadPoolExecutor(max_workers=workers)
         try:
-            for f in as_completed([pool.submit(one, u) for u in batch[1:]]):
+            for f in as_completed([pool.submit(one, u) for u in rest]):
                 f.result()
         except KeyboardInterrupt:
             pool.shutdown(wait=False, cancel_futures=True)

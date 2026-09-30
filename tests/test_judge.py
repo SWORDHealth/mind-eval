@@ -13,7 +13,7 @@ from jsonargparse import CLI
 from mindeval import judge_prompts, llm
 from mindeval.arc import counselor_memory
 from mindeval.config import load_config
-from mindeval.judge import MindEval1Judge
+from mindeval.judge import MindEval1Judge, read_session
 from mindeval.scripts import generate_interactions, generate_judgments
 from mindeval.utils import parse_judge_scores
 
@@ -434,6 +434,89 @@ def test_judge_params_are_part_of_the_judge_identity(tmp_path, monkeypatch):
     rv = judgments(*args, "--judge_params", '{"reasoning_effort": "high"}')
     assert rv == 2 and seen_params == ["low"]  # refused before any call
     assert json.loads((out / "judge/mindeval2/judge.json").read_text())["params"] == {"reasoning_effort": "low"}
+
+
+def test_preflight_does_not_stall_forever_on_a_unit_that_always_fails(tmp_path, monkeypatch):
+    """The preflight is a check on the judge, not on one unlucky unit: it must only gate a pass while
+    the directory holds no successful verdict yet. Once one exists, the first pending unit in sorted
+    order (after pass 1, exactly the ones that errored) is an ordinary error, not a pass-stopping
+    preflight — otherwise one unit that fails every attempt (a long session, a content filter, a
+    reasoning trace over max_tokens) stops every later pass, and nothing sorted after it is ever judged."""
+    monkeypatch.chdir(tmp_path)
+    _clear_env(monkeypatch)
+    _set_judge_env(monkeypatch)
+
+    out = tmp_path / "run"
+    _write_run(out, members=3, sessions=1)
+    openings = {"m000": "m000 opens.", "m001": "m001 opens, and always fails.", "m002": "m002 opens."}
+    for member, opening in openings.items():
+        _write_session(out, member, "ep000", opening=opening, replies=["how are you?"],
+                       formulation=f"{member} is 40.")
+
+    def completion(**kw):
+        if openings["m001"] in kw["messages"][0]["content"]:
+            raise RuntimeError("m001 always fails")
+        return _response(_v1_answer(ALPHA))
+
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
+    args = ["--output_dir", str(out), "--judge_version", "mindeval1", "--max_workers", "1", "--judge_retries", "1"]
+
+    # pass 1: --limit 2 judges m000 (the preflight unit, which succeeds) then m001 (an ordinary error,
+    # since it is not batch[0]); m002 is not yet attempted.
+    assert judgments(*args, "--limit", "2") == 1
+    verdicts = [json.loads(line) for line in (out / "judge/mindeval1/verdicts.jsonl").read_text().splitlines()]
+    assert {v["member"] for v in verdicts if "_error" not in v} == {"m000"}
+    assert {v["member"] for v in verdicts if "_error" in v} == {"m001"}
+
+    # pass 2: batch[0] in sorted order is now m001, the always-failing unit. With the old preflight
+    # this would raise and m002 would never be judged; done is non-empty (m000), so it must not.
+    assert judgments(*args) == 1  # m001 is still pending, but that must not block m002
+    verdicts = [json.loads(line) for line in (out / "judge/mindeval1/verdicts.jsonl").read_text().splitlines()]
+    assert {v["member"] for v in verdicts if "_error" not in v} == {"m000", "m002"}
+
+
+def test_read_session_tolerates_a_torn_multibyte_trailing_write(tmp_path):
+    """A trace read mid-append (the README says the judge may run alongside generate_interactions.py)
+    can end inside a multi-byte character — an em dash or a curly quote are common with
+    ensure_ascii=False. That must mean "not finished", never a UnicodeDecodeError."""
+    complete = json.dumps({"type": "turn", "turn": 0, "counselor_utterance": None, "utterance": "hi"})
+    torn = "café is where we".encode()[:-1]  # a dangling lead byte of a 2-byte UTF-8 character
+    trace = tmp_path / "trace.jsonl"
+    trace.write_bytes((complete + "\n").encode() + b'{"type": "turn", "turn": 1, "utterance": "' + torn)
+    session = read_session(trace)
+    assert session["finished"] is False
+
+
+def test_a_verdict_quoting_u2028_is_read_back_whole_and_not_re_judged(tmp_path, monkeypatch):
+    """verdicts.jsonl is written with ensure_ascii=False, which leaves U+2028/U+2029/U+0085 raw, and
+    was read back with splitlines(), which treats them as line breaks. A verdict whose justification
+    quotes text containing one must not be torn into two undecodable halves and silently re-judged."""
+    monkeypatch.chdir(tmp_path)
+    _clear_env(monkeypatch)
+    prompt_path = tmp_path / "judge_prompt.txt"
+    prompt_path.write_text("Judge this reply.\n{conversation}\n\n{candidate}\n")
+    _set_judge_env(monkeypatch, prompt_path=prompt_path)
+
+    out = tmp_path / "run"
+    _write_run(out, members=1, sessions=1)
+    _write_session(out, "m000", "ep000", opening="hi", replies=["how are you?"], formulation="Lambda is 50.",
+                  counselor_system_prompt="Be kind.")
+
+    calls = []
+
+    def completion(**kw):
+        calls.append(1)
+        return _response('<think>ok</think>{"severity": "Minor", "vague": 0, '
+                         '"justification": "It pauses.\\u2028Then continues."}')
+
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
+    args = ["--output_dir", str(out), "--judge_version", "mindeval2", "--max_workers", "1"]
+    assert judgments(*args) == 0
+    assert len(calls) == 1
+    assert " " in (out / "judge/mindeval2/verdicts.jsonl").read_text()
+
+    assert judgments(*args) == 0  # a no-op rerun: the verdict must be read back whole, not re-judged
+    assert len(calls) == 1
 
 
 def test_parse_judge_scores_takes_the_last_match_per_criterion():
