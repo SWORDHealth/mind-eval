@@ -2,6 +2,7 @@
 against a scripted litellm exactly like test_smoke.py's."""
 
 import json
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -134,14 +135,63 @@ def test_commit_and_speak_strip_an_inline_reasoning_trace(monkeypatch):
 
 # -- build_member: an archetype's avoided moves must not still be named in the prose ----------------
 
-def test_without_avoided_moves_drops_only_sentences_naming_an_avoided_move():
-    text = ("You rarely reach for `do_express_frustration`. When something lands wrong you answer it "
-           "straight. `do_blame` is still available.")
-    out = member_mod._without_avoided_moves(text, {"do_express_frustration"})
-    assert "do_express_frustration" not in out
-    assert "do_blame" in out  # a sentence naming no avoided move is kept verbatim
-    assert member_mod._without_avoided_moves(text, set()) == text  # no archetype: untouched
-    assert member_mod._without_avoided_moves(text, {"do_go_deeper"}) == text  # nothing to drop: untouched
+def _moves(text):
+    return set(re.findall(r"\bdo_[a-z_]+\b", text))
+
+
+def _knob_texts(cfg):
+    """Every knob line and the secondary note, as knobs.yaml and style2.yaml write them."""
+    texts = {f"{knob}.{level}": text for knob in ("concealment_propensity", "frustration_reactivity", "session_affect")
+             for level, text in getattr(cfg.knob_text, knob).items()}
+    return {**texts, "secondary_note": cfg.style2.secondary_note}
+
+
+def test_without_avoided_moves_takes_out_the_move_not_its_sentence():
+    """The sentence a move sits in can also carry the session's affect or a move that is still
+    allowed; only the avoided move goes, with the words that exist to introduce it."""
+    cfg = load_config()
+    drop = member_mod._without_avoided_moves
+    # the affect's own definition stays; only the avoided move and its "when ..." go
+    assert drop(cfg.knob_text.session_affect["sadness"], {"do_express_hopelessness"}) == (
+        "When something does get to you this session, it lands as grief or heaviness — `do_express_sadness`. "
+        "Most of what you say is still ordinary.")
+    # one of two moves in a list: the other stays, and the verb agrees with it
+    assert "`do_blame` is near to hand." in drop(cfg.knob_text.session_affect["anger"], {"do_express_frustration"})
+    # a list loses its avoided items and keeps its own joint
+    assert "You rarely reach for `do_express_frustration` or `do_question_process`, and when" in drop(
+        cfg.knob_text.frustration_reactivity["low"], {"do_disagree", "do_resist"})
+    # every move in a sentence avoided: the sentence closes up on what is left of it
+    assert drop(cfg.knob_text.frustration_reactivity["medium"],
+                {"do_express_frustration", "do_disagree", "do_resist"}).endswith(
+        "before you come back. You rarely question the conversation itself.")
+    assert "Reach readily for `do_question_process` when it is this conversation" in drop(
+        cfg.knob_text.frustration_reactivity["high"], {"do_express_frustration", "do_disagree", "do_resist"})
+    assert "simply stop: leaving mid-thread, with" in drop(cfg.knob_text.frustration_reactivity["high"],
+                                                          {"do_disengage"})
+    # parenthetical names go, and "So is" keeps the sentence it refers back to
+    note = drop(cfg.style2.secondary_note, {"do_disengage", "do_deflect"})
+    assert 'an "ok", an "idk" or letting the question go by are ordinary turns' in note
+    assert "So is saying so when something the counsellor says does not fit you (do_disagree)" in note
+    text = cfg.knob_text.session_affect["joy"]
+    assert drop(text, set()) == text and drop(text, {"do_go_deeper"}) == text  # nothing to take out: untouched
+
+
+def test_without_avoided_moves_on_every_archetype_and_knob_line():
+    """Every archetype against every line it could be given, not just the 50 profiles' draws: no
+    avoided move survives, every allowed move does, sentences naming no avoided move are untouched,
+    and nothing is left dangling."""
+    cfg = load_config()
+    for name, archetype in cfg.archetypes.archetypes.items():
+        avoided = set(archetype.avoided_moves)
+        for key, text in _knob_texts(cfg).items():
+            out = member_mod._without_avoided_moves(text, avoided)
+            where = f"{name} x {key}: {out!r}"
+            assert not _moves(out) & avoided, where
+            assert _moves(text) - avoided <= _moves(out), where
+            for sentence in re.split(r"(?<=[.!?])\s+", text):
+                if not _moves(sentence) & avoided:
+                    assert sentence in out, where
+            assert not re.search(r"  |\s[,.;]|, ,|— [.,;]|^[^A-Z*`]|\s$", out), where
 
 
 def test_build_member_never_names_an_avoided_move_in_the_prompt():

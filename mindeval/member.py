@@ -298,7 +298,7 @@ class Member:
             for attempt in range(1, self.spec.max_retries + 1):
                 # Reset per attempt, not per while-iteration: an attempt that raises early (a stray
                 # commit already at MAX_STRAY_COMMITS) must not leave `stray` (or `hygiene`) for a
-                # later, clean attempt to be mistaken by, as commit() resets `content`/`meta` at L204.
+                # later, clean attempt to be mistaken by, as commit() does inside its attempt loop.
                 text, meta, calls, hygiene, stray = "", {}, [], [], None
                 try:
                     text, meta = llm.call_messages(
@@ -392,23 +392,93 @@ class Member:
                 "ms": round((time.monotonic() - t0) * 1000, 1)}
 
 
-#: A sentence boundary: `.`/`!`/`?` followed by whitespace. Paragraph breaks (a literal newline, from
-#: a folded YAML block's blank line) are kept as their own unit, split on separately below.
-_SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+")
+#: A sentence boundary, captured so the text between sentences survives exactly as written.
+_SENTENCE_BREAK = re.compile(r"(?<=[.!?])(\s+)")
+#: A move named in parentheses after the thing it labels: `an "idk" (do_disengage)`.
+_PAREN_MOVE = re.compile(r" \((do_[a-z_]+)\)")
+#: A run of backticked moves written as one list ("`a`, `b` or `c`"), with the "when ..." that
+#: qualifies it, up to the next comma, semicolon, full stop or dash. An Oxford ", and" starts a new
+#: run: in this prose it brings in a move with a qualifier of its own ("`do_express_sadness`, and
+#: `do_express_hopelessness` when it feels like it will not lift").
+_MOVE_RUN = re.compile(r"`do_[a-z_]+`(?:(?:, | or | and )`do_[a-z_]+`)*(?: when [^,;.—]*[^,;.—\s])?")
+_RUN_NAME = re.compile(r"`(do_[a-z_]+)`")
+
+
+def _without_run(s: str, runs: list, i: int) -> str | None:
+    """`s` without its i-th move run, every move of which is avoided. A following run takes its place
+    along with the words joining the two ("..., and for"); a last run goes with the words joining it to
+    the one before. A run alone in its sentence goes by itself, and the sentence closes up around it;
+    None when what would be left is no sentence at all (the run was its subject)."""
+    run = runs[i]
+    if i + 1 < len(runs):
+        return s[:run.start()] + s[runs[i + 1].start():]
+    if i > 0:
+        return s[:runs[i - 1].end()] + s[run.end():]
+    before, after = s[:run.start()], s[run.end():]
+    if re.match(r" (?:and|or) ", after):  # "stop: `do_disengage` and leaving mid-thread"
+        return before + after[after.index(" ", 1) + 1:]
+    if re.match(r"[.!?]", after):  # "weight — `do_express_joy`." keeps "weight."
+        before = before.rstrip(" —:,")
+        return before + after if before else None
+    if not before and re.match(r"[;,:] ", after):  # "`do_disagree` ...; you rarely question it"
+        return after[2].upper() + after[3:]
+    return None
+
+
+def _drop_moves(sentence: str, avoided: set[str]) -> str | None:
+    """One sentence with every avoided move taken out of it, or None if nothing sensible is left."""
+    s = _PAREN_MOVE.sub(lambda m: "" if m.group(1) in avoided else m.group(0), sentence)
+    while True:
+        runs = list(_MOVE_RUN.finditer(s))
+        i = next((i for i, r in enumerate(runs) if set(_RUN_NAME.findall(r.group(0))) & avoided), None)
+        if i is None:
+            break
+        run = runs[i]
+        names = _RUN_NAME.findall(run.group(0))
+        kept = [n for n in names if n not in avoided]
+        if not kept:
+            s = _without_run(s, runs, i)
+            if s is None:
+                return None
+            continue
+        list_end = run.group(0).rindex("`") + 1  # the list alone, without its qualifier
+        joined = [f"`{n}`" for n in kept]
+        text = joined[0]
+        if len(joined) > 1:  # the list keeps its own last joint: "a, b or c" less b is "a or c"
+            conj = re.findall(r"`(, | or | and )`", run.group(0)[:list_end])[-1]
+            text = ", ".join(joined[:-1]) + conj + joined[-1]
+        after = s[run.start() + list_end:]
+        if len(kept) == 1 and after.startswith(" are "):  # "`do_blame` is near to hand"
+            after = " is " + after[len(" are "):]
+        s = s[:run.start()] + text + after
+    # Anything still naming an avoided move is written some other way; the sentence goes whole.
+    if any(re.search(rf"\b{re.escape(m)}\b", s) for m in avoided):
+        return None
+    return s
 
 
 def _without_avoided_moves(text: str, avoided: set[str]) -> str:
-    """Drop any sentence naming a move `avoided` names. An archetype removes a move from the tool
-    enum and the vocab check, but knobs.yaml and style2.yaml still name moves in prose (backticked or
-    not) to describe when a member reaches for them; left alone, that keeps telling the member to use
-    a move it can no longer actually commit. A line naming no avoided move is returned unchanged."""
+    """The text with every avoided move taken out of it. An archetype removes a move from the tool
+    enum and the vocab check, but knobs.yaml and style2.yaml still name moves in prose to describe
+    when a member reaches for them; left alone, that keeps telling the member to use a move it can no
+    longer actually commit.
+
+    Only the move and the words that exist to introduce it go: the rest of its sentence stays, since
+    it can also carry the session's affect or a move that is still allowed. A move in a list leaves
+    the list; one with its own "when ..." takes it along; a parenthetical `(do_x)` just disappears. A
+    sentence goes whole only when nothing sensible would be left of it. A line naming no avoided move
+    is returned unchanged."""
     if not avoided or not any(m in text for m in avoided):
         return text
     paragraphs = []
     for para in text.split("\n"):
-        sentences = _SENTENCE_BREAK.split(para)
-        kept = [s for s in sentences if not any(re.search(rf"\b{re.escape(m)}\b", s) for m in avoided)]
-        paragraphs.append(" ".join(kept))
+        parts = _SENTENCE_BREAK.split(para)  # sentence, separator, sentence, ...
+        kept = []
+        for j in range(0, len(parts), 2):
+            sentence = _drop_moves(parts[j], avoided)
+            if sentence is not None:
+                kept += [sentence, parts[j + 1] if j + 1 < len(parts) else ""]
+        paragraphs.append("".join(kept).rstrip())
     return "\n".join(paragraphs)
 
 
@@ -435,7 +505,7 @@ def build_member(cfg: Config, row: MemberRow, situation: Situation, knobs: Knobs
     """The member for one session. `knobs` are this session's (concealment and affect move across
     sessions); `memory_text` is the running log as the member carries it, None in session 1."""
     # An archetype removes moves from the repertoire wholesale: the tool enum, the parse-boundary
-    # check, and any sentence in the knob or style prose that would tell the member to reach for one
+    # check, and every mention in the knob or style prose that would tell the member to reach for one
     # by name (knobs.yaml and style2.yaml name moves the tool enum may not offer at all).
     archetype = cfg.archetypes.archetypes[row.archetype] if row.archetype else None
     avoided = set(archetype.avoided_moves) if archetype else set()
