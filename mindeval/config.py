@@ -23,8 +23,16 @@ from mindeval.models import KnobLevel, Knobs, SessionAffect, VerbosityLevel, Wri
 PACKAGE_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = PACKAGE_DIR / "config"
 PROMPTS_DIR = PACKAGE_DIR / "prompts"
-#: Bump to deliberately change every derived per-call seed.
+#: Bump to deliberately change every derived per-call seed — the one documented way to re-draw the
+#: benchmark on purpose. Bump SEED_FINGERPRINT alongside it: arc/run ids are pinned there, and left
+#: alone they would keep their names while the draws underneath them moved.
 SEED_VERSION = "1"
+#: The namespace arc_id_of() and _run_id() draw from, in place of `cfg.fingerprint`, so a run's ids
+#: and every seed drawn under them derive from this and not from the config's bytes — an edit that
+#: leaves the data alone (a comment, a rename) keeps every arc. It is MindEval2 0.2.0's fingerprint
+#: (its config/prompts, unedited), so arcs and seeds here match runs made with it. Change it, with
+#: SEED_VERSION above, to re-draw the benchmark on purpose.
+SEED_FINGERPRINT = "7962e7caed157571"
 KNOB_NAMES = tuple(Knobs.model_fields)
 #: The knobs that describe how the member writes; the only ones the situation writer is shown.
 REGISTER_KNOBS = ("verbosity", "writing_style")

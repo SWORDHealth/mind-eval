@@ -19,7 +19,7 @@ from jinja2 import Environment, StrictUndefined, Template, TemplateSyntaxError, 
 from pydantic import BaseModel, ValidationError
 
 from mindeval import llm
-from mindeval.config import CallSpec, Config, turn_seed
+from mindeval.config import SEED_FINGERPRINT, CallSpec, Config, turn_seed
 from mindeval.member import Todos, build_member, member_turn
 from mindeval.models import Knobs, MemberRow, SessionRecord, Situation, TurnRecord
 
@@ -192,7 +192,8 @@ def run_session(cfg: Config, row: MemberRow, situation: Situation, knobs: Knobs,
     on beside it) and re-raised."""
     member = build_member(cfg, row, situation, knobs, patient, memory_text=memory_text, time_context=time_context)
     todos = Todos(situation)
-    run_id = _run_id(row, situation, seed, cfg.fingerprint)
+    # Seeded from the pinned SEED_FINGERPRINT, not cfg.fingerprint: see config.py.
+    run_id = _run_id(row, situation, seed, SEED_FINGERPRINT)
     session_id = f"{run_id}-s0"
     counselor_prompt = counselor.prompt_with(counselor_memory)
     turns: list[TurnRecord] = []

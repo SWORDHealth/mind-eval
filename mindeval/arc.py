@@ -24,7 +24,16 @@ from pathlib import Path
 from typing import NamedTuple
 
 from mindeval import llm
-from mindeval.config import REGISTER_KNOBS, CallSpec, Config, EpisodeFile, provider_seed, render, turn_seed
+from mindeval.config import (
+    REGISTER_KNOBS,
+    SEED_FINGERPRINT,
+    CallSpec,
+    Config,
+    EpisodeFile,
+    provider_seed,
+    render,
+    turn_seed,
+)
 from mindeval.models import ArcRecord, ArcShape, EpisodeRef, MemberRow, SessionRecord, Situation
 from mindeval.session import Counselor, input_hash, read_trace, run_session
 
@@ -307,7 +316,8 @@ def set_aside_partial(arc_dir: Path) -> str | None:
 
 def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, patient: CallSpec, sessions: int,
             max_turns: int, arc_seed: int, out: Path) -> ArcRecord:
-    arc_id = arc_id_of(row, arc_seed, cfg.fingerprint)
+    # Seeded from the pinned SEED_FINGERPRINT, not cfg.fingerprint: see config.py.
+    arc_id = arc_id_of(row, arc_seed, SEED_FINGERPRINT)
     shape = draw_shape(cfg.episode, row, arc_seed, arc_id, sessions)
     anchor = Anchor(shape.anchor_weekday, shape.anchor_hour)
     spacing_hours = cfg.episode.turn_spacing_minutes / 60
