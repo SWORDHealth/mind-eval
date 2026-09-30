@@ -100,10 +100,15 @@ def call_messages(messages: list[dict], model: str, api_base: str | None, temper
     reads as a refusal. `timeout` is the real bound. `seed` is best-effort (dropped where
     unsupported). A `tool_choice` naming a function makes the call mandatory.
     """
+    lib = _lib()
     kwargs: dict[str, Any] = {**(params or {}), "model": model, "messages": messages, "timeout": timeout}
     # A parameter the caller named explicitly is sent even where litellm's model table says the model
     # does not take it; `drop_params` would otherwise remove it without a word. Body extras pass as-is.
-    named = [k for k in (params or {}) if k not in ("extra_body", "extra_headers")]
+    # A key litellm already maps for this model (e.g. reasoning_effort -> Anthropic's `thinking`) is
+    # left off the list: forcing it through allowed_openai_params too makes litellm send both the
+    # translation and the raw field, and Anthropic rejects the raw one with a 400.
+    supported = set(getattr(lib, "get_supported_openai_params", lambda **_: None)(model=model) or ())
+    named = [k for k in (params or {}) if k not in ("extra_body", "extra_headers") and k not in supported]
     if named:
         kwargs["allowed_openai_params"] = named
     if temperature is not None:
@@ -120,7 +125,7 @@ def call_messages(messages: list[dict], model: str, api_base: str | None, temper
         kwargs["tools"] = tools
     if tool_choice is not None:
         kwargs["tool_choice"] = tool_choice
-    response = _lib().completion(**kwargs)
+    response = lib.completion(**kwargs)
     return (response.choices[0].message.content or ""), response_meta(response)
 
 
