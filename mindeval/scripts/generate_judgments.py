@@ -32,14 +32,14 @@ def main(output_dir: Path, judge_version: JudgeVersion = "mindeval2",
     command to judge whatever is still pending.
 
     Models, endpoints and keys come from the environment (or a .env file in the working directory):
-    MINDEVAL_JUDGE_MODEL, with optional _API_BASE and _API_KEY. mindeval2 also needs
-    MINDEVAL_JUDGE_PROMPT, the path to MindJudge's prompt template. See .env.example.
+    MINDEVAL_JUDGE_MODEL, with optional _API_BASE and _API_KEY. mindeval2 uses the prompt in
+    mindeval/judge_prompts.py unless MINDEVAL_JUDGE_PROMPT names another file. See .env.example.
 
     Args:
         output_dir: the run directory; verdicts go to <output_dir>/judge/<judge_version>/
-        judge_version: mindeval2 is MindJudge-27B's MQM, one verdict per counselor reply, and needs
-            the counselor system prompt from the trace and the MindJudge prompt file; mindeval1 is
-            MindEval v1's five-criterion rubric, one verdict per session, and needs neither
+        judge_version: mindeval2 is an MQM judge, one verdict per counselor reply, and needs the
+            counselor system prompt from the trace; mindeval1 is MindEval v1's five-criterion rubric,
+            one verdict per session, and does not
         judge_temperature: null to leave it unsent
         judge_max_tokens: room for the judge's reasoning and verdict
         judge_params: JSON merged into every request, e.g. '{"reasoning_effort": "high"}'; part of the
@@ -60,8 +60,8 @@ def main(output_dir: Path, judge_version: JudgeVersion = "mindeval2",
         check_params("--judge_params", judge_params)
         missing: list[str] = []
         je = env.endpoint("JUDGE", missing)
-        prompt = (env.required("JUDGE_PROMPT", missing) if JUDGE_VERSION_DICT[judge_version].requires_prompt_path
-                 else None)
+        prompt = (env.optional("JUDGE_PROMPT", missing) if JUDGE_VERSION_DICT[judge_version].takes_prompt_file
+                  else None)
         if missing:
             raise _missing(missing)
         spec = CallSpec(model=je.model, api_base=je.api_base, api_key=je.api_key, temperature=judge_temperature,

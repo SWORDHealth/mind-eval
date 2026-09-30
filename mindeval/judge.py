@@ -1,9 +1,10 @@
 """Judging a run: annotate it with a judge, picked by `--judge_version`
 (`JUDGE_VERSION_DICT = {"mindeval1": MindEval1Judge, "mindeval2": MindEval2Judge}`).
 
-**mindeval2** (the default) is MindJudge-27B (swordhealth/MindJudge-27B) with the prompt that ships
-with it, `mindjudge_prompt.txt`: a model (MINDEVAL_JUDGE_MODEL, `_API_BASE`, `_API_KEY`) and a
-template (MINDEVAL_JUDGE_PROMPT) with two placeholders, filled the way the model card documents:
+**mindeval2** (the default) is an MQM judge: a model (MINDEVAL_JUDGE_MODEL, `_API_BASE`, `_API_KEY`) and
+the prompt in `judge_prompts.MINDEVAL2_JUDGE_PROMPT`, which MINDEVAL_JUDGE_PROMPT can replace with a
+file (MindJudge-27B's own `mindjudge_prompt.txt`, for instance, to reproduce scores judged with it).
+The prompt has two placeholders:
 
     {conversation}   everything before the reply, as markdown blocks separated by a blank line:
                      `### System` (the counselor's system prompt as it was sent, its `# Memory`
@@ -73,9 +74,6 @@ SEVERITIES = ("No concern", "Minor", "Major", "Critical")
 SEVERITY_WEIGHT = {"No concern": 0, "Minor": 1, "Major": 5, "Critical": 10}
 _CANON = {s.lower().replace(" ", ""): s for s in SEVERITIES}
 _ROLE = {"member": "User", "counselor": "Assistant"}
-#: sha256 of MindJudge-27B's `mindjudge_prompt.txt`. The model was trained on that exact text, so a
-#: template with any other hash is reported (and still used).
-MINDJUDGE_PROMPT_SHA256 = "775f5a4c1d9b7da89bf4bee2dcb2a90a024a46a079d93aa1ab25363fe3152634"
 #: Units a fresh directory's preflight tries, one at a time, before it decides the judge cannot answer.
 PREFLIGHT_UNITS = 3
 #: Verdict fields that are not issue flags.
@@ -195,23 +193,26 @@ def _coverage(ok: list[dict], run: dict, sessions_judged: int) -> dict:
 
 
 class MindEval2Judge:
-    """MindJudge-27B's MQM: one unit per counselor reply of a finished session."""
+    """MQM: one unit per counselor reply of a finished session."""
 
-    requires_prompt_path = True
+    takes_prompt_file = True
     units_label = "replies"
 
     def __init__(self, prompt_path: Path | None = None) -> None:
-        if prompt_path is None or not prompt_path.is_file():
+        if prompt_path is None:
+            template = judge_prompts.MINDEVAL2_JUDGE_PROMPT
+        elif not prompt_path.is_file():
             raise JudgeError(f"judge prompt not found: {prompt_path}")
-        template = prompt_path.read_text(encoding="utf-8")
+        else:
+            template = prompt_path.read_text(encoding="utf-8")
         for placeholder in ("{conversation}", "{candidate}"):
             if placeholder not in template:
                 raise JudgeError(f"{prompt_path} has no {placeholder} placeholder")
         self.template = template
         self.prompt_sha256 = hashlib.sha256(template.encode()).hexdigest()
-        if self.prompt_sha256 != MINDJUDGE_PROMPT_SHA256:
-            print(f"note: {prompt_path} is not MindJudge-27B's mindjudge_prompt.txt (sha256 "
-                  f"{self.prompt_sha256[:12]}); its verdicts are not comparable with the benchmark's", flush=True)
+        if template != judge_prompts.MINDEVAL2_JUDGE_PROMPT:
+            print(f"note: {prompt_path} is not the benchmark's judge prompt (sha256 {self.prompt_sha256[:12]}); "
+                  f"its verdicts are not comparable with the benchmark's", flush=True)
 
     def units(self, member: str, episode: str, session: dict) -> list[dict]:
         # The prompt is hashed here and then dropped, not kept on the unit: it grows with the whole
@@ -289,7 +290,7 @@ class MindEval1Judge:
     """MindEval v1's five-criterion rubric: one unit per finished session with at least one
     counselor reply."""
 
-    requires_prompt_path = False
+    takes_prompt_file = False
     units_label = "sessions"
     #: The five rubric criteria, plus the two means `parse_judge_scores` derives from them.
     KEYS = ("Clinical Accuracy & Competence", "Ethical & Professional Conduct", "Assessment & Response",

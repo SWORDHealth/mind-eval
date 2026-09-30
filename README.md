@@ -9,8 +9,9 @@ A benchmark for AI mental-health counselors, played against a simulated patient 
 - **Multi-session** — 50 synthetic members, 3 sessions each, with a memory log carried between sessions.
 - **Patient simulator** — each member picks its next move with a tool call before it writes its turn,
   played from a clinical formulation and a situation that evolves between sessions.
-- **MindJudge-27B** — every counselor reply gets an MQM severity; the benchmark reports the mean and
-  p99 conversation severity over every member × session (lower is better).
+- **MQM judge** — every counselor reply gets an MQM severity from a judge model of your choice, with the
+  prompt that ships in the repo; the benchmark reports the mean and p99 conversation severity over
+  every member × session (lower is better).
 - **Both judges** — `--judge_version mindeval1` still scores each session with the original
   five-criterion rubric.
 - **Pinned arcs** — each member's schedule, time context and per-call seeds are drawn from its id,
@@ -62,16 +63,14 @@ python mindeval/scripts/generate_interactions.py --output_dir runs/<counselor>
 >Rerun the same command to resume: finished members are kept, and unfinished sessions restart.
 
 ## Run judgments
-Serve MindJudge-27B and download its prompt (the download needs `HF_TOKEN` while the model is private):
-```bash
-vllm serve swordhealth/MindJudge-27B --language-model-only --served-model-name mindjudge \
-    --trust-remote-code --tensor-parallel-size 2 --max-model-len 131072 --gpu-memory-utilization 0.9
-uvx --from huggingface_hub hf download swordhealth/MindJudge-27B mindjudge_prompt.txt --local-dir mindjudge
-```
-Then:
+Set the judge model in `MINDEVAL_JUDGE_*`, then:
 ```bash
 python mindeval/scripts/generate_judgments.py --output_dir runs/<counselor>
 ```
+>The judge prompt is `MINDEVAL2_JUDGE_PROMPT` in `mindeval/judge_prompts.py`. `MINDEVAL_JUDGE_PROMPT`
+>replaces it with a file, e.g. [MindJudge-27B](https://huggingface.co/swordhealth/MindJudge-27B)'s own
+>`mindjudge_prompt.txt` to reproduce scores judged with it; verdicts from any other prompt aren't
+>comparable with the benchmark's.
 >Rerun to resume. It can run while `generate_interactions.py` is still going: only finished sessions
 >are judged. The first pass preflights: a judge that can't return a usable verdict for any of the
 >first three units stops before spending the rest of the budget. A unit that keeps failing never
@@ -83,8 +82,7 @@ python mindeval/scripts/generate_judgments.py --output_dir runs/<counselor>
 >later pass with different params is refused (exit 2). Move `judge/<version>/` aside to judge again
 >with other settings.
 
-The original five-criterion rubric needs no prompt download, just a judge model of your choice in
-`MINDEVAL_JUDGE_*`. Its `<member_details>` is the counselor's own memory for that session — what it
+The original five-criterion rubric takes a judge model the same way. Its `<member_details>` is the counselor's own memory for that session — what it
 received in `{{ memory }}`, not the member's private profile — so a counselor that correctly recalls
 session 1 isn't scored as though it hallucinated:
 ```bash
@@ -125,12 +123,12 @@ runs/<counselor>/
 
 ## Data and license
 The 50 members are synthetic. Their persona seeds come from
-[nvidia/Nemotron-Personas-USA](https://huggingface.co/datasets/nvidia/Nemotron-Personas-USA)
-(CC BY 4.0). A language model turned them into clinical formulations, Claude Sonnet 4.6 wrote the
-session-1 situations, and a handful of words were edited by hand. The code is MIT; the profiles are
-CC BY 4.0; MindJudge-27B and its prompt are CC BY-NC-SA 4.0. MindEval 1's profiles, human annotations
-and meta-evaluation data are unchanged on the [`legacy`](https://github.com/SWORDHealth/mind-eval/tree/legacy)
-branch.
+[nvidia/Nemotron-Personas-USA](https://huggingface.co/datasets/nvidia/Nemotron-Personas-USA) (CC BY
+4.0). A language model turned them into clinical formulations, Claude Sonnet 4.6 wrote the session-1
+situations, and a handful of words were edited by hand. The code is MIT; the profiles are CC BY 4.0; the
+MQM judge prompt (`MINDEVAL2_JUDGE_PROMPT`, derived from MindJudge-27B's) is CC BY-NC-SA 4.0. MindEval
+1's profiles, human annotations and meta-evaluation data are unchanged on the
+[`legacy`](https://github.com/SWORDHealth/mind-eval/tree/legacy) branch.
 
 ## Cite
 ```bibtex

@@ -1,5 +1,6 @@
-"""The judge abstraction: `judge/mindeval1/` (v1's rubric) and `judge/mindeval2/` (MindJudge-27B's
-MQM) built and run through the real CLI, against a scripted litellm exactly like test_smoke.py's."""
+"""The judge abstraction: `judge/mindeval1/` (v1's rubric) and `judge/mindeval2/` (MQM, with the prompt
+in judge_prompts.py) built and run through the real CLI, against a scripted litellm exactly like
+test_smoke.py's."""
 
 import functools
 import hashlib
@@ -326,25 +327,44 @@ def test_mindeval1_is_not_blocked_by_mindeval2s_lock(tmp_path, monkeypatch):
     assert result["mindeval2"] == 0
 
 
-def test_judge_prompt_env_required_only_for_mindeval2(tmp_path, monkeypatch, capsys):
+#: sha256 of `judge_prompts.MINDEVAL2_JUDGE_PROMPT`, the prompt the MindEval 2 judges were validated with. Every
+#: mindeval2 verdict depends on this text, so a change here is a different benchmark judge.
+MINDEVAL2_JUDGE_PROMPT_SHA256 = "f7c660a806c46dacd79826c23ff981991dc2c4b4f5d03d160d3446da6289c444"
+
+
+def test_mindeval2_judge_prompt_is_pinned():
+    prompt = judge_prompts.MINDEVAL2_JUDGE_PROMPT
+    assert hashlib.sha256(prompt.encode()).hexdigest() == MINDEVAL2_JUDGE_PROMPT_SHA256
+    assert prompt.count("{conversation}") == 1 and prompt.count("{candidate}") == 1
+
+
+def test_mindeval2_uses_the_built_in_prompt_unless_given_a_file(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _clear_env(monkeypatch)
     _set_judge_env(monkeypatch)  # no prompt_path: MINDEVAL_JUDGE_PROMPT stays unset
 
     out = tmp_path / "run"
     _write_run(out, members=1, sessions=1)
-    _write_session(out, "m000", "ep000", opening="hi", replies=["how are you?"], formulation="Zeta is 27.")
+    _write_session(out, "m000", "ep000", opening="hi", replies=["how are you?"], formulation="Zeta is 27.",
+                   counselor_system_prompt="You are a counselor.")
+    prompts = []
 
+    def completion(**kw):
+        prompts.append(kw["messages"][0]["content"])
+        return _response('It asks a good question.\n{"severity": "No concern", "vague": 0, "other": 0}')
+
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
+    assert judgments("--output_dir", str(out), "--judge_version", "mindeval2", "--max_workers", "1") == 0
+    head, rest = judge_prompts.MINDEVAL2_JUDGE_PROMPT.split("{conversation}")
+    tail = rest.split("{candidate}")[1]
+    assert prompts and all(p.startswith(head) and p.endswith(tail) for p in prompts)
+    identity = json.loads((out / "judge" / "mindeval2" / "judge.json").read_text())
+    assert identity["prompt"] == "built-in" and identity["prompt_sha256"] == MINDEVAL2_JUDGE_PROMPT_SHA256
+
+    # mindeval1 takes no prompt file, so a MINDEVAL_JUDGE_PROMPT meant for mindeval2 doesn't stop it.
+    monkeypatch.setenv("MINDEVAL_JUDGE_PROMPT", str(tmp_path / "absent.txt"))
     monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=lambda **kw: _response(_v1_answer(ALPHA))))
     assert judgments("--output_dir", str(out), "--judge_version", "mindeval1", "--max_workers", "1") == 0
-
-    def refuses_any_call(**kw):
-        raise AssertionError("mindeval2 must refuse before any call is made")
-
-    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=refuses_any_call))
-    rv = judgments("--output_dir", str(out), "--judge_version", "mindeval2", "--max_workers", "1")
-    assert rv == 2
-    assert "MINDEVAL_JUDGE_PROMPT" in capsys.readouterr().err
 
 
 def test_fingerprint_is_pinned():

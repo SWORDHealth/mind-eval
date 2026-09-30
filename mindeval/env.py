@@ -75,6 +75,11 @@ def endpoint(role: str, missing: list[str]) -> Endpoint | None:
     return Endpoint(model=model, api_base=api_base, api_key=api_key)
 
 
+def optional(name: str, missing: list[str]) -> str | None:
+    """A variable that may be unset; one still holding the .env.example placeholder goes to `missing`."""
+    return _get(name, missing)
+
+
 def required(name: str, missing: list[str]) -> str | None:
     value = _get(name, missing)
     if value is None and not any(m.startswith(PREFIX + name) for m in missing):
