@@ -26,7 +26,7 @@ from mindeval.config import PACKAGE_DIR, CallSpec, Config, load_config
 from mindeval.member import build_member
 from mindeval.models import MemberRow
 from mindeval.session import Counselor, counselor_template
-from mindeval.utils import InputError, hold_lock, release_locks
+from mindeval.utils import InputError, check_params, hold_lock, release_locks
 
 DEFAULT_PROFILES = PACKAGE_DIR.parent / "data" / "profiles.jsonl"
 DEFAULT_COUNSELOR = PACKAGE_DIR.parent / "examples" / "counselor_system.j2"
@@ -193,9 +193,7 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
         counselor_params = counselor_params or {}
         patient_params = patient_params or {}
         for flag, params in (("--counselor_params", counselor_params), ("--patient_params", patient_params)):
-            if {"model", "messages", "api_base", "api_key"} & set(params):
-                raise InputError(f"{flag} may not set model, messages, api_base or api_key "
-                                 "(those come from MINDEVAL_*)")
+            check_params(flag, params)
 
         cfg = load_config()
         if not counselor_system_prompt_path.is_file():

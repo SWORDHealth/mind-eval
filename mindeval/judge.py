@@ -341,9 +341,10 @@ def judge_run(out: Path, version: str, spec: CallSpec, *, workers: int, limit: i
                 done[v["key"], v["input_sha"]] = v
 
     # One directory holds one judge. The identity is pinned by the first verdict that succeeds, so a
-    # mistyped model or a bad template that never produced a verdict can simply be corrected.
+    # mistyped model, a bad template or different (screened) params that never produced a verdict can
+    # simply be corrected.
     identity = {"model": spec.model, "prompt_sha256": judge.prompt_sha256, "temperature": spec.temperature,
-                "max_tokens": spec.max_tokens, "version": version}
+                "max_tokens": spec.max_tokens, "version": version, "params": spec.params}
     if judge.reference_sha256 and identity["prompt_sha256"] != judge.reference_sha256:
         print(f"note: {prompt_path} is not MindJudge-27B's mindjudge_prompt.txt (sha256 "
               f"{identity['prompt_sha256'][:12]}); its verdicts are not comparable with the benchmark's",
@@ -405,8 +406,8 @@ def judge_run(out: Path, version: str, spec: CallSpec, *, workers: int, limit: i
         if "_error" in first:
             raise JudgeError(f"preflight: the judge did not return a usable verdict: {first['_error']}")
         meta_path.write_text(json.dumps({**identity, "api_base": spec.api_base,
-                                         "prompt": str(prompt_path) if prompt_path else "built-in",
-                                         "params": spec.params}, indent=2) + "\n")
+                                         "prompt": str(prompt_path) if prompt_path else "built-in"},
+                                        indent=2) + "\n")
         pool = ThreadPoolExecutor(max_workers=workers)
         try:
             for f in as_completed([pool.submit(one, u) for u in batch[1:]]):

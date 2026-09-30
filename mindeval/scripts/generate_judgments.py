@@ -13,7 +13,7 @@ from jsonargparse import CLI
 from mindeval import env
 from mindeval.config import CallSpec
 from mindeval.judge import JudgeError, judge_run
-from mindeval.utils import InputError, hold_lock, release_locks
+from mindeval.utils import InputError, check_params, hold_lock, release_locks
 
 
 def _missing(names: list[str]) -> InputError:
@@ -21,7 +21,7 @@ def _missing(names: list[str]) -> InputError:
 
 
 def main(output_dir: Path, judge_version: Literal["mindeval1", "mindeval2"] = "mindeval2",
-         judge_temperature: float | None = 1.0, judge_max_tokens: int = 16384, judge_params: dict = {},
+         judge_temperature: float | None = 1.0, judge_max_tokens: int = 16384, judge_params: dict | None = None,
          judge_timeout: float = 1800, judge_retries: int = 3, max_workers: int = 16, limit: int = 0) -> int:
     """Annotates a run's finished sessions with the judge that judge_version picks.
 
@@ -39,7 +39,8 @@ def main(output_dir: Path, judge_version: Literal["mindeval1", "mindeval2"] = "m
             MindEval v1's five-criterion rubric, one verdict per session, and needs neither
         judge_temperature: null to leave it unsent
         judge_max_tokens: room for the judge's reasoning and verdict
-        judge_params: JSON merged into every request, e.g. '{"reasoning_effort": "high"}'
+        judge_params: JSON merged into every request, e.g. '{"reasoning_effort": "high"}'; part of the
+            judge's identity, so a later pass with different params is refused like a different model
         judge_timeout: seconds per request
         judge_retries: attempts per unit
         max_workers: units judged in parallel
@@ -52,6 +53,8 @@ def main(output_dir: Path, judge_version: Literal["mindeval1", "mindeval2"] = "m
     try:
         if max_workers < 1 or judge_retries < 1 or judge_timeout <= 0:
             raise InputError("--max_workers and --judge_retries must be at least 1, and --judge_timeout positive")
+        judge_params = judge_params or {}
+        check_params("--judge_params", judge_params)
         missing: list[str] = []
         je = env.endpoint("JUDGE", missing)
         prompt = env.required("JUDGE_PROMPT", missing) if judge_version == "mindeval2" else None

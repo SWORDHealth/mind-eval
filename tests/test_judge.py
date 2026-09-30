@@ -326,3 +326,55 @@ def test_mindeval1_prompt_keeps_v1_rubric():
     marker = "Now, consider a new instance:"
     prefix = template[:template.index(marker) + len(marker)]
     assert hashlib.sha256(prefix.encode()).hexdigest() == V1_RUBRIC_PREFIX_SHA256
+
+
+def test_judge_params_with_api_key_is_refused_and_never_written(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _clear_env(monkeypatch)
+    prompt_path = tmp_path / "judge_prompt.txt"
+    prompt_path.write_text("Judge this reply.\n{conversation}\n\n{candidate}\n")
+    _set_judge_env(monkeypatch, prompt_path=prompt_path)
+
+    out = tmp_path / "run"
+    _write_run(out, members=1, sessions=1)
+    _write_session(out, "m000", "ep000", opening="hi", replies=["how are you?"], formulation="Theta is 29.",
+                  counselor_system_prompt="Be kind.")
+
+    def refuses_any_call(**kw):
+        raise AssertionError("a screened --judge_params must be refused before any call is made")
+
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=refuses_any_call))
+    rv = judgments("--output_dir", str(out), "--judge_version", "mindeval2", "--max_workers", "1",
+                   "--judge_params", '{"api_key": "sk-leak"}')
+    assert rv == 2
+    assert not (out / "judge").exists()  # refused before the lock (and so the directory) is even created
+
+
+def test_judge_params_are_part_of_the_judge_identity(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _clear_env(monkeypatch)
+    prompt_path = tmp_path / "judge_prompt.txt"
+    prompt_path.write_text("Judge this reply.\n{conversation}\n\n{candidate}\n")
+    _set_judge_env(monkeypatch, prompt_path=prompt_path)
+
+    out = tmp_path / "run"
+    _write_run(out, members=1, sessions=1)
+    _write_session(out, "m000", "ep000", opening="hi", replies=["how are you?"], formulation="Iota is 36.",
+                  counselor_system_prompt="Be kind.")
+
+    seen_params = []
+
+    def completion(**kw):
+        seen_params.append(kw.get("reasoning_effort"))
+        return _response('<think>ok</think>{"severity": "Minor", "vague": 0, "other": 1}')
+
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
+    args = ["--output_dir", str(out), "--judge_version", "mindeval2", "--max_workers", "1"]
+    assert judgments(*args, "--judge_params", '{"reasoning_effort": "low"}') == 0
+    identity = json.loads((out / "judge/mindeval2/judge.json").read_text())
+    assert identity["params"] == {"reasoning_effort": "low"} and seen_params == ["low"]
+
+    # a later pass with different params, once verdicts exist, is refused like a different model
+    rv = judgments(*args, "--judge_params", '{"reasoning_effort": "high"}')
+    assert rv == 2 and seen_params == ["low"]  # refused before any call
+    assert json.loads((out / "judge/mindeval2/judge.json").read_text())["params"] == {"reasoning_effort": "low"}

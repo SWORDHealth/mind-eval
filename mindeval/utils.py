@@ -31,6 +31,14 @@ def release_locks() -> None:
         _HELD.pop().close()
 
 
+def check_params(flag: str, params: dict) -> None:
+    """Refuse model, messages, api_base or api_key in a `--*_params` flag: those come from the
+    MINDEVAL_* environment, and letting them through would silently override the endpoint or leak a
+    key into run.json / judge.json."""
+    if {"model", "messages", "api_base", "api_key"} & set(params):
+        raise InputError(f"{flag} may not set model, messages, api_base or api_key (those come from MINDEVAL_*)")
+
+
 def messages_to_convo_str(lst):
     out_str = ""
     for turn in lst:
