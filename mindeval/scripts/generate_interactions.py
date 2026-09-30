@@ -22,7 +22,7 @@ from pydantic import ValidationError
 
 from mindeval import __version__, env, llm
 from mindeval.arc import counselor_memory, member_seed, run_arc, set_aside_partial
-from mindeval.config import PACKAGE_DIR, CallSpec, Config, load_config
+from mindeval.config import PACKAGE_DIR, SEED_FINGERPRINT, CallSpec, Config, load_config
 from mindeval.member import build_member
 from mindeval.models import MemberRow
 from mindeval.session import Counselor, counselor_template
@@ -32,7 +32,7 @@ DEFAULT_PROFILES = PACKAGE_DIR.parent / "data" / "profiles.jsonl"
 DEFAULT_COUNSELOR = PACKAGE_DIR.parent / "examples" / "counselor_system.j2"
 #: The fields of run.json that make two invocations the same benchmark run. Endpoints, timeouts,
 #: retries and the worker count may change between invocations; these may not.
-IDENTITY = ("mindeval_version", "fingerprint", "patient.model", "counselor.model",
+IDENTITY = ("mindeval_version", "fingerprint", "seed_namespace", "patient.model", "counselor.model",
             "counselor.system_prompt_sha256", "counselor.temperature", "counselor.max_tokens",
             "counselor.params", "patient.params", "patient.max_tokens", "patient.force_move",
             "profiles.sha256", "sessions", "max_turns", "seed")
@@ -88,6 +88,9 @@ def run_manifest(counselor_system_prompt_path: Path, profiles_path: Path, sessio
                  rows: list[MemberRow]) -> dict:
     return {
         "mindeval_version": __version__, "git": _git_describe(), "fingerprint": cfg.fingerprint,
+        # What every arc is drawn from (config.SEED_FINGERPRINT). An identity field of its own: a run
+        # started before it was pinned has the same version and fingerprint but other draws, and none.
+        "seed_namespace": SEED_FINGERPRINT,
         "patient": {"model": patient.model, "api_base": patient.api_base, "temperature": patient.temperature,
                     "max_retries": patient.max_retries, "timeout": patient.timeout, "params": patient.params,
                     "max_tokens": patient.max_tokens, "force_move": patient.force_move},

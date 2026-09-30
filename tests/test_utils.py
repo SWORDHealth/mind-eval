@@ -7,6 +7,7 @@ import pytest
 from conftest import _clear_env, interactions, judgments
 
 from mindeval.config import load_config
+from mindeval.scripts import generate_interactions
 from mindeval.utils import InputError, deep_merge, hold_lock
 
 
@@ -25,13 +26,26 @@ def test_deep_merge_a_non_dict_override_wins_outright():
     assert deep_merge({"a": {"b": 1}}, {"a": 5}) == {"a": 5}
 
 
-def test_patient_params_deep_merge_keeps_the_vllm_providers_own_extra_body():
+def test_patient_params_deep_merge_keeps_the_vllm_providers_own_extra_body(tmp_path, monkeypatch):
     """--patient_params is layered onto config/patient.yaml's provider params with deep_merge, not a
     shallow **-merge: an unrelated extra_body override must not drop the provider's own
-    chat_template_kwargs.enable_thinking."""
+    chat_template_kwargs.enable_thinking. Checked on the CallSpec generate_interactions.py builds."""
+    monkeypatch.chdir(tmp_path)
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("MINDEVAL_PATIENT_MODEL", "hosted_vllm/some-model")
+    monkeypatch.setenv("MINDEVAL_COUNSELOR_MODEL", "openai/counselor")
+    seen = {}
+
+    def preflight(cfg, row, counselor, patient):  # the first thing to use the patient spec; no call is made
+        seen["params"] = patient.params
+        raise InputError("stop here")
+
+    monkeypatch.setattr(generate_interactions, "preflight", preflight)
+    assert interactions("--output_dir", str(tmp_path / "run"), "--members", "1",
+                        "--patient_params", '{"extra_body": {"something_else": true}}') == 2
     provider = load_config().patient.provider("hosted_vllm/some-model")
-    merged = deep_merge(provider.params, {"extra_body": {"something_else": True}})
-    assert merged["extra_body"] == {"chat_template_kwargs": {"enable_thinking": True}, "something_else": True}
+    assert provider.params["extra_body"] == {"chat_template_kwargs": {"enable_thinking": True}}
+    assert seen["params"]["extra_body"] == {"chat_template_kwargs": {"enable_thinking": True}, "something_else": True}
 
 
 def test_hold_lock_refuses_contention_as_an_input_error(tmp_path):

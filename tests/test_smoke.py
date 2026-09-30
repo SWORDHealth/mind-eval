@@ -93,6 +93,7 @@ def test_two_members_two_sessions_then_the_judge(tmp_path, monkeypatch):
 
     run = json.loads((out / "run.json").read_text())
     assert run["members"] == 2 and run["sessions"] == 2 and run["fingerprint"] and run["finished"]
+    assert run["seed_namespace"] == "7962e7caed157571"
     assert "key" not in (out / "run.json").read_text()
     arc = out / "members" / ROWS[0]["member_id"] / "arc"
     assert (arc / "arc.json").is_file() and not (arc / "_state.json").exists()
@@ -128,6 +129,10 @@ def test_two_members_two_sessions_then_the_judge(tmp_path, monkeypatch):
     monkeypatch.setenv("MINDEVAL_COUNSELOR_MODEL", "openai/other")
     assert interactions(*_args(out, members=2)) == 2              # a different counselor: refused
     monkeypatch.setenv("MINDEVAL_COUNSELOR_MODEL", COUNSELOR)
+    as_written = (out / "run.json").read_text()                   # as a run started before seeds were pinned
+    (out / "run.json").write_text(json.dumps({k: v for k, v in run.items() if k != "seed_namespace"}))
+    assert interactions(*_args(out, members=2)) == 2              # other draws under one run.json: refused
+    (out / "run.json").write_text(as_written)
 
     resumed = tmp_path / "resumed"
     state["fail_compaction"] = True
