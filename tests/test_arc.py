@@ -57,6 +57,42 @@ def test_compact_log_retries_with_backoff(monkeypatch):
     assert pauses == [1, 2]  # backoff before the 2nd and 3rd attempts, none after the last one
 
 
+def test_compact_log_keeps_the_newest_entries_of_an_overshooting_log(monkeypatch):
+    """compact_log itself, not just _trim_log: a model that returns more entries than max_entries must
+    not lose the session that just ended (the newest entries)."""
+    log = "\n".join(f"- entry {i}" for i in range(5))
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=lambda **kw: _text_response(log)))
+    session = SimpleNamespace(member_messages=[{"role": "assistant", "content": "hi"}])
+    entries = arc_mod.compact_log([], session, PATIENT, max_entries=3, arc_seed=0, arc_id="a", episode_id=0)
+    assert entries == ["entry 2", "entry 3", "entry 4"]
+
+
+def test_patient_calls_between_sessions_strip_an_inline_reasoning_trace(monkeypatch):
+    """A patient served without a reasoning parser returns "trace</think>answer" as its content, as
+    the member calls already handle: compaction must not read the trace as a log line, and evolution
+    must not take a JSON object drafted inside the trace for the answer."""
+    monkeypatch.setattr(arc_mod, "_pause", lambda attempt: None)
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=lambda **kw: _text_response(
+        "Okay, the member said hi.\nI should log that.\n</think>\n- Member said hi.")))
+    session = SimpleNamespace(member_messages=[{"role": "assistant", "content": "hi"}])
+    assert arc_mod.compact_log([], session, PATIENT, max_entries=5, arc_seed=0, arc_id="a",
+                               episode_id=0) == ["Member said hi."]
+
+    fields = {"automatic_thoughts": ["t"], "behaviors": ["b"], "physical": [], "goal": None, "checkpoints": [],
+              "opening_message": "hi again"}
+    draft, final = {**fields, "event": "draft"}, {**fields, "event": "The week went on."}
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=lambda **kw: _text_response(
+        f"Draft: {json.dumps(draft)}\n</think>\n{json.dumps(final)}")))
+    cfg = load_config()
+    row = next(MemberRow.model_validate_json(line) for line in
+              (ROOT / "data/profiles.jsonl").read_text().splitlines() if '"m000119"' in line)
+    beat = next(iter(cfg.episode.episode_beats.vocabulary))
+    situation = arc_mod.evolve_situation(cfg, row, row.situation, SimpleNamespace(agenda=None, member_messages=[]),
+                                         2.0, PATIENT, arc_seed=0, arc_id="a", episode_id=1, now_line="now",
+                                         beat=beat)
+    assert situation.event == "The week went on."
+
+
 def test_evolve_situation_retries_with_backoff(monkeypatch):
     pauses = []
     monkeypatch.setattr(arc_mod, "_pause", lambda attempt: pauses.append(attempt))

@@ -227,9 +227,12 @@ def compact_log(prior: list[str], session: SessionRecord, patient: CallSpec, *, 
     err = None
     for attempt in range(3):
         try:
-            text, _ = llm.call_messages([{"role": "user", "content": prompt}], patient.model, patient.api_base,
-                                        patient.temperature, patient.max_tokens, COMPACT_TIMEOUT, seed=seed + attempt,
-                                        params=patient.params, api_key=patient.api_key)
+            text, meta = llm.call_messages([{"role": "user", "content": prompt}], patient.model, patient.api_base,
+                                           patient.temperature, patient.max_tokens, COMPACT_TIMEOUT,
+                                           seed=seed + attempt, params=patient.params, api_key=patient.api_key)
+            # A patient served without a reasoning parser returns "trace</think>log": the member calls
+            # already split that off, and the log is only the part after it.
+            text, _ = llm.split_inline_trace(text, meta)
             entries = _trim_log(parse_log(text), max_entries)
             if not entries:
                 raise ValueError("empty log")
@@ -262,9 +265,10 @@ def evolve_situation(cfg: Config, row: MemberRow, prev: Situation, last: Session
     err = None
     for attempt in range(3):
         try:
-            raw, _ = llm.call_messages([{"role": "user", "content": prompt}], patient.model, patient.api_base,
-                                       patient.temperature, patient.max_tokens, patient.timeout, seed=seed + attempt,
-                                       params=patient.params, api_key=patient.api_key)
+            raw, meta = llm.call_messages([{"role": "user", "content": prompt}], patient.model, patient.api_base,
+                                          patient.temperature, patient.max_tokens, patient.timeout,
+                                          seed=seed + attempt, params=patient.params, api_key=patient.api_key)
+            raw, _ = llm.split_inline_trace(raw, meta)  # as in compact_log: a JSON drafted in the trace is not it
             if not raw.strip():
                 raise ValueError("empty model output")
             parsed = llm.parse_json(raw)
