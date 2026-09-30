@@ -10,6 +10,7 @@ own; the harness speaks only through tool results.
 
 from __future__ import annotations
 
+import json
 import random
 import re
 import time
@@ -209,6 +210,7 @@ class Member:
                     seed=provider_seed(seed + attempt - 1), tools=[self.tool],
                     tool_choice=FORCE_MOVE if self.spec.force_move else "auto", params=self.spec.params,
                     api_key=self.spec.api_key)
+                content, meta = llm.split_inline_trace(content, meta)
                 if not _calls_to(meta, TOOL_NAME) and not content.strip():
                     raise EmptyCompletion(f"no tool call and no content (finish_reason={meta.get('finish_reason')})")
                 last = None
@@ -232,12 +234,23 @@ class Member:
         raw = _calls_to(meta, TOOL_NAME)
         if raw:
             via, arguments, call_id = "tool_call", raw[0].get("arguments") or "", raw[0].get("id")
+            call_arguments = arguments
         else:
             # A server that does not honour a forced function answers in prose; the move is parsed
             # out of it, and `via` records which mechanism produced it.
             via, arguments, call_id = "content_json", content, None
+            # The synthetic commit_move call's arguments must stay valid JSON whatever the model
+            # actually said: the prose itself, appended as-is, breaks a later call's history
+            # conversion (Anthropic parses a tool_use's input as JSON), ending the session before any
+            # HTTP request is made. `arguments` (below, and on the turn's trace) keeps the prose
+            # itself; only the convo entry is ever synthesized.
+            try:
+                parsed = llm.parse_json(content)
+                call_arguments = json.dumps(parsed) if isinstance(parsed, dict) else "{}"
+            except Exception:  # noqa: BLE001
+                call_arguments = "{}"
 
-        self._append_call(arguments, call_id)
+        self._append_call(call_arguments, call_id)
         try:
             move = Move.model_validate(llm.parse_json(arguments))
             for name in (move.move, move.secondary_move):
@@ -280,16 +293,20 @@ class Member:
             choice = "auto" if allow_todos else None
             t0 = time.monotonic()
             last: Exception | None = None
-            text, meta, calls, hygiene, stray = "", {}, [], [], None
             #: Every attempt's verdict, kept whether or not the turn ends up clean.
             attempts: list[dict] = []
             for attempt in range(1, self.spec.max_retries + 1):
+                # Reset per attempt, not per while-iteration: an attempt that raises early (a stray
+                # commit already at MAX_STRAY_COMMITS) must not leave `stray` (or `hygiene`) for a
+                # later, clean attempt to be mistaken by, as commit() resets `content`/`meta` at L204.
+                text, meta, calls, hygiene, stray = "", {}, [], [], None
                 try:
                     text, meta = llm.call_messages(
                         self.convo, self.spec.model, self.spec.api_base, self.spec.temperature,
                         self.spec.max_tokens, self.spec.timeout,
                         seed=provider_seed(seed + attempt + todo_calls * 7 + strays * 13),
                         tools=tools, tool_choice=choice, params=self.spec.params, api_key=self.spec.api_key)
+                    text, meta = llm.split_inline_trace(text, meta)
                     calls = [c for c in (meta.get("tool_calls") or [])
                              if c.get("name") in ("complete_todo", "add_todo")] if allow_todos else []
                     if not calls and not text.strip():
@@ -375,6 +392,26 @@ class Member:
                 "ms": round((time.monotonic() - t0) * 1000, 1)}
 
 
+#: A sentence boundary: `.`/`!`/`?` followed by whitespace. Paragraph breaks (a literal newline, from
+#: a folded YAML block's blank line) are kept as their own unit, split on separately below.
+_SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+")
+
+
+def _without_avoided_moves(text: str, avoided: set[str]) -> str:
+    """Drop any sentence naming a move `avoided` names. An archetype removes a move from the tool
+    enum and the vocab check, but knobs.yaml and style2.yaml still name moves in prose (backticked or
+    not) to describe when a member reaches for them; left alone, that keeps telling the member to use
+    a move it can no longer actually commit. A line naming no avoided move is returned unchanged."""
+    if not avoided or not any(m in text for m in avoided):
+        return text
+    paragraphs = []
+    for para in text.split("\n"):
+        sentences = _SENTENCE_BREAK.split(para)
+        kept = [s for s in sentences if not any(re.search(rf"\b{re.escape(m)}\b", s) for m in avoided)]
+        paragraphs.append(" ".join(kept))
+    return "\n".join(paragraphs)
+
+
 def _style(cfg: Config, knobs: Knobs, knob_lines: list[str]) -> tuple[list[str], str, str, str, str | None]:
     """The style layer (config/style2.yaml): the writing-style sentence with its casing appended,
     the verbosity sentence, the orthography rule, the example turns, and the writing cue."""
@@ -397,12 +434,16 @@ def build_member(cfg: Config, row: MemberRow, situation: Situation, knobs: Knobs
                  memory_text: str | None = None, time_context: str | None = None) -> Member:
     """The member for one session. `knobs` are this session's (concealment and affect move across
     sessions); `memory_text` is the running log as the member carries it, None in session 1."""
-    knob_lines = cfg.knob_lines(knobs, exclude=("verbosity",))
-    knob_lines, verbosity_line, style_rule, style_examples, write_cue = _style(cfg, knobs, knob_lines)
     # An archetype removes moves from the repertoire wholesale: the tool enum, the parse-boundary
-    # check and the prompt's move list alike.
+    # check, and any sentence in the knob or style prose that would tell the member to reach for one
+    # by name (knobs.yaml and style2.yaml name moves the tool enum may not offer at all).
     archetype = cfg.archetypes.archetypes[row.archetype] if row.archetype else None
     avoided = set(archetype.avoided_moves) if archetype else set()
+
+    knob_lines = cfg.knob_lines(knobs, exclude=("verbosity",))
+    knob_lines, verbosity_line, style_rule, style_examples, write_cue = _style(cfg, knobs, knob_lines)
+    knob_lines = [_without_avoided_moves(line, avoided) for line in knob_lines]
+    secondary_note = _without_avoided_moves(cfg.style2.secondary_note, avoided)
     repertoire = {name: desc for name, desc in cfg.moves.moves.items() if name not in avoided}
     described = {**repertoire, **{m: d for m, d in cfg.style2.move_descriptions.items() if m in repertoire}}
     move_lines = [f"`{name}` — {desc}" for name, desc in described.items()]
@@ -444,7 +485,7 @@ def build_member(cfg: Config, row: MemberRow, situation: Situation, knobs: Knobs
         verbosity_line=verbosity_line,
         style_rule=style_rule,
         style_examples=style_examples,
-        secondary_note=cfg.style2.secondary_note,
+        secondary_note=secondary_note,
         memory_text=memory_text,
         time_context=time_context,
         move_lines=move_lines,
