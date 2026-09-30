@@ -13,11 +13,9 @@ A benchmark for AI mental-health counselors, played against a simulated patient 
   p99 conversation severity over every member × session (lower is better).
 - **Both judges** — `--judge_version mindeval1` still scores each session with the original
   five-criterion rubric.
-- **Same arcs as the internal build** — member schedules, time context and per-call seeds are pinned
-  to match MindEval2 @ a18de8be exactly, so the two are still reproducible against each other;
-  behaviour differs only by bug fixes made during this port's review (a judge preflight that could
-  stall a run for good, a stray reply dropped mid-session, an avoided move still named in a member's
-  own prompt, and a handful more — see the commit history on `mindeval2-port`).
+- **Pinned arcs** — each member's schedule, time context and per-call seeds are drawn from its id,
+  `--seed` and a fixed namespace, never from the config's bytes: every counselor meets the same arcs
+  (the ones MindEval 2 was developed on), and an edit such as a comment never re-draws the benchmark.
 
 ## Installation
 ```bash
@@ -75,14 +73,15 @@ Then:
 python mindeval/scripts/generate_judgments.py --output_dir runs/<counselor>
 ```
 >Rerun to resume. It can run while `generate_interactions.py` is still going: only finished sessions
->are judged. The first pass preflights: a judge that can't return one usable verdict stops before
->spending the rest of the budget. After that, a unit that keeps failing no longer blocks the ones
->after it.
+>are judged. The first pass preflights: a judge that can't return a usable verdict for any of the
+>first three units stops before spending the rest of the budget. A unit that keeps failing never
+>blocks the ones after it; it stays pending.
 
 >Provider-specific judge settings go in `--judge_params`, e.g. `'{"reasoning_effort": "high"}'`; like
->`--counselor_params`/`--patient_params` it can't set `model`, `api_base` or `api_key`, and it's part
->of the judge's identity, so a later pass with different params starts a new judge directory instead
->of mixing into the same verdicts.
+>`--counselor_params`/`--patient_params` it can't set `model`, `api_base` or `api_key`. It's part of
+>the judge's identity, like the model, prompt, temperature and max tokens: once a verdict exists, a
+>later pass with different params is refused (exit 2). Move `judge/<version>/` aside to judge again
+>with other settings.
 
 The original five-criterion rubric needs no prompt download, just a judge model of your choice in
 `MINDEVAL_JUDGE_*`. Its `<member_details>` is the counselor's own memory for that session — what it
