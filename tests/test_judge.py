@@ -15,6 +15,7 @@ from mindeval.arc import counselor_memory
 from mindeval.config import load_config
 from mindeval.judge import MindEval1Judge
 from mindeval.scripts import generate_interactions, generate_judgments
+from mindeval.utils import parse_judge_scores
 
 JUDGE, JUDGE_KEY = "openai/judge", "judge-key"
 #: Two members' fixed scores, chosen so every criterion mean differs (a column swap would be caught).
@@ -125,6 +126,8 @@ def test_mindeval1_happy_path(tmp_path, monkeypatch):
     verdicts = [json.loads(line) for line in (jdir / "verdicts.jsonl").read_text().splitlines()]
     assert len(verdicts) == 4 and len(prompts) == 4          # 2 members x 2 sessions, not x 2 replies
     assert all(v["key"].count("/") == 1 for v in verdicts)    # "member/episode", no per-reply "/tN"
+    assert all(v["answer"].strip().endswith(f"{ALPHA['AI-Specific Communication Quality']}")
+              or v["answer"].strip().endswith(f"{BETA['AI-Specific Communication Quality']}") for v in verdicts)
 
     summary = json.loads((jdir / "summary.json").read_text())
     assert summary["means"] == {
@@ -184,6 +187,8 @@ def test_missing_criterion_is_never_accepted(tmp_path, monkeypatch):
     verdicts = [json.loads(line) for line in (out / "judge/mindeval1/verdicts.jsonl").read_text().splitlines()]
     assert len(verdicts) == 1 and "_error" in verdicts[0]
     assert not (set(MindEval1Judge.KEYS) & set(verdicts[0]))  # never a silently-defaulted score (incl. no "3")
+    # a snippet of the unparseable answer travels with the error, so it can be audited without a re-judge
+    assert "Assessment & Response" in verdicts[0]["_error"] and "weighing it" in verdicts[0]["_error"]
 
 
 def test_mindeval2_refuses_missing_counselor_system_prompt(tmp_path, monkeypatch, capsys):
@@ -392,3 +397,16 @@ def test_judge_params_are_part_of_the_judge_identity(tmp_path, monkeypatch):
     rv = judgments(*args, "--judge_params", '{"reasoning_effort": "high"}')
     assert rv == 2 and seen_params == ["low"]  # refused before any call
     assert json.loads((out / "judge/mindeval2/judge.json").read_text())["params"] == {"reasoning_effort": "low"}
+
+
+def test_parse_judge_scores_takes_the_last_match_per_criterion():
+    # Commentary before the ratings (e.g. restating a criterion while discussing it) must not be
+    # mistaken for the score itself; only the rating that follows, in the fixed output format, counts.
+    text = ("Clinical Accuracy & Competence: 2 issues stand out here, but overall it's solid.\n"
+            "Clinical Accuracy & Competence: 5\n"
+            "Ethical & Professional Conduct: 4\n"
+            "Assessment & Response: 3\n"
+            "Therapeutic Relationship & Alliance: 3\n"
+            "AI-Specific Communication Quality: 3\n")
+    scores = parse_judge_scores(text)[0]
+    assert scores["Clinical Accuracy & Competence"] == 5

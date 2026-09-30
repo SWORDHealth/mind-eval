@@ -41,7 +41,9 @@ Output, under `<out>/judge/<version>/`:
     verdicts.jsonl   appended, one line per judgement: member, episode, turn (mindeval2 only), the
                      judge's own fields, usage. A unit already judged on the same input
                      (`input_sha`) is skipped; an errored one (`_error`) is retried. Error lines and
-                     lines for inputs that changed stay in the file and do not count.
+                     lines for inputs that changed stay in the file and do not count. mindeval1 rows
+                     also keep the judge's answer (truncated) and its reasoning, if any, so a mis-parse
+                     can be audited or re-parsed without paying for a new judgement.
     summary.json     the version's own aggregation (MQM for mindeval2, per-criterion means for
                      mindeval1), coverage against run.json, and units still pending.
 
@@ -196,12 +198,25 @@ class MindEval2Judge:
         self.prompt_sha256 = hashlib.sha256(template.encode()).hexdigest()
 
     def units(self, member: str, episode: str, session: dict) -> list[dict]:
+        # The prompt is hashed here and then dropped, not kept on the unit: it grows with the whole
+        # conversation so far, so holding one per counselor reply is quadratic in session length.
+        # `render` rebuilds it from `turns` (shared, not copied, across this session's units) when the
+        # unit is actually judged.
         turns, system_prompt = session["turns"], session["counselor_system_prompt"]
-        return [{"key": f"{member}/{episode}/t{t['turn']}", "member": member, "episode": episode,
-                "turn": t["turn"], "prompt": render_prompt(self.template, system_prompt, turns, i)}
-               for i, t in enumerate(turns) if t["speaker"] == "counselor"]
+        out = []
+        for i, t in enumerate(turns):
+            if t["speaker"] != "counselor":
+                continue
+            sha = hashlib.sha256(render_prompt(self.template, system_prompt, turns, i).encode()).hexdigest()[:16]
+            out.append({"key": f"{member}/{episode}/t{t['turn']}", "input_sha": sha, "member": member,
+                       "episode": episode, "turn": t["turn"], "turns": turns, "system_prompt": system_prompt,
+                       "index": i})
+        return out
 
-    def parse(self, text: str) -> dict:
+    def render(self, unit: dict) -> str:
+        return render_prompt(self.template, unit["system_prompt"], unit["turns"], unit["index"])
+
+    def parse(self, text: str, meta: dict) -> dict:
         return parse_verdict(text)
 
     def summarize(self, verdicts: list[dict], run: dict) -> dict:
@@ -265,6 +280,9 @@ class MindEval1Judge:
     KEYS = ("Clinical Accuracy & Competence", "Ethical & Professional Conduct", "Assessment & Response",
             "Therapeutic Relationship & Alliance", "AI-Specific Communication Quality",
             "Overall score", "Average score")
+    #: A row's answer text is kept in full up to this length, so a mis-parse can be audited or
+    #: re-parsed without paying for a new judgement.
+    ANSWER_MAX_CHARS = 4000
 
     def __init__(self, prompt_path: Path | None = None) -> None:  # unused; kept for a uniform constructor
         self.template = judge_prompts.JUDGE_PROMPT_TEMPLATE
@@ -280,11 +298,19 @@ class MindEval1Judge:
                    for t in turns]
         prompt = self.template.substitute(counselor_memory=counselor_memory_for(session["trace"]),
                                           conversation_str=messages_to_convo_str(messages))
-        return [{"key": f"{member}/{episode}", "member": member, "episode": episode, "turn": None,
-                "prompt": prompt}]
+        sha = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+        return [{"key": f"{member}/{episode}", "input_sha": sha, "member": member, "episode": episode,
+                "turn": None, "prompt": prompt}]
 
-    def parse(self, text: str) -> dict:
-        return parse_judge_scores(text)[0]
+    def render(self, unit: dict) -> str:
+        return unit["prompt"]
+
+    def parse(self, text: str, meta: dict) -> dict:
+        row = parse_judge_scores(text)[0]
+        row["answer"] = text[:self.ANSWER_MAX_CHARS]
+        if meta.get("reasoning_content"):
+            row["reasoning_content"] = meta["reasoning_content"][:self.ANSWER_MAX_CHARS]
+        return row
 
     def summarize(self, verdicts: list[dict], run: dict) -> dict:
         ok = [v for v in verdicts if "_error" not in v]
@@ -317,7 +343,8 @@ class MindEval1Judge:
 JUDGE_VERSION_DICT = {"mindeval1": MindEval1Judge, "mindeval2": MindEval2Judge}
 
 
-def _judge_one(judge, prompt: str, spec: CallSpec) -> dict:
+def _judge_one(judge, unit: dict, spec: CallSpec) -> dict:
+    prompt = judge.render(unit)
     last: Exception | None = None
     for attempt in range(1, spec.max_retries + 1):
         try:
@@ -327,7 +354,13 @@ def _judge_one(judge, prompt: str, spec: CallSpec) -> dict:
             if meta.get("finish_reason") == "length":
                 # A cut-off answer is not a verdict: whatever JSON it holds may be a fragment of the reasoning.
                 raise JudgeError(f"the judge hit its token limit ({spec.max_tokens}) before finishing its answer")
-            return {**judge.parse(text), "usage": meta.get("usage")}
+            try:
+                parsed = judge.parse(text, meta)
+            except ValueError as e:
+                # A snippet of the unparseable answer, not just the exception, so a mis-parse can be
+                # diagnosed (or re-parsed) without paying for a new judgement.
+                raise JudgeError(f"{e} (answer: {text[:300]!r})") from e
+            return {**parsed, "usage": meta.get("usage")}
         except Exception as e:  # noqa: BLE001 — retried; recorded if every attempt fails
             last = e
             if attempt < spec.max_retries:
@@ -387,11 +420,10 @@ def judge_run(out: Path, version: str, spec: CallSpec, *, workers: int, limit: i
                 raise JudgeError(f"{trace}: a finished session has no counselor system prompt; "
                                  f"{version} needs it to render the judge prompt")
         for u in judge.units(member, episode, session):
-            sha = hashlib.sha256(u["prompt"].encode()).hexdigest()[:16]
-            if (u["key"], sha) in done:
-                kept.append(done[u["key"], sha])
+            if (u["key"], u["input_sha"]) in done:
+                kept.append(done[u["key"], u["input_sha"]])
             else:
-                units.append({**u, "input_sha": sha})
+                units.append(u)
     found = len(kept) + len(units)
     batch = units[:limit] if limit > 0 else units
     print(f"{found} {judge.units_label} in finished sessions under {out}; {len(kept)} judged, {len(units)} to "
@@ -406,7 +438,7 @@ def judge_run(out: Path, version: str, spec: CallSpec, *, workers: int, limit: i
               "episode": unit["episode"]}
         if unit["turn"] is not None:
             row["turn"] = unit["turn"]
-        row.update(_judge_one(judge, unit["prompt"], spec))
+        row.update(_judge_one(judge, unit, spec))
         with lock:
             with dest.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")

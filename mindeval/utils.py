@@ -77,12 +77,13 @@ def parse_judge_scores(output):
         text = text.split("</think>")[-1]  # a reasoning trace precedes the verdict; only the verdict is parsed
         scores = {}
         for criterion in criteria:
-            # Match pattern like "CAC1: 4" with optional whitespace
-            match = re.search(rf"{criterion}:\s*(\d+\.?\d*)", text)
-            if match is None:
+            # The last match, not the first: commentary before the ratings (e.g. "Clinical Accuracy &
+            # Competence: 2 issues stand out...") can otherwise be mistaken for the score itself.
+            matches = re.findall(rf"{criterion}:\s*(\d+\.?\d*)", text)
+            if not matches:
                 # a silent default would look like a real judgement; the caller retries instead
                 raise ValueError(f"missing {criterion!r} in the judge's answer")
-            scores[criterion] = float(match.group(1))
+            scores[criterion] = float(matches[-1])
         overall_score = sum(scores.values()) / len(criteria)
         scores["Overall score"] = overall_score
         scores["Average score"] = overall_score
