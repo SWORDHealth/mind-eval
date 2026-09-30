@@ -13,6 +13,11 @@ A benchmark for AI mental-health counselors, played against a simulated patient 
   p99 conversation severity over every member × session (lower is better).
 - **Both judges** — `--judge_version mindeval1` still scores each session with the original
   five-criterion rubric.
+- **Same arcs as the internal build** — member schedules, time context and per-call seeds are pinned
+  to match MindEval2 @ a18de8be exactly, so the two are still reproducible against each other;
+  behaviour differs only by bug fixes made during this port's review (a judge preflight that could
+  stall a run for good, a stray reply dropped mid-session, an avoided move still named in a member's
+  own prompt, and a handful more — see the commit history on `mindeval2-port`).
 
 ## Installation
 ```bash
@@ -70,10 +75,19 @@ Then:
 python mindeval/scripts/generate_judgments.py --output_dir runs/<counselor>
 ```
 >Rerun to resume. It can run while `generate_interactions.py` is still going: only finished sessions
->are judged.
+>are judged. The first pass preflights: a judge that can't return one usable verdict stops before
+>spending the rest of the budget. After that, a unit that keeps failing no longer blocks the ones
+>after it.
+
+>Provider-specific judge settings go in `--judge_params`, e.g. `'{"reasoning_effort": "high"}'`; like
+>`--counselor_params`/`--patient_params` it can't set `model`, `api_base` or `api_key`, and it's part
+>of the judge's identity, so a later pass with different params starts a new judge directory instead
+>of mixing into the same verdicts.
 
 The original five-criterion rubric needs no prompt download, just a judge model of your choice in
-`MINDEVAL_JUDGE_*`:
+`MINDEVAL_JUDGE_*`. Its `<member_details>` is the counselor's own memory for that session — what it
+received in `{{ memory }}`, not the member's private profile — so a counselor that correctly recalls
+session 1 isn't scored as though it hallucinated:
 ```bash
 python mindeval/scripts/generate_judgments.py --output_dir runs/<counselor> --judge_version mindeval1
 ```
@@ -98,7 +112,8 @@ higher is better; `summary.json` gives the mean of each over every member × ses
 bash run_benchmark.sh runs/<counselor> [mindeval2|mindeval1]
 ```
 >Runs interactions then judgments for the given judge version (default `mindeval2`), then prints the
->summary.
+>summary. A refused interactions pass (exit 2) stops before judging anything; a partial one (exit 1)
+>is still judged, and the script's own exit code reports the worse of the two stages.
 
 ## Outputs
 ```
