@@ -134,10 +134,9 @@ def counselor_memory_for(trace: Path) -> str:
     return counselor_memory(entries)
 
 
-def render_prompt(template: str, system_prompt: str | None, turns: list[dict], index: int) -> str:
+def render_prompt(template: str, system_prompt: str, turns: list[dict], index: int) -> str:
     """The model card's rendering. `str.replace`, not `str.format`: the rubric's JSON example has braces."""
-    blocks = [f"### System\n{system_prompt}"] if system_prompt and system_prompt.strip() else []
-    blocks += [f"### {_ROLE[t['speaker']]}\n{t['text']}" for t in turns[:index]]
+    blocks = [f"### System\n{system_prompt}", *(f"### {_ROLE[t['speaker']]}\n{t['text']}" for t in turns[:index])]
     return (template.replace("{conversation}", "\n\n".join(blocks))
             .replace("{candidate}", turns[index]["text"].strip()))
 
@@ -198,10 +197,8 @@ def _coverage(ok: list[dict], run: dict, sessions_judged: int) -> dict:
 class MindEval2Judge:
     """MindJudge-27B's MQM: one unit per counselor reply of a finished session."""
 
-    requires_counselor_system_prompt = True
     requires_prompt_path = True
     units_label = "replies"
-    reference_sha256 = MINDJUDGE_PROMPT_SHA256
 
     def __init__(self, prompt_path: Path | None = None) -> None:
         if prompt_path is None or not prompt_path.is_file():
@@ -212,6 +209,9 @@ class MindEval2Judge:
                 raise JudgeError(f"{prompt_path} has no {placeholder} placeholder")
         self.template = template
         self.prompt_sha256 = hashlib.sha256(template.encode()).hexdigest()
+        if self.prompt_sha256 != MINDJUDGE_PROMPT_SHA256:
+            print(f"note: {prompt_path} is not MindJudge-27B's mindjudge_prompt.txt (sha256 "
+                  f"{self.prompt_sha256[:12]}); its verdicts are not comparable with the benchmark's", flush=True)
 
     def units(self, member: str, episode: str, session: dict) -> list[dict]:
         # The prompt is hashed here and then dropped, not kept on the unit: it grows with the whole
@@ -219,6 +219,9 @@ class MindEval2Judge:
         # `render` rebuilds it from `turns` (shared, not copied, across this session's units) when the
         # unit is actually judged.
         turns, system_prompt = session["turns"], session["counselor_system_prompt"]
+        if not system_prompt or not system_prompt.strip():  # raised while units are listed, before any call
+            raise JudgeError(f"{session['trace']}: a finished session has no counselor system prompt; "
+                             f"mindeval2 needs it to render the judge prompt")
         out = []
         for i, t in enumerate(turns):
             if t["speaker"] != "counselor":
@@ -286,10 +289,8 @@ class MindEval1Judge:
     """MindEval v1's five-criterion rubric: one unit per finished session with at least one
     counselor reply."""
 
-    requires_counselor_system_prompt = False
     requires_prompt_path = False
     units_label = "sessions"
-    reference_sha256 = None
     #: The five rubric criteria, plus the two means `parse_judge_scores` derives from them.
     KEYS = ("Clinical Accuracy & Competence", "Ethical & Professional Conduct", "Assessment & Response",
             "Therapeutic Relationship & Alliance", "AI-Specific Communication Quality",
@@ -418,10 +419,6 @@ def judge_run(out: Path, version: str, spec: CallSpec, *, workers: int, limit: i
     # simply be corrected.
     identity = {"model": spec.model, "prompt_sha256": judge.prompt_sha256, "temperature": spec.temperature,
                 "max_tokens": spec.max_tokens, "version": version, "params": spec.params}
-    if judge.reference_sha256 and identity["prompt_sha256"] != judge.reference_sha256:
-        print(f"note: {prompt_path} is not MindJudge-27B's mindjudge_prompt.txt (sha256 "
-              f"{identity['prompt_sha256'][:12]}); its verdicts are not comparable with the benchmark's",
-              flush=True)
     meta_path = jdir / "judge.json"
     if meta_path.is_file() and done:
         old = json.loads(meta_path.read_text())
@@ -445,11 +442,6 @@ def judge_run(out: Path, version: str, spec: CallSpec, *, workers: int, limit: i
         session = read_session(trace)
         if not session["finished"]:
             continue
-        if judge.requires_counselor_system_prompt:
-            csp = session["counselor_system_prompt"]
-            if not csp or not csp.strip():
-                raise JudgeError(f"{trace}: a finished session has no counselor system prompt; "
-                                 f"{version} needs it to render the judge prompt")
         for u in judge.units(member, episode, session):
             if (u["key"], u["input_sha"]) in done:
                 kept.append(done[u["key"], u["input_sha"]])

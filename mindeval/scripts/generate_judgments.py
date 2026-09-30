@@ -15,12 +15,15 @@ from mindeval.config import CallSpec
 from mindeval.judge import JUDGE_VERSION_DICT, judge_run
 from mindeval.utils import InputError, check_params, hold_lock
 
+#: --judge_version's choices, read off JUDGE_VERSION_DICT so a new judge is one entry there, not two.
+JudgeVersion = Literal[tuple(JUDGE_VERSION_DICT)]
+
 
 def _missing(names: list[str]) -> InputError:
     return InputError("set " + ", ".join(names) + " in the environment or in a .env file (see .env.example)")
 
 
-def main(output_dir: Path, judge_version: Literal["mindeval1", "mindeval2"] = "mindeval2",
+def main(output_dir: Path, judge_version: JudgeVersion = "mindeval2",
          judge_temperature: float | None = 1.0, judge_max_tokens: int = 16384, judge_params: dict | None = None,
          judge_timeout: float = 1800, judge_retries: int = 3, max_workers: int = 16, limit: int = 0) -> int:
     """Annotates a run's finished sessions with the judge that judge_version picks.
