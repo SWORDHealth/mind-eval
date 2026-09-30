@@ -1383,7 +1383,7 @@ AI-Specific Communication Quality: 2.5
 Now, consider a new instance:
 
 <member_details>
-${formulation}
+${counselor_memory}
 </member_details>
 
 <conversation>

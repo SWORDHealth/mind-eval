@@ -25,9 +25,12 @@ member x session, so one long session cannot outweigh several short ones.
 unit per finished session with at least one counselor reply, rating the whole session once on
 `Clinical Accuracy & Competence`, `Ethical & Professional Conduct`, `Assessment & Response`,
 `Therapeutic Relationship & Alliance` and `AI-Specific Communication Quality`, each 1-6, plus
-`Overall score` and `Average score`. `<member_details>` holds the member's `formulation`; the
-conversation is the session's member and counselor turns rendered with v1's `messages_to_convo_str`,
-starting from the member's opening. It does not read the counselor system prompt.
+`Overall score` and `Average score`. `<member_details>` holds the counselor's memory for this
+session, exactly the text it received in `{{ memory }}` (in session 1, the "no earlier sessions"
+text) — the same information the counselor had, recomputed with `arc.counselor_memory` from the
+previous episode's `log.md` rather than read off the member's private formulation. The conversation
+is the session's member and counselor turns rendered with v1's `messages_to_convo_str`, starting from
+the member's opening. It does not read the counselor system prompt itself.
 
 Output, under `<out>/judge/<version>/`:
 
@@ -58,6 +61,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from mindeval import judge_prompts, llm
+from mindeval.arc import counselor_memory, parse_log
 from mindeval.config import CallSpec
 from mindeval.utils import messages_to_convo_str, parse_judge_scores
 
@@ -79,11 +83,10 @@ class JudgeError(Exception):
 
 
 def read_session(trace: Path) -> dict:
-    """{"turns", "counselor_system_prompt", "formulation", "finished"}. Turns are chronological: a
-    turn's counselor line, then the member's. Turn 0 is the member's opening, with no counselor line.
-    A session still being written, or one whose trace vanished or ends in a torn line, is not
-    finished."""
-    turns, system_prompt, formulation, finished = [], None, "", False
+    """{"turns", "counselor_system_prompt", "finished", "trace"}. Turns are chronological: a turn's
+    counselor line, then the member's. Turn 0 is the member's opening, with no counselor line. A
+    session still being written, or one whose trace vanished or ends in a torn line, is not finished."""
+    turns, system_prompt, finished = [], None, False
     try:
         lines = [x for x in trace.read_text(encoding="utf-8").split("\n") if x.strip()]
     except FileNotFoundError:  # moved aside by a resuming run
@@ -92,19 +95,34 @@ def read_session(trace: Path) -> dict:
         try:
             rec = json.loads(line)
         except json.JSONDecodeError:
-            turns, formulation, finished = [], "", False
+            turns, finished = [], False
             break
         if rec.get("type") == "session":
             system_prompt = rec.get("counselor_system_prompt")
-            formulation = rec.get("formulation", "")
             finished = rec.get("termination") != "error"
             continue
         if rec.get("counselor_utterance"):
             turns.append({"turn": rec["turn"], "speaker": "counselor", "text": rec["counselor_utterance"]})
         if rec.get("utterance"):
             turns.append({"turn": rec["turn"], "speaker": "member", "text": rec["utterance"]})
-    return {"turns": turns, "counselor_system_prompt": system_prompt, "formulation": formulation,
-            "finished": finished}
+    return {"turns": turns, "counselor_system_prompt": system_prompt, "finished": finished, "trace": trace}
+
+
+def counselor_memory_for(trace: Path) -> str:
+    """The text the counselor received in `{{ memory }}` for this session, recomputed the way
+    `arc.run_arc` produced it: the previous episode's compacted log (`ep{n-1}/log.md`), the same file
+    `arc.compact_log` wrote it to, framed as the counselor's notes. Session 1 has none, so this is
+    `arc.counselor_memory([])`, the same "no earlier sessions" text every counselor sees first."""
+    index = int(trace.parent.name.removeprefix("ep"))
+    if index == 0:
+        return counselor_memory([])
+    log = trace.parents[1] / f"ep{index - 1:03d}" / "log.md"
+    try:
+        entries = parse_log(log.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError) as e:
+        raise JudgeError(f"{trace}: mindeval1 needs the counselor's memory for this session, but its "
+                         f"previous episode's log ({log}) could not be read: {e}") from None
+    return counselor_memory(entries)
 
 
 def render_prompt(template: str, system_prompt: str | None, turns: list[dict], index: int) -> str:
@@ -260,7 +278,7 @@ class MindEval1Judge:
         # rebuilding from `turns` instead keeps v1's mapping (member "user", counselor "assistant").
         messages = [{"role": "user" if t["speaker"] == "member" else "assistant", "content": t["text"]}
                    for t in turns]
-        prompt = self.template.substitute(formulation=session["formulation"],
+        prompt = self.template.substitute(counselor_memory=counselor_memory_for(session["trace"]),
                                           conversation_str=messages_to_convo_str(messages))
         return [{"key": f"{member}/{episode}", "member": member, "episode": episode, "turn": None,
                 "prompt": prompt}]

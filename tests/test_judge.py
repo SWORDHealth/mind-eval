@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from jsonargparse import CLI
 
 from mindeval import judge_prompts, llm
+from mindeval.arc import counselor_memory
 from mindeval.config import load_config
 from mindeval.judge import MindEval1Judge
 from mindeval.scripts import generate_interactions, generate_judgments
@@ -50,9 +51,11 @@ def _session_line(member_id, episode, *, formulation, counselor_system_prompt, t
 
 
 def _write_session(out, member_id, episode, *, opening, replies, formulation, counselor_system_prompt=None,
-                   termination="max_turns"):
+                   termination="max_turns", log_entries=None):
     """A trace.jsonl matching models.py's TurnRecord/SessionRecord shape: turn 0 is the member's
-    opening, turn k>=1 is `replies[k-1]` (the counselor) and a filler member reply."""
+    opening, turn k>=1 is `replies[k-1]` (the counselor) and a filler member reply. `log_entries`, if
+    given, writes this episode's log.md too (the memory the *next* episode's counselor receives),
+    matching what `arc.compact_log` leaves behind."""
     lines = [_turn(0, opening)]
     for i, reply in enumerate(replies, start=1):
         lines.append(_turn(i, f"member reply {i}", counselor_utterance=reply))
@@ -61,6 +64,8 @@ def _write_session(out, member_id, episode, *, opening, replies, formulation, co
     path = out / "members" / member_id / "arc" / episode / "trace.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(json.dumps(x) for x in lines) + "\n")
+    if log_entries is not None:
+        (path.parent / "log.md").write_text("\n".join(f"- {e}" for e in log_entries) + "\n")
     return path
 
 
@@ -97,12 +102,13 @@ def test_mindeval1_happy_path(tmp_path, monkeypatch):
     out = tmp_path / "run"
     _write_run(out, members=2, sessions=2)
     openings = {"m_alpha": "Alpha here, feeling low.", "m_beta": "Beta checking in."}
-    formulations = {"m_alpha": "Alpha is 30, works retail, alone.", "m_beta": "Beta is 40, teacher, married."}
+    # session 1 has no memory yet; session 2's memory is session 1's compacted log (its log.md)
+    logs = {"m_alpha": ["Alpha talked about feeling low."], "m_beta": ["Beta checked in about work."]}
     for member in ("m_alpha", "m_beta"):
-        for ep in ("ep000", "ep001"):
-            # two counselor replies per session: v1 must still emit one verdict per session, not per reply
-            _write_session(out, member, ep, opening=openings[member], replies=["How are you?", "Tell me more."],
-                          formulation=formulations[member])
+        _write_session(out, member, "ep000", opening=openings[member], replies=["How are you?", "Tell me more."],
+                      formulation=f"{member} is 30, works retail, alone.", log_entries=logs[member])
+        _write_session(out, member, "ep001", opening=openings[member], replies=["How are you?", "Tell me more."],
+                      formulation=f"{member} is 30, works retail, alone.")
 
     prompts = []
 
@@ -110,7 +116,7 @@ def test_mindeval1_happy_path(tmp_path, monkeypatch):
         prompt = kw["messages"][0]["content"]
         prompts.append(prompt)
         assert kw.get("api_key") == JUDGE_KEY
-        return _response(_v1_answer(ALPHA if "Alpha is 30" in prompt else BETA))
+        return _response(_v1_answer(ALPHA if openings["m_alpha"] in prompt else BETA))
 
     monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
     assert judgments("--output_dir", str(out), "--judge_version", "mindeval1", "--max_workers", "1") == 0
@@ -129,6 +135,12 @@ def test_mindeval1_happy_path(tmp_path, monkeypatch):
     identity = json.loads((jdir / "judge.json").read_text())
     assert identity["version"] == "mindeval1" and identity["prompt"] == "built-in"
 
+    # the counselor's memory for each session, computed the same way the judge should: nothing for
+    # session 1, session 1's compacted log for session 2
+    no_memory_yet = counselor_memory([])
+    with_memory = {member: counselor_memory(entries) for member, entries in logs.items()}
+    assert len({no_memory_yet, *with_memory.values()}) == 3  # all distinct, so the checks below are meaningful
+
     for p in prompts:
         assert "### System" not in p
         # the few-shots earlier in the template have their own <member_details>/<conversation>; only
@@ -136,7 +148,9 @@ def test_mindeval1_happy_path(tmp_path, monkeypatch):
         new_instance = p.split("Now, consider a new instance:", 1)[1]
         assert "<member_details>" in new_instance
         details = new_instance.split("<member_details>", 1)[1].split("</member_details>", 1)[0].strip()
-        assert details in formulations.values()
+        # never the member's private formulation; always what the counselor had for that session
+        assert details in (no_memory_yet, *with_memory.values())
+        assert "works retail" not in details
         convo = new_instance.split("<conversation>", 1)[1].split("</conversation>", 1)[0].strip()
         assert convo.startswith("<member>\n")                 # opens with the member's turn
         assert convo.index("<member>") < convo.index("<therapist>")
