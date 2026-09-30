@@ -1,6 +1,7 @@
-"""Test helpers shared by test_smoke.py and test_judge.py."""
+"""Test helpers shared across the test modules."""
 
 import os
+from types import SimpleNamespace
 
 from jsonargparse import CLI
 
@@ -12,6 +13,16 @@ def _clear_env(monkeypatch):
     earlier test exported."""
     for name in [k for k in os.environ if k.startswith("MINDEVAL_")]:
         monkeypatch.delenv(name)
+
+
+def _response(content=None, tool_call=None, finish="stop", call_id="call_1", **extra):
+    """A litellm completion as mindeval reads one: `content`, or a `commit_move` call carrying
+    `tool_call` as its arguments; `extra` lands on the message (e.g. reasoning_items)."""
+    calls = None
+    if tool_call is not None:
+        calls = [SimpleNamespace(id=call_id, function=SimpleNamespace(name="commit_move", arguments=tool_call))]
+    message = SimpleNamespace(content=content, tool_calls=calls, **extra)
+    return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason=finish)], model="fake", id="r")
 
 
 def interactions(*argv):

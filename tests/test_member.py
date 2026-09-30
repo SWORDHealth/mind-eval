@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from conftest import _response
 
 import mindeval.member as member_mod
 from mindeval import llm
@@ -29,17 +30,6 @@ def _member(**over):
                  vocab=frozenset({"do_answer_question"}), profile_id="p", situation_id="s")
 
 
-def _text_response(content, finish="stop"):
-    message = SimpleNamespace(content=content, tool_calls=None)
-    return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason=finish)], model="x", id="r")
-
-
-def _tool_response(call_id, arguments):
-    tc = SimpleNamespace(id=call_id, function=SimpleNamespace(name="commit_move", arguments=arguments))
-    message = SimpleNamespace(content=None, tool_calls=[tc])
-    return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason="stop")], model="x", id="r")
-
-
 # -- speak(): attempt state must not leak across retries (member.py, MAX_STRAY_COMMITS) -----------
 
 def test_speak_does_not_confuse_a_later_clean_attempt_with_an_earlier_stray_commit(monkeypatch):
@@ -54,8 +44,9 @@ def test_speak_does_not_confuse_a_later_clean_attempt_with_an_earlier_stray_comm
         n = len(calls) + 1
         calls.append(kw)
         if n <= 3:  # a stray commit_move: no words, an unwanted tool call
-            return _tool_response(f"call_{n}", json.dumps({"reasoning": "again", "move": "do_answer_question"}))
-        return _text_response("I'm okay today.")
+            return _response(tool_call=json.dumps({"reasoning": "again", "move": "do_answer_question"}),
+                             call_id=f"call_{n}")
+        return _response("I'm okay today.")
 
     monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
     m = _member(max_retries=2)
@@ -74,7 +65,7 @@ def test_commit_content_json_path_keeps_valid_json_in_the_convo(monkeypatch):
     the prose itself parses — Anthropic's history conversion parses a tool_use's `input` as JSON, and
     a later call in the session fails before any HTTP request is made if it cannot."""
     monkeypatch.setattr(llm, "_LIB", SimpleNamespace(
-        completion=lambda **kw: _text_response("sure, let's go with do_answer_question I guess")))
+        completion=lambda **kw: _response("sure, let's go with do_answer_question I guess")))
     m = _member()
     move, call = m.commit(seed=0)
     assert move is None and call["via"] == "content_json"
@@ -84,7 +75,7 @@ def test_commit_content_json_path_keeps_valid_json_in_the_convo(monkeypatch):
 
 def test_commit_content_json_path_with_an_embedded_move_reconstructs_clean_json(monkeypatch):
     prose = 'Sure -- {"reasoning": "answering it", "move": "do_answer_question"} is my move.'
-    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=lambda **kw: _text_response(prose)))
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=lambda **kw: _response(prose)))
     m = _member()
     move, call = m.commit(seed=0)
     assert move is not None and move.move == "do_answer_question" and call["via"] == "content_json"
@@ -99,7 +90,7 @@ def test_content_json_arguments_no_longer_break_anthropics_history_conversion(mo
     litellm's actual transform_request, not a stub, so this fails if the allow-list regresses."""
     anthropic_chat = pytest.importorskip("litellm.llms.anthropic.chat.transformation")
     monkeypatch.setattr(llm, "_LIB", SimpleNamespace(
-        completion=lambda **kw: _text_response("sure, let's go with do_answer_question I guess")))
+        completion=lambda **kw: _response("sure, let's go with do_answer_question I guess")))
     m = _member()
     m.commit(seed=0)
     cfg = anthropic_chat.AnthropicConfig()
@@ -117,9 +108,9 @@ def test_commit_and_speak_strip_an_inline_reasoning_trace(monkeypatch):
     must do the same, not leave the trace as part of the move's content_json prose or the utterance."""
     def completion(**kw):
         if kw.get("tools") == [move_tool({"do_answer_question": "answer"})]:
-            return _text_response("<think>picking a move</think>{\"reasoning\": \"ok\", "
-                                  "\"move\": \"do_answer_question\"}")
-        return _text_response("<think>planning the reply</think>i'm doing fine")
+            return _response("<think>picking a move</think>{\"reasoning\": \"ok\", "
+                             "\"move\": \"do_answer_question\"}")
+        return _response("<think>planning the reply</think>i'm doing fine")
 
     monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
     m = _member()

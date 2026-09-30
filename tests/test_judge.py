@@ -7,7 +7,7 @@ import json
 import threading
 from types import SimpleNamespace
 
-from conftest import _clear_env, judgments
+from conftest import _clear_env, _response, judgments
 from jsonargparse import CLI
 
 from mindeval import judge_prompts, llm
@@ -22,11 +22,6 @@ JUDGE, JUDGE_KEY = "openai/judge", "judge-key"
 ALPHA = {"Clinical Accuracy & Competence": 6, "Ethical & Professional Conduct": 5, "Assessment & Response": 4,
         "Therapeutic Relationship & Alliance": 3, "AI-Specific Communication Quality": 2}
 BETA = dict.fromkeys(ALPHA, 1)
-
-
-def _response(content):
-    message = SimpleNamespace(content=content, tool_calls=None)
-    return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason="stop")], model="fake", id="r")
 
 
 def _v1_answer(scores):
@@ -90,14 +85,15 @@ def test_mindeval1_happy_path(tmp_path, monkeypatch):
 
     out = tmp_path / "run"
     _write_run(out, members=2, sessions=2)
-    openings = {"m_alpha": "Alpha here, feeling low.", "m_beta": "Beta checking in."}
+    # every session opens differently, so each prompt below can be traced back to its member and session
+    openings = {("m_alpha", "ep000"): "Alpha here, feeling low.", ("m_alpha", "ep001"): "Alpha again, a bit better.",
+                ("m_beta", "ep000"): "Beta checking in.", ("m_beta", "ep001"): "Beta back after a week."}
     # session 1 has no memory yet; session 2's memory is session 1's compacted log (its log.md)
     logs = {"m_alpha": ["Alpha talked about feeling low."], "m_beta": ["Beta checked in about work."]}
-    for member in ("m_alpha", "m_beta"):
-        _write_session(out, member, "ep000", opening=openings[member], replies=["How are you?", "Tell me more."],
-                      formulation=f"{member} is 30, works retail, alone.", log_entries=logs[member])
-        _write_session(out, member, "ep001", opening=openings[member], replies=["How are you?", "Tell me more."],
-                      formulation=f"{member} is 30, works retail, alone.")
+    for (member, episode), opening in openings.items():
+        _write_session(out, member, episode, opening=opening, replies=["How are you?", "Tell me more."],
+                      formulation=f"{member} is 30, works retail, alone.",
+                      log_entries=logs[member] if episode == "ep000" else None)
 
     prompts = []
 
@@ -105,7 +101,7 @@ def test_mindeval1_happy_path(tmp_path, monkeypatch):
         prompt = kw["messages"][0]["content"]
         prompts.append(prompt)
         assert kw.get("api_key") == JUDGE_KEY
-        return _response(_v1_answer(ALPHA if openings["m_alpha"] in prompt else BETA))
+        return _response(_v1_answer(ALPHA if "Alpha" in prompt.split("Now, consider a new instance:", 1)[1] else BETA))
 
     monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
     assert judgments("--output_dir", str(out), "--judge_version", "mindeval1", "--max_workers", "1") == 0
@@ -126,27 +122,28 @@ def test_mindeval1_happy_path(tmp_path, monkeypatch):
     identity = json.loads((jdir / "judge.json").read_text())
     assert identity["version"] == "mindeval1" and identity["prompt"] == "built-in"
 
-    # the counselor's memory for each session, computed the same way the judge should: nothing for
-    # session 1, session 1's compacted log for session 2
-    no_memory_yet = counselor_memory([])
-    with_memory = {member: counselor_memory(entries) for member, entries in logs.items()}
-    assert len({no_memory_yet, *with_memory.values()}) == 3  # all distinct, so the checks below are meaningful
+    # the counselor's memory for each session, exactly what it received in {{ memory }}: the "no earlier
+    # sessions" text in session 1, that member's own session-1 log in session 2
+    expected = {(member, episode): counselor_memory(logs[member] if episode == "ep001" else [])
+                for member, episode in openings}
+    assert len(set(expected.values())) == 3  # all distinct, so the checks below are meaningful
 
+    seen = set()
     for p in prompts:
         assert "### System" not in p
         # the few-shots earlier in the template have their own <member_details>/<conversation>; only
         # the new instance, after this marker, is this session's
         new_instance = p.split("Now, consider a new instance:", 1)[1]
-        assert "<member_details>" in new_instance
-        details = new_instance.split("<member_details>", 1)[1].split("</member_details>", 1)[0].strip()
-        # never the member's private formulation; always what the counselor had for that session
-        assert details in (no_memory_yet, *with_memory.values())
-        assert "works retail" not in details
         convo = new_instance.split("<conversation>", 1)[1].split("</conversation>", 1)[0].strip()
         assert convo.startswith("<member>\n")                 # opens with the member's turn
         assert convo.index("<member>") < convo.index("<therapist>")
         opening = convo.split("<member>\n", 1)[1].split("\n</member>", 1)[0]
-        assert opening in openings.values()                    # ... starting with the opening message
+        (session,) = [k for k, v in openings.items() if v == opening]  # ... starting with that session's opening
+        details = new_instance.split("<member_details>", 1)[1].split("</member_details>", 1)[0].strip()
+        # never the member's private formulation; exactly what the counselor had for this session
+        assert details == expected[session], session
+        seen.add(session)
+    assert seen == set(openings)
 
 
 def test_missing_criterion_is_never_accepted(tmp_path, monkeypatch):
@@ -204,6 +201,11 @@ def test_mindeval1_keeps_the_verdict_after_a_long_inline_reasoning_trace(tmp_pat
     assert "reasoning" not in row["answer"]
     assert row["reasoning_content"].startswith("reasoning reasoning")
     assert len(row["reasoning_content"]) <= MindEval1Judge.ANSWER_MAX_CHARS
+
+    # an answer that is itself long (commentary before the ratings, no trace) keeps its end, where they are
+    row = MindEval1Judge().parse("commentary " * 600 + ratings, {})
+    assert len(row["answer"]) == MindEval1Judge.ANSWER_MAX_CHARS
+    assert parse_judge_scores(row["answer"])[0] == parse_judge_scores(ratings)[0]
 
 
 def test_mindeval2_refuses_missing_counselor_system_prompt(tmp_path, monkeypatch, capsys):

@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+from conftest import _response
+
 import mindeval.arc as arc_mod
 from mindeval import llm
 from mindeval.config import CallSpec, load_config
@@ -11,11 +13,6 @@ from mindeval.models import MemberRow
 
 ROOT = Path(__file__).resolve().parents[1]
 PATIENT = CallSpec(model="patient", api_base=None, temperature=1.0, max_tokens=None, timeout=5, max_retries=1)
-
-
-def _text_response(content):
-    message = SimpleNamespace(content=content, tool_calls=None)
-    return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason="stop")], model="x", id="r")
 
 
 # -- _trim_log: keep the newest entries, never dropping an [open] one when it can be avoided --------
@@ -48,7 +45,7 @@ def test_compact_log_retries_with_backoff(monkeypatch):
         calls["n"] += 1
         if calls["n"] < 3:
             raise RuntimeError("compaction server down")
-        return _text_response("- ok")
+        return _response("- ok")
 
     monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
     session = SimpleNamespace(member_messages=[{"role": "assistant", "content": "hi"}])
@@ -61,7 +58,7 @@ def test_compact_log_keeps_the_newest_entries_of_an_overshooting_log(monkeypatch
     """compact_log itself, not just _trim_log: a model that returns more entries than max_entries must
     not lose the session that just ended (the newest entries)."""
     log = "\n".join(f"- entry {i}" for i in range(5))
-    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=lambda **kw: _text_response(log)))
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=lambda **kw: _response(log)))
     session = SimpleNamespace(member_messages=[{"role": "assistant", "content": "hi"}])
     entries = arc_mod.compact_log([], session, PATIENT, max_entries=3, arc_seed=0, arc_id="a", episode_id=0)
     assert entries == ["entry 2", "entry 3", "entry 4"]
@@ -72,7 +69,7 @@ def test_patient_calls_between_sessions_strip_an_inline_reasoning_trace(monkeypa
     the member calls already handle: compaction must not read the trace as a log line, and evolution
     must not take a JSON object drafted inside the trace for the answer."""
     monkeypatch.setattr(arc_mod, "_pause", lambda attempt: None)
-    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=lambda **kw: _text_response(
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=lambda **kw: _response(
         "Okay, the member said hi.\nI should log that.\n</think>\n- Member said hi.")))
     session = SimpleNamespace(member_messages=[{"role": "assistant", "content": "hi"}])
     assert arc_mod.compact_log([], session, PATIENT, max_entries=5, arc_seed=0, arc_id="a",
@@ -81,7 +78,7 @@ def test_patient_calls_between_sessions_strip_an_inline_reasoning_trace(monkeypa
     fields = {"automatic_thoughts": ["t"], "behaviors": ["b"], "physical": [], "goal": None, "checkpoints": [],
               "opening_message": "hi again"}
     draft, final = {**fields, "event": "draft"}, {**fields, "event": "The week went on."}
-    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=lambda **kw: _text_response(
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=lambda **kw: _response(
         f"Draft: {json.dumps(draft)}\n</think>\n{json.dumps(final)}")))
     cfg = load_config()
     row = next(MemberRow.model_validate_json(line) for line in
@@ -104,7 +101,7 @@ def test_evolve_situation_retries_with_backoff(monkeypatch):
         calls["n"] += 1
         if calls["n"] < 3:
             raise RuntimeError("patient server down")
-        return _text_response(json.dumps(next_situation))
+        return _response(json.dumps(next_situation))
 
     monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
     cfg = load_config()

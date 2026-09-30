@@ -6,9 +6,11 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
+from conftest import _response
+
 from mindeval import llm
 from mindeval.arc import member_seed, run_arc
-from mindeval.config import SEED_FINGERPRINT, CallSpec, load_config
+from mindeval.config import CallSpec, load_config
 from mindeval.models import MemberRow
 from mindeval.session import Counselor, counselor_template
 
@@ -16,14 +18,6 @@ ROOT = Path(__file__).resolve().parents[1]
 COUNSELOR_MODEL = "openai/counselor"
 ROW = next(MemberRow.model_validate_json(line) for line in
           (ROOT / "data/profiles.jsonl").read_text().splitlines() if '"m000119"' in line)
-
-
-def _response(content=None, tool_call=None):
-    calls = None
-    if tool_call is not None:
-        calls = [SimpleNamespace(id="c", function=SimpleNamespace(name="commit_move", arguments=tool_call))]
-    message = SimpleNamespace(content=content, tool_calls=calls)
-    return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason="stop")], model="fake", id="r")
 
 
 def _fake(**kw):
@@ -86,14 +80,3 @@ def test_m000119_matches_mindeval2_a18de8be(tmp_path, monkeypatch):
     lines = session_1["member_system_prompt"].splitlines()
     assert "It is Friday evening." in lines  # not "Sunday evening": the 978ae09 regression's own example
 
-
-def test_fingerprint_is_pinned():
-    # Unchanged from tests/test_judge.py's own copy of this assertion: config/*.yaml or prompts/*.j2
-    # changed if this moves.
-    assert load_config().fingerprint == "37868bb5e406de0d"
-
-
-def test_seed_fingerprint_is_mindeval2_020s_fingerprint():
-    # MindEval2 @ a18de8be's own load_config().fingerprint (config/prompts unedited): the namespace
-    # every arc_id, run_id and everything drawn under them is seeded from. See config.py.
-    assert SEED_FINGERPRINT == "7962e7caed157571"

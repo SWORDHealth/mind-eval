@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import yaml
-from conftest import _clear_env, interactions, judgments
+from conftest import _clear_env, _response, interactions, judgments
 
 from mindeval import llm
 from mindeval.session import counselor_template
@@ -36,14 +36,6 @@ def _verdict(prompt):
     first = ROWS[0]["situation"]["opening_message"] in prompt or _opening(NAMES[0]) in prompt
     severity = "Minor" if first else "Major"
     return f'<think>weighing it</think>It asks again.\n{{"severity": "{severity}", "over_exploring": 1, "other": 0}}'
-
-
-def _response(content=None, tool_call=None, finish="stop", **extra):
-    calls = None
-    if tool_call is not None:
-        calls = [SimpleNamespace(id="call_1", function=SimpleNamespace(name="commit_move", arguments=tool_call))]
-    message = SimpleNamespace(content=content, tool_calls=calls, **extra)
-    return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason=finish)], model="fake", id="r")
 
 
 def _fake(state):
