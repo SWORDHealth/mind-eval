@@ -22,9 +22,11 @@ def hold_lock(out: Path):
     except BlockingIOError:  # LOCK_NB's actual contention error (EWOULDBLOCK/EAGAIN); another process holds it
         handle.close()
         raise InputError(f"another mindeval process is running on {out}") from None
-    except OSError:  # e.g. ENOLCK on NFS: a real failure, not contention, so it must not be misreported as one
+    except OSError as e:  # e.g. ENOLCK on NFS: a real failure, not contention, so it must not be reported as one
         handle.close()
-        raise
+        # Refused (exit 2), not raised as itself: an uncaught error exits 1, which both scripts document as
+        # "not finished yet, rerun", and rerunning cannot help a filesystem without locks.
+        raise InputError(f"could not lock {out}: {e}") from e
     try:
         yield handle
     finally:

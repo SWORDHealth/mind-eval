@@ -1,8 +1,10 @@
 """utils.py: deep_merge's recursive merge, and hold_lock's contention-vs-real-error distinction."""
 
 import errno
+import json
 
 import pytest
+from conftest import _clear_env, interactions, judgments
 
 from mindeval.config import load_config
 from mindeval.utils import InputError, deep_merge, hold_lock
@@ -41,15 +43,35 @@ def test_hold_lock_refuses_contention_as_an_input_error(tmp_path):
 
 def test_hold_lock_does_not_disguise_a_real_os_error_as_contention(tmp_path, monkeypatch):
     """Only LOCK_NB's own contention error (EWOULDBLOCK/EAGAIN, raised as BlockingIOError) means
-    "another process is running". Anything else — ENOLCK on NFS, say — must surface as itself."""
+    "another process is running". Anything else — ENOLCK on NFS, say — is reported as itself, and
+    refused: exit 2, not the traceback and exit 1 that both scripts document as "rerun"."""
     import fcntl
 
     def raises_enolck(handle, flags):
         raise OSError(errno.ENOLCK, "No locks available")
 
     monkeypatch.setattr(fcntl, "flock", raises_enolck)
-    with pytest.raises(OSError) as exc_info:
+    with pytest.raises(InputError, match="could not lock .*No locks available") as exc_info:
         with hold_lock(tmp_path):
             pass
-    assert exc_info.value.errno == errno.ENOLCK
-    assert not isinstance(exc_info.value, InputError)
+    assert "another mindeval process" not in str(exc_info.value)
+    assert exc_info.value.__cause__.errno == errno.ENOLCK
+
+
+def test_both_scripts_refuse_a_filesystem_without_locks(tmp_path, monkeypatch, capsys):
+    import fcntl
+
+    def raises_enolck(handle, flags):
+        raise OSError(errno.ENOLCK, "No locks available")
+
+    monkeypatch.chdir(tmp_path)
+    _clear_env(monkeypatch)
+    for name, value in {"PATIENT_MODEL": "hosted_vllm/patient", "COUNSELOR_MODEL": "openai/counselor",
+                        "JUDGE_MODEL": "openai/judge"}.items():
+        monkeypatch.setenv(f"MINDEVAL_{name}", value)
+    monkeypatch.setattr(fcntl, "flock", raises_enolck)
+    out = tmp_path / "run"
+    assert interactions("--output_dir", str(out), "--members", "1") == 2
+    (out / "run.json").write_text(json.dumps({"members": 1, "sessions": 1}))
+    assert judgments("--output_dir", str(out), "--judge_version", "mindeval1") == 2
+    assert capsys.readouterr().err.count("could not lock") == 2
