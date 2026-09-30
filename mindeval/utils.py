@@ -1,4 +1,5 @@
 import re
+from contextlib import contextmanager
 from pathlib import Path
 
 
@@ -6,12 +7,12 @@ class InputError(Exception):
     """Bad input or a refused run: printed and exit code 2."""
 
 
-_HELD: list = []
-
-
+@contextmanager
 def hold_lock(out: Path):
-    """Hold `<out>/.lock` until the command returns, so two invocations never write one run at once.
-    `release_locks()` releases it; the kernel releases it however the process ends."""
+    """Hold `<out>/.lock` for the block's duration, so two invocations never write one run at once. Each
+    call owns its own handle, so nested or concurrent `with hold_lock(...)` blocks on different paths
+    (e.g. two judge versions) never touch each other's lock; the kernel releases it however the
+    process ends."""
     import fcntl
 
     out.mkdir(parents=True, exist_ok=True)
@@ -21,14 +22,10 @@ def hold_lock(out: Path):
     except OSError:
         handle.close()
         raise InputError(f"another mindeval process is running on {out}") from None
-    _HELD.append(handle)
-    return handle
-
-
-def release_locks() -> None:
-    """Release every lock `hold_lock` is still holding. Call from a `finally`, whatever the outcome."""
-    while _HELD:
-        _HELD.pop().close()
+    try:
+        yield handle
+    finally:
+        handle.close()
 
 
 def check_params(flag: str, params: dict) -> None:

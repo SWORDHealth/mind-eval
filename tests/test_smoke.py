@@ -3,15 +3,13 @@ command line; the three ways a second invocation can go (skip, refuse, resume); 
 over the run."""
 
 import json
-import os
 from pathlib import Path
 from types import SimpleNamespace
 
 import yaml
-from jsonargparse import CLI
+from conftest import _clear_env, interactions, judgments
 
 from mindeval import llm
-from mindeval.scripts import generate_interactions, generate_judgments
 from mindeval.session import counselor_template
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -76,20 +74,6 @@ def _fake(state):
     return completion
 
 
-def interactions(*argv):
-    try:
-        return CLI([generate_interactions.main], as_positional=False, args=list(argv))
-    except SystemExit as e:  # a malformed flag: jsonargparse's own exit code, same shape as InputError's
-        return e.code
-
-
-def judgments(*argv):
-    try:
-        return CLI([generate_judgments.main], as_positional=False, args=list(argv))
-    except SystemExit as e:
-        return e.code
-
-
 def _args(out, members=1):
     return ["--output_dir", str(out), "--members", str(members), "--sessions", "2", "--max_turns", "3",
             "--max_workers", "1"]  # the default counselor template, examples/counselor_system.j2
@@ -97,8 +81,7 @@ def _args(out, members=1):
 
 def test_two_members_two_sessions_then_the_judge(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)  # no stray .env
-    for name in [k for k in os.environ if k.startswith("MINDEVAL_")]:
-        monkeypatch.delenv(name)  # nor anything exported in the shell
+    _clear_env(monkeypatch)  # nor anything exported in the shell
     for name, value in {"PATIENT_MODEL": "hosted_vllm/patient", "PATIENT_API_BASE": "http://patient.invalid/v1",
                         "PATIENT_API_KEY": "patient-key", "COUNSELOR_MODEL": COUNSELOR,
                         "COUNSELOR_API_KEY": "counselor-key"}.items():

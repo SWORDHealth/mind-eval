@@ -3,7 +3,7 @@
 Nothing provider-specific is decided here. Whatever a provider needs beyond the model, the messages
 and the sampling settings (vLLM's `chat_template_kwargs`, Claude's `thinking`, OpenAI's
 `reasoning_effort`) arrives in `params`, from config/patient.yaml for the patient and from
-`--counselor-params` for the counselor.
+`--counselor_params` for the counselor.
 """
 
 from __future__ import annotations

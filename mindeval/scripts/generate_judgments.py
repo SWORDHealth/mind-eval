@@ -12,8 +12,8 @@ from jsonargparse import CLI
 
 from mindeval import env
 from mindeval.config import CallSpec
-from mindeval.judge import JudgeError, judge_run
-from mindeval.utils import InputError, check_params, hold_lock, release_locks
+from mindeval.judge import JUDGE_VERSION_DICT, judge_run
+from mindeval.utils import InputError, check_params, hold_lock
 
 
 def _missing(names: list[str]) -> InputError:
@@ -57,7 +57,8 @@ def main(output_dir: Path, judge_version: Literal["mindeval1", "mindeval2"] = "m
         check_params("--judge_params", judge_params)
         missing: list[str] = []
         je = env.endpoint("JUDGE", missing)
-        prompt = env.required("JUDGE_PROMPT", missing) if judge_version == "mindeval2" else None
+        prompt = (env.required("JUDGE_PROMPT", missing) if JUDGE_VERSION_DICT[judge_version].requires_prompt_path
+                 else None)
         if missing:
             raise _missing(missing)
         spec = CallSpec(model=je.model, api_base=je.api_base, api_key=je.api_key, temperature=judge_temperature,
@@ -65,21 +66,16 @@ def main(output_dir: Path, judge_version: Literal["mindeval1", "mindeval2"] = "m
                         params=judge_params)
         if not (output_dir / "run.json").is_file():
             raise InputError(f"{output_dir} has no run.json; point --output_dir at a mindeval run directory")
-        hold_lock(output_dir / "judge" / judge_version)  # each judge version locks its own directory
-        try:
+        with hold_lock(output_dir / "judge" / judge_version):  # each judge version locks its own directory
             _, errors, pending = judge_run(output_dir, judge_version, spec, workers=max_workers, limit=limit,
                                            prompt_path=Path(prompt) if prompt else None)
-        except JudgeError as e:
-            raise InputError(str(e)) from None
-        if pending:
-            print(f"{pending} units are not judged yet ({errors} errored this pass); rerun the same command to "
-                  f"judge them")
-        return 1 if pending else 0
+            if pending:
+                print(f"{pending} units are not judged yet ({errors} errored this pass); rerun the same command "
+                      f"to judge them")
+            return 1 if pending else 0
     except InputError as e:
         print(f"mindeval: {e}", file=sys.stderr)
         return 2
-    finally:
-        release_locks()
 
 
 if __name__ == "__main__":

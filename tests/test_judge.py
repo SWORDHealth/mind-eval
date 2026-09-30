@@ -4,10 +4,10 @@ MQM) built and run through the real CLI, against a scripted litellm exactly like
 import functools
 import hashlib
 import json
-import os
 import threading
 from types import SimpleNamespace
 
+from conftest import _clear_env, judgments
 from jsonargparse import CLI
 
 from mindeval import judge_prompts, llm
@@ -75,24 +75,12 @@ def _write_run(out, members, sessions):
     (out / "run.json").write_text(json.dumps({"members": members, "sessions": sessions}))
 
 
-def _clear_env(monkeypatch):
-    for name in [k for k in os.environ if k.startswith("MINDEVAL_")]:
-        monkeypatch.delenv(name)
-
-
 def _set_judge_env(monkeypatch, *, prompt_path=None):
     for name, value in {"JUDGE_MODEL": JUDGE, "JUDGE_API_BASE": "http://judge.invalid/v1",
                         "JUDGE_API_KEY": JUDGE_KEY}.items():
         monkeypatch.setenv(f"MINDEVAL_{name}", value)
     if prompt_path is not None:
         monkeypatch.setenv("MINDEVAL_JUDGE_PROMPT", str(prompt_path))
-
-
-def judgments(*argv):
-    try:
-        return CLI([generate_judgments.main], as_positional=False, args=list(argv))
-    except SystemExit as e:  # a malformed flag: jsonargparse's own exit code, same shape as InputError's
-        return e.code
 
 
 def test_mindeval1_happy_path(tmp_path, monkeypatch):
@@ -258,6 +246,55 @@ def test_both_versions_run_concurrently_on_one_run_dir(tmp_path, monkeypatch):
     assert judgments("--output_dir", str(out), "--judge_version", "mindeval1", "--max_workers", "1") == 0  # no-op
     after = {p.name: p.read_bytes() for p in mindeval2_dir.iterdir()}
     assert before == after
+
+
+def test_mindeval1_is_not_blocked_by_mindeval2s_lock(tmp_path, monkeypatch):
+    """Each judge version locks its own directory (`judge/<version>/.lock`), not one shared
+    `judge/.lock`. A barrier holds a real mindeval2 pass inside its own `with hold_lock(...)` — through
+    the actual generate_judgments.py code path, not a path this test guesses at — while mindeval1 runs
+    to completion. `hold_lock`'s `LOCK_NB` never blocks, so if the two versions ever shared one lock
+    file this fails deterministically (mindeval1 sees exit code 2, refused) rather than hanging.
+    Checked by hand: regressing generate_judgments.py to `hold_lock(output_dir / "judge")` for every
+    version makes this test fail, and restoring `.../ "judge" / judge_version` makes it pass again."""
+    monkeypatch.chdir(tmp_path)
+    _clear_env(monkeypatch)
+    prompt_path = tmp_path / "judge_prompt.txt"
+    prompt_path.write_text("Judge this reply.\n{conversation}\n\n{candidate}\n")
+    _set_judge_env(monkeypatch, prompt_path=prompt_path)
+
+    out = tmp_path / "run"
+    _write_run(out, members=1, sessions=1)
+    _write_session(out, "m000", "ep000", opening="hi", replies=["how are you?"], formulation="Eta is 41.",
+                  counselor_system_prompt="Be kind.")
+
+    mindeval2_holding = threading.Event()
+    release_mindeval2 = threading.Event()
+
+    def completion(**kw):
+        prompt = kw["messages"][0]["content"]
+        if "<member_details>" in prompt:  # mindeval1's format: must not be blocked by mindeval2's lock
+            return _response(_v1_answer(ALPHA))
+        mindeval2_holding.set()  # mindeval2's format: its own hold_lock() is held for this whole call
+        assert release_mindeval2.wait(timeout=5), "mindeval1 never got to run while mindeval2 held its lock"
+        return _response('<think>ok</think>{"severity": "Minor", "vague": 0, "other": 1}')
+
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
+
+    result = {}
+
+    def run_mindeval2():
+        result["mindeval2"] = judgments("--output_dir", str(out), "--judge_version", "mindeval2",
+                                        "--max_workers", "1")
+
+    t = threading.Thread(target=run_mindeval2)
+    t.start()
+    assert mindeval2_holding.wait(timeout=5)  # mindeval2's own lock is held now
+
+    assert judgments("--output_dir", str(out), "--judge_version", "mindeval1", "--max_workers", "1") == 0
+
+    release_mindeval2.set()
+    t.join(timeout=5)
+    assert result["mindeval2"] == 0
 
 
 def test_judge_prompt_env_required_only_for_mindeval2(tmp_path, monkeypatch, capsys):

@@ -65,7 +65,7 @@ from pathlib import Path
 from mindeval import judge_prompts, llm
 from mindeval.arc import counselor_memory, parse_log
 from mindeval.config import CallSpec
-from mindeval.utils import messages_to_convo_str, parse_judge_scores
+from mindeval.utils import InputError, messages_to_convo_str, parse_judge_scores
 
 SEVERITIES = ("No concern", "Minor", "Major", "Critical")
 SEVERITY_WEIGHT = {"No concern": 0, "Minor": 1, "Major": 5, "Critical": 10}
@@ -79,7 +79,7 @@ _NOT_ISSUES = {"key", "input_sha", "member", "episode", "turn", "severity", "jus
                "_error"}
 
 
-class JudgeError(Exception):
+class JudgeError(InputError):
     """Bad input, a refused run, or a judge answer cut off at its token limit. Raised out of `main`, it is
     printed with exit code 2; for one unit, it is retried and recorded like any failed call."""
 
@@ -180,10 +180,19 @@ def conversation_severity(verdicts: list[dict]) -> dict:
             "mean": round(statistics.mean(scores), 3), "p99": round(scores[rank - 1], 3)}
 
 
+def _coverage(ok: list[dict], run: dict, sessions_judged: int) -> dict:
+    """The members/sessions judged so far against run.json's members x sessions; shared by both judge
+    classes' `summarize`."""
+    members, sessions = run.get("members"), run.get("sessions")
+    return {"members_judged": len({v["member"] for v in ok}), "sessions_judged": sessions_judged,
+            "members_expected": members, "sessions_expected": members * sessions if members and sessions else None}
+
+
 class MindEval2Judge:
     """MindJudge-27B's MQM: one unit per counselor reply of a finished session."""
 
     requires_counselor_system_prompt = True
+    requires_prompt_path = True
     units_label = "replies"
     reference_sha256 = MINDJUDGE_PROMPT_SHA256
 
@@ -232,12 +241,9 @@ class MindEval2Judge:
         for v in ok:
             issues.update(k for k, flag in _issues(v).items() if flag)
         keys = sorted({k for v in ok for k in _issues(v)})
-        members, sessions = run.get("members"), run.get("sessions")
         return {
             "n_replies": n, "n_sessions": len(worst), "errors": len(verdicts) - n,
-            "coverage": {"members_judged": len({v["member"] for v in ok}), "sessions_judged": len(worst),
-                        "members_expected": members,
-                        "sessions_expected": members * sessions if members and sessions else None},
+            "coverage": _coverage(ok, run, len(worst)),
             "mqm": conversation_severity(ok),
             "severity_counts": {s: sev.get(s, 0) for s in SEVERITIES},
             "severity_rates": {s: round(sev.get(s, 0) / n, 4) for s in SEVERITIES} if n else {},
@@ -248,7 +254,7 @@ class MindEval2Judge:
 
     def print_summary(self, summary: dict, out: Path) -> None:
         cov, mqm = summary["coverage"], summary["mqm"]
-        pending = summary.get("replies", {}).get("pending", 0)
+        pending = summary.get(self.units_label, {}).get("pending", 0)
         print(f"\n{summary['n_replies']} counselor replies judged in {summary['n_sessions']} sessions, "
               f"{summary['errors']} errors this pass" + (f", {pending} not yet judged" if pending else ""))
         if cov["sessions_expected"]:
@@ -274,6 +280,7 @@ class MindEval1Judge:
     counselor reply."""
 
     requires_counselor_system_prompt = False
+    requires_prompt_path = False
     units_label = "sessions"
     reference_sha256 = None
     #: The five rubric criteria, plus the two means `parse_judge_scores` derives from them.
@@ -317,19 +324,15 @@ class MindEval1Judge:
         n = len(ok)
         means = {k: round(statistics.mean(v[k] for v in ok), 3) for k in self.KEYS} if n else dict.fromkeys(
             self.KEYS)
-        members, sessions = run.get("members"), run.get("sessions")
         return {
             "n_sessions": n, "errors": len(verdicts) - n,
-            "coverage": {"members_judged": len({v["member"] for v in ok}),
-                        "sessions_judged": len({(v["member"], v["episode"]) for v in ok}),
-                        "members_expected": members,
-                        "sessions_expected": members * sessions if members and sessions else None},
+            "coverage": _coverage(ok, run, len({(v["member"], v["episode"]) for v in ok})),
             "means": means,
         }
 
     def print_summary(self, summary: dict, out: Path) -> None:
         cov = summary["coverage"]
-        pending = summary.get("sessions", {}).get("pending", 0)
+        pending = summary.get(self.units_label, {}).get("pending", 0)
         print(f"\n{summary['n_sessions']} sessions judged, {summary['errors']} errors this pass"
               + (f", {pending} not yet judged" if pending else ""))
         if cov["sessions_expected"]:

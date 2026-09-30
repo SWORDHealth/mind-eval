@@ -26,7 +26,7 @@ from mindeval.config import PACKAGE_DIR, CallSpec, Config, load_config
 from mindeval.member import build_member
 from mindeval.models import MemberRow
 from mindeval.session import Counselor, counselor_template
-from mindeval.utils import InputError, check_params, hold_lock, release_locks
+from mindeval.utils import InputError, check_params, hold_lock
 
 DEFAULT_PROFILES = PACKAGE_DIR.parent / "data" / "profiles.jsonl"
 DEFAULT_COUNSELOR = PACKAGE_DIR.parent / "examples" / "counselor_system.j2"
@@ -243,66 +243,65 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
             print("nothing to do: every member is complete")
             return 0
 
-        hold_lock(output_dir)  # released by release_locks()
-        old = check_identity(output_dir, manifest)  # again, under the lock
-        llm._lib()  # import litellm once, before the worker threads
-        preflight(cfg, todo[0], counselor, patient)
+        with hold_lock(output_dir):
+            old = check_identity(output_dir, manifest)  # again, under the lock
+            llm._lib()  # import litellm once, before the worker threads
+            preflight(cfg, todo[0], counselor, patient)
 
-        manifest["started"] = old["started"] if old else _now()
-        manifest["resumed"] = (old.get("resumed", []) + [_now()]) if old else []
-        manifest["members"] = max(manifest["members"], old.get("members", 0)) if old else manifest["members"]
-        manifest["finished"] = None
-        _write_json(output_dir / "run.json", manifest)
+            manifest["started"] = old["started"] if old else _now()
+            manifest["resumed"] = (old.get("resumed", []) + [_now()]) if old else []
+            manifest["members"] = max(manifest["members"], old.get("members", 0)) if old else manifest["members"]
+            manifest["finished"] = None
+            _write_json(output_dir / "run.json", manifest)
 
-        lock = threading.Lock()
-        counts = {"done": 0, "failed": 0}
+            lock = threading.Lock()
+            counts = {"done": 0, "failed": 0}
 
-        def one(row: MemberRow) -> str:
-            arc_dir = arc_dirs[row.member_id]
-            moved = None
-            t0 = time.monotonic()
+            def one(row: MemberRow) -> str:
+                arc_dir = arc_dirs[row.member_id]
+                moved = None
+                t0 = time.monotonic()
+                try:
+                    moved = set_aside_partial(arc_dir)
+                    arc = run_arc(cfg, row, counselor, patient=patient, sessions=sessions, max_turns=max_turns,
+                                  arc_seed=member_seed(row.member_id, seed), out=arc_dir)
+                    outcome = "done"
+                    detail = " ".join(e.termination.replace("member_terminated", "left").replace("max_turns", "cap")
+                                      for e in arc.episodes)
+                except Exception as e:  # noqa: BLE001 — recorded; the member resumes on the next invocation
+                    outcome, detail = "failed", f"{type(e).__name__}: {str(e)[:200]}"
+                    arc_dir.parent.mkdir(parents=True, exist_ok=True)
+                    with (arc_dir.parent / "error.log").open("a", encoding="utf-8") as f:
+                        f.write(f"--- {_now()}\n{traceback.format_exc()}\n")
+                with lock:
+                    counts[outcome] += 1
+                    n = counts["done"] + counts["failed"]
+                    note = f" (resumed; partial session moved to {moved})" if moved else ""
+                    print(f"[{n}/{len(todo)}] {row.member_id} {outcome} in {time.monotonic() - t0:.0f}s: "
+                          f"{detail}{note}", flush=True)
+                return outcome
+
+            pool = ThreadPoolExecutor(max_workers=max_workers)
             try:
-                moved = set_aside_partial(arc_dir)
-                arc = run_arc(cfg, row, counselor, patient=patient, sessions=sessions, max_turns=max_turns,
-                              arc_seed=member_seed(row.member_id, seed), out=arc_dir)
-                outcome = "done"
-                detail = " ".join(e.termination.replace("member_terminated", "left").replace("max_turns", "cap")
-                                  for e in arc.episodes)
-            except Exception as e:  # noqa: BLE001 — recorded; the member resumes on the next invocation
-                outcome, detail = "failed", f"{type(e).__name__}: {str(e)[:200]}"
-                arc_dir.parent.mkdir(parents=True, exist_ok=True)
-                with (arc_dir.parent / "error.log").open("a", encoding="utf-8") as f:
-                    f.write(f"--- {_now()}\n{traceback.format_exc()}\n")
-            with lock:
-                counts[outcome] += 1
-                n = counts["done"] + counts["failed"]
-                note = f" (resumed; partial session moved to {moved})" if moved else ""
-                print(f"[{n}/{len(todo)}] {row.member_id} {outcome} in {time.monotonic() - t0:.0f}s: {detail}{note}",
-                      flush=True)
-            return outcome
+                futures = [pool.submit(one, row) for row in todo]
+                for f in as_completed(futures):
+                    f.result()
+            except KeyboardInterrupt:
+                print(f"\ninterrupted. Rerun the same command to resume: finished members are kept and unfinished "
+                      f"sessions restart. Output: {output_dir}", flush=True)
+                os._exit(130)
+            pool.shutdown()
 
-        pool = ThreadPoolExecutor(max_workers=max_workers)
-        try:
-            futures = [pool.submit(one, row) for row in todo]
-            for f in as_completed(futures):
-                f.result()
-        except KeyboardInterrupt:
-            print(f"\ninterrupted. Rerun the same command to resume: finished members are kept and unfinished "
-                  f"sessions restart. Output: {output_dir}", flush=True)
-            os._exit(130)
-        pool.shutdown()
-
-        complete = sum(1 for m in rows if (arc_dirs[m.member_id] / "arc.json").is_file())
-        manifest["finished"] = _now() if complete == len(rows) else None
-        _write_json(output_dir / "run.json", manifest)
-        print(f"{complete}/{len(rows)} members complete; {counts['failed']} failed this run"
-              + ("" if complete == len(rows) else " (see members/<id>/error.log; rerun the same command to resume)"))
-        return 0 if complete == len(rows) else 1
+            complete = sum(1 for m in rows if (arc_dirs[m.member_id] / "arc.json").is_file())
+            manifest["finished"] = _now() if complete == len(rows) else None
+            _write_json(output_dir / "run.json", manifest)
+            print(f"{complete}/{len(rows)} members complete; {counts['failed']} failed this run"
+                  + ("" if complete == len(rows)
+                     else " (see members/<id>/error.log; rerun the same command to resume)"))
+            return 0 if complete == len(rows) else 1
     except InputError as e:
         print(f"mindeval: {e}", file=sys.stderr)
         return 2
-    finally:
-        release_locks()
 
 
 if __name__ == "__main__":
