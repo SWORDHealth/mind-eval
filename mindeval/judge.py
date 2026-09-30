@@ -2,9 +2,11 @@
 (`JUDGE_VERSION_DICT = {"mindeval1": MindEval1Judge, "mindeval2": MindEval2Judge}`).
 
 **mindeval2** (the default) is an MQM judge: a model (MINDEVAL_JUDGE_MODEL, `_API_BASE`, `_API_KEY`) and
-the prompt in `judge_prompts.MINDEVAL2_JUDGE_PROMPT`, which MINDEVAL_JUDGE_PROMPT can replace with a
-file (MindJudge-27B's own `mindjudge_prompt.txt`, for instance, to reproduce scores judged with it).
-The prompt has two placeholders:
+a prompt of two messages from `judge_prompts`: a system message with the task, severities, rubric and
+answer format (`MINDEVAL2_JUDGE_SYSTEM_PROMPT`, the same on every call, so providers can cache it), and a
+user message with only the example (`MINDEVAL2_JUDGE_USER_PROMPT`). MINDEVAL_JUDGE_PROMPT replaces both
+with one template in a file, sent as a single user message (MindJudge-27B's own `mindjudge_prompt.txt`,
+for instance, to reproduce scores judged with it). The example has two placeholders:
 
     {conversation}   everything before the reply, as markdown blocks separated by a blank line:
                      `### System` (the counselor's system prompt as it was sent, its `# Memory`
@@ -12,7 +14,7 @@ The prompt has two placeholders:
                      earlier replies), each header followed by the text on the next line
     {candidate}      the reply under judgement, as plain text (the template carries its header)
 
-One unit per counselor reply, sent as a single user message with no system message. The answer must
+One unit per counselor reply. The answer must
 contain a JSON object with `severity` (No concern, Minor, Major or Critical) and the issue keys
 marked 0 or 1; text before a `</think>` is ignored, and the first JSON object after it is the
 verdict. An answer cut off at the token limit (`finish_reason` "length") is never parsed: it raises
@@ -132,6 +134,12 @@ def counselor_memory_for(trace: Path) -> str:
     return counselor_memory(entries)
 
 
+def _sha(*parts: str | None) -> str:
+    """sha256 of a prompt's parts. One part hashes as itself, so a single-message prompt keeps the hash it had
+    before the prompt could have a system message."""
+    return hashlib.sha256("\x00".join(p for p in parts if p is not None).encode()).hexdigest()
+
+
 def render_prompt(template: str, system_prompt: str, turns: list[dict], index: int) -> str:
     """The model card's rendering. `str.replace`, not `str.format`: the rubric's JSON example has braces."""
     blocks = [f"### System\n{system_prompt}", *(f"### {_ROLE[t['speaker']]}\n{t['text']}" for t in turns[:index])]
@@ -199,8 +207,12 @@ class MindEval2Judge:
     units_label = "replies"
 
     def __init__(self, prompt_path: Path | None = None) -> None:
+        # The built-in prompt is a system message (the same on every call, so a provider can cache it) and a user
+        # message with the example. A prompt file is one template sent as a single user message, the format
+        # MindJudge-27B was trained on.
+        self.system = None
         if prompt_path is None:
-            template = judge_prompts.MINDEVAL2_JUDGE_PROMPT
+            self.system, template = judge_prompts.MINDEVAL2_JUDGE_SYSTEM_PROMPT, judge_prompts.MINDEVAL2_JUDGE_USER_PROMPT
         elif not prompt_path.is_file():
             raise JudgeError(f"judge prompt not found: {prompt_path}")
         else:
@@ -209,8 +221,8 @@ class MindEval2Judge:
             if placeholder not in template:
                 raise JudgeError(f"{prompt_path} has no {placeholder} placeholder")
         self.template = template
-        self.prompt_sha256 = hashlib.sha256(template.encode()).hexdigest()
-        if template != judge_prompts.MINDEVAL2_JUDGE_PROMPT:
+        self.prompt_sha256 = _sha(self.system, template)
+        if prompt_path is not None:
             print(f"note: {prompt_path} is not the benchmark's judge prompt (sha256 {self.prompt_sha256[:12]}); "
                   f"its verdicts are not comparable with the benchmark's", flush=True)
 
@@ -227,14 +239,16 @@ class MindEval2Judge:
         for i, t in enumerate(turns):
             if t["speaker"] != "counselor":
                 continue
-            sha = hashlib.sha256(render_prompt(self.template, system_prompt, turns, i).encode()).hexdigest()[:16]
-            out.append({"key": f"{member}/{episode}/t{t['turn']}", "input_sha": sha, "member": member,
-                       "episode": episode, "turn": t["turn"], "turns": turns, "system_prompt": system_prompt,
-                       "index": i})
+            unit = {"key": f"{member}/{episode}/t{t['turn']}", "member": member, "episode": episode,
+                    "turn": t["turn"], "turns": turns, "system_prompt": system_prompt, "index": i}
+            unit["input_sha"] = _sha(*(m["content"] for m in self.render(unit)))[:16]
+            out.append(unit)
         return out
 
-    def render(self, unit: dict) -> str:
-        return render_prompt(self.template, unit["system_prompt"], unit["turns"], unit["index"])
+    def render(self, unit: dict) -> list[dict]:
+        example = render_prompt(self.template, unit["system_prompt"], unit["turns"], unit["index"])
+        return ([{"role": "system", "content": self.system}] if self.system else []) + \
+            [{"role": "user", "content": example}]
 
     def parse(self, text: str, meta: dict) -> dict:
         return parse_verdict(text)
@@ -357,11 +371,13 @@ JUDGE_VERSION_DICT = {"mindeval1": MindEval1Judge, "mindeval2": MindEval2Judge}
 
 
 def _judge_one(judge, unit: dict, spec: CallSpec) -> dict:
-    prompt = judge.render(unit)
+    messages = judge.render(unit)
+    if isinstance(messages, str):  # mindeval1's prompt is one user message
+        messages = [{"role": "user", "content": messages}]
     last: Exception | None = None
     for attempt in range(1, spec.max_retries + 1):
         try:
-            text, meta = llm.call_messages([{"role": "user", "content": prompt}], spec.model, spec.api_base,
+            text, meta = llm.call_messages(messages, spec.model, spec.api_base,
                                            spec.temperature, spec.max_tokens, spec.timeout, params=spec.params,
                                            api_key=spec.api_key)
             if meta.get("finish_reason") == "length":
