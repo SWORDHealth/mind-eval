@@ -19,13 +19,30 @@ def hold_lock(out: Path):
     handle = (out / ".lock").open("w")
     try:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
+    except BlockingIOError:  # LOCK_NB's actual contention error (EWOULDBLOCK/EAGAIN); another process holds it
         handle.close()
         raise InputError(f"another mindeval process is running on {out}") from None
+    except OSError:  # e.g. ENOLCK on NFS: a real failure, not contention, so it must not be misreported as one
+        handle.close()
+        raise
     try:
         yield handle
     finally:
         handle.close()
+
+
+def deep_merge(base: dict, override: dict) -> dict:
+    """`override` layered onto `base`: where both hold a dict for the same key, they merge
+    recursively; anything else, `override` wins outright. Neither argument is mutated — a shallow
+    `{**base, **override}` would otherwise let one `extra_body` (or any other nested dict) in
+    `override` silently replace `base`'s whole dict, dropping every sibling key it did not name."""
+    out = dict(base)
+    for k, v in override.items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
 
 
 def check_params(flag: str, params: dict) -> None:

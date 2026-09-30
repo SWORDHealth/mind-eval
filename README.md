@@ -42,9 +42,12 @@ python mindeval/scripts/generate_interactions.py --output_dir runs/<counselor>
 >replies; the member may leave sooner), `--max_workers 16`, `--seed 0`. See `--help`.
 
 >The patient is DeepSeek-V4.1-Flash by default, served by vLLM (`hosted_vllm/`) with tool calling that
->honours a named `tool_choice`. Another model can play it: set `MINDEVAL_PATIENT_MODEL`, e.g.
->`vertex_ai/claude-sonnet-4-6`. Add anything else a model needs with `--patient_params`. A `vertex_ai/`
->model needs `uv sync --extra vertex`.
+>honours a named `tool_choice`. When a situation carries an agenda (most do), the member is also
+>offered `complete_todo`/`add_todo` with `tool_choice: "auto"` between the move and the words, so a
+>vLLM patient needs `--enable-auto-tool-choice` (and a matching `--tool-call-parser`) for that path
+>too, not just a named `tool_choice`; the preflight only exercises the named path. Another model can
+>play it: set `MINDEVAL_PATIENT_MODEL`, e.g. `vertex_ai/claude-sonnet-4-6`. Add anything else a model
+>needs with `--patient_params`. A `vertex_ai/` model needs `uv sync --extra vertex`.
 
 >Provider-specific counselor settings go in `--counselor_params`, e.g. `'{"reasoning_effort": "high"}'`.
 

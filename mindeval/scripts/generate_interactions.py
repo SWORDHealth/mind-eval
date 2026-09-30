@@ -26,7 +26,7 @@ from mindeval.config import PACKAGE_DIR, CallSpec, Config, load_config
 from mindeval.member import build_member
 from mindeval.models import MemberRow
 from mindeval.session import Counselor, counselor_template
-from mindeval.utils import InputError, check_params, hold_lock
+from mindeval.utils import InputError, check_params, deep_merge, hold_lock
 
 DEFAULT_PROFILES = PACKAGE_DIR.parent / "data" / "profiles.jsonl"
 DEFAULT_COUNSELOR = PACKAGE_DIR.parent / "examples" / "counselor_system.j2"
@@ -214,7 +214,9 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
         patient = CallSpec(model=pe.model, api_base=pe.api_base, api_key=pe.api_key,
                            temperature=cfg.patient.temperature, max_tokens=provider.max_tokens,
                            timeout=patient_timeout, max_retries=cfg.patient.max_retries,
-                           params={**provider.params, **patient_params}, force_move=provider.force_move)
+                           # deep, not shallow: a --patient_params extra_body must not silently drop
+                           # provider.params' own extra_body keys (e.g. chat_template_kwargs for vLLM)
+                           params=deep_merge(provider.params, patient_params), force_move=provider.force_move)
         cspec = CallSpec(model=ce.model, api_base=ce.api_base, api_key=ce.api_key,
                          temperature=counselor_temperature, max_tokens=counselor_max_tokens,
                          timeout=counselor_timeout, max_retries=counselor_retries, params=counselor_params)
