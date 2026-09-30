@@ -34,6 +34,7 @@ from mindeval.config import (
     render,
     turn_seed,
 )
+from mindeval.member import _pause
 from mindeval.models import ArcRecord, ArcShape, EpisodeRef, MemberRow, SessionRecord, Situation
 from mindeval.session import Counselor, input_hash, read_trace, run_session
 
@@ -200,6 +201,23 @@ def _conversation(messages: list[dict], member_label: str) -> str:
                      for m in messages if m.get("content"))
 
 
+def _trim_log(entries: list[str], max_entries: int) -> list[str]:
+    """At most `max_entries`, keeping the newest — entries are oldest first, so a model that
+    overshoots the limit must not lose the session that just ended — and never dropping an `[open]`
+    entry while an untagged one in the kept range could go instead. A defensive backstop: the prompt
+    already asks the model to do this itself (compact_log.j2, rule 6)."""
+    if len(entries) <= max_entries:
+        return entries
+    order = list(enumerate(entries))
+    opens = [i for i, e in order if e.startswith("[open]")]
+    others = [i for i, e in order if not e.startswith("[open]")]
+    keep = set(opens[-max_entries:])  # more open entries than room: keep the newest of those too
+    room = max_entries - len(keep)
+    if room > 0:
+        keep.update(others[-room:])
+    return [e for i, e in order if i in keep]
+
+
 def compact_log(prior: list[str], session: SessionRecord, patient: CallSpec, *, max_entries: int,
                 arc_seed: int, arc_id: str, episode_id: int) -> list[str]:
     """Fold one closed session into the log and return the whole log. Raises after three attempts."""
@@ -212,12 +230,14 @@ def compact_log(prior: list[str], session: SessionRecord, patient: CallSpec, *, 
             text, _ = llm.call_messages([{"role": "user", "content": prompt}], patient.model, patient.api_base,
                                         patient.temperature, patient.max_tokens, COMPACT_TIMEOUT, seed=seed + attempt,
                                         params=patient.params, api_key=patient.api_key)
-            entries = parse_log(text)[:max_entries]
+            entries = _trim_log(parse_log(text), max_entries)
             if not entries:
                 raise ValueError("empty log")
             return entries
         except Exception as e:  # noqa: BLE001 — retry on anything, report on exhaustion
             err = e
+            if attempt < 2:  # a few seconds of 503s from the shared patient server must not fail the
+                _pause(attempt + 1)  # member outright: losing a session costs far more than waiting
     raise RuntimeError(f"log compaction failed after session {episode_id + 1}: {err}")
 
 
@@ -255,6 +275,8 @@ def evolve_situation(cfg: Config, row: MemberRow, prev: Situation, last: Session
                              checkpoints=[str(c) for c in (parsed.get("checkpoints") or [])][:4])
         except Exception as e:  # noqa: BLE001 — includes validation errors
             err = e
+            if attempt < 2:  # same reasoning as compact_log's backoff, just above
+                _pause(attempt + 1)
     raise RuntimeError(f"writing the situation for session {episode_id + 1} failed: {err}")
 
 
