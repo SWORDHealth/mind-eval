@@ -100,6 +100,11 @@ class Counselor:
             msg = {"role": flipped[m["role"]], "content": m["content"]}
             if msg["role"] == "assistant":  # the counselor's own earlier turn
                 msg.update({k: m[k] for k in CARRIED if m.get(k)})
+                # litellm returns an interleaved Claude turn (thinking, text, thinking, text) as one text and a list of
+                # thinking blocks, and sends it back thinking-first: a reordering Anthropic rejects as a modified turn
+                # (400). A turn with more than one thinking block therefore goes back without its thinking.
+                if len(msg.get("thinking_blocks") or []) > 1:
+                    del msg["thinking_blocks"]
             messages.append(msg)
         text, meta = llm.retry_text(messages, spec=self.spec, what=f"counselor ({self.spec.model})")
         return text.strip(), {"requested_model": self.spec.model, **meta}
