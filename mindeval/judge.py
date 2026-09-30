@@ -42,8 +42,9 @@ Output, under `<out>/judge/<version>/`:
                      judge's own fields, usage. A unit already judged on the same input
                      (`input_sha`) is skipped; an errored one (`_error`) is retried. Error lines and
                      lines for inputs that changed stay in the file and do not count. mindeval1 rows
-                     also keep the judge's answer (truncated) and its reasoning, if any, so a mis-parse
-                     can be audited or re-parsed without paying for a new judgement.
+                     also keep the judge's answer and its reasoning, whether it came apart or inline
+                     before a `</think>` (each truncated; the answer keeps its end, where the ratings
+                     are), so a mis-parse can be audited or re-parsed without paying for a new judgement.
     summary.json     the version's own aggregation (MQM for mindeval2, per-criterion means for
                      mindeval1), coverage against run.json, and units still pending.
 
@@ -290,7 +291,7 @@ class MindEval1Judge:
     KEYS = ("Clinical Accuracy & Competence", "Ethical & Professional Conduct", "Assessment & Response",
             "Therapeutic Relationship & Alliance", "AI-Specific Communication Quality",
             "Overall score", "Average score")
-    #: A row's answer text is kept in full up to this length, so a mis-parse can be audited or
+    #: A row's answer and reasoning are kept up to this length each, so a mis-parse can be audited or
     #: re-parsed without paying for a new judgement.
     ANSWER_MAX_CHARS = 4000
 
@@ -316,8 +317,9 @@ class MindEval1Judge:
         return unit["prompt"]
 
     def parse(self, text: str, meta: dict) -> dict:
+        """`text` is the answer with any inline reasoning already moved to `meta` (see `_judge_one`)."""
         row = parse_judge_scores(text)[0]
-        row["answer"] = text[:self.ANSWER_MAX_CHARS]
+        row["answer"] = text[-self.ANSWER_MAX_CHARS:]  # the ratings close the answer, so a long one keeps its end
         if meta.get("reasoning_content"):
             row["reasoning_content"] = meta["reasoning_content"][:self.ANSWER_MAX_CHARS]
         return row
@@ -360,12 +362,17 @@ def _judge_one(judge, unit: dict, spec: CallSpec) -> dict:
             if meta.get("finish_reason") == "length":
                 # A cut-off answer is not a verdict: whatever JSON it holds may be a fragment of the reasoning.
                 raise JudgeError(f"the judge hit its token limit ({spec.max_tokens}) before finishing its answer")
+            # A judge served without a reasoning parser leaves "trace</think>verdict" in the content: what
+            # is kept or quoted below is the verdict, and the trace moves to meta like a parsed one. Both
+            # parsers read past the last </think> anyway, so the verdict they see is unchanged.
+            text, meta = llm.split_inline_trace(text, meta)
             try:
                 parsed = judge.parse(text, meta)
             except ValueError as e:
                 # A snippet of the unparseable answer, not just the exception, so a mis-parse can be
-                # diagnosed (or re-parsed) without paying for a new judgement.
-                raise JudgeError(f"{e} (answer: {text[:300]!r})") from e
+                # diagnosed (or re-parsed) without paying for a new judgement. Its end: that is where
+                # the verdict goes.
+                raise JudgeError(f"{e} (answer ends: {text[-300:]!r})") from e
             return {**parsed, "usage": meta.get("usage")}
         except Exception as e:  # noqa: BLE001 — retried; recorded if every attempt fails
             last = e

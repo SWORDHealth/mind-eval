@@ -175,8 +175,34 @@ def test_missing_criterion_is_never_accepted(tmp_path, monkeypatch):
     verdicts = [json.loads(line) for line in (out / "judge/mindeval1/verdicts.jsonl").read_text().splitlines()]
     assert len(verdicts) == 1 and "_error" in verdicts[0]
     assert not (set(MindEval1Judge.KEYS) & set(verdicts[0]))  # never a silently-defaulted score (incl. no "3")
-    # a snippet of the unparseable answer travels with the error, so it can be audited without a re-judge
-    assert "Assessment & Response" in verdicts[0]["_error"] and "weighing it" in verdicts[0]["_error"]
+    # the end of the unparseable answer travels with the error, so it can be audited without a re-judge:
+    # the ratings that were given, not the reasoning before them
+    assert "Assessment & Response" in verdicts[0]["_error"] and "Clinical Accuracy & Competence: 4" in verdicts[0][
+        "_error"]
+    assert "weighing it" not in verdicts[0]["_error"]
+
+
+def test_mindeval1_keeps_the_verdict_after_a_long_inline_reasoning_trace(tmp_path, monkeypatch):
+    """A judge served without a reasoning parser puts its whole trace before `</think>` in the
+    content. The row must keep the ratings (re-parseable without a new judgement) and the trace as
+    reasoning_content, not the first few thousand characters of the trace."""
+    monkeypatch.chdir(tmp_path)
+    _clear_env(monkeypatch)
+    _set_judge_env(monkeypatch)
+
+    out = tmp_path / "run"
+    _write_run(out, members=1, sessions=1)
+    _write_session(out, "m000", "ep000", opening="hi", replies=["how are you?"], formulation="Kappa is 44.")
+    ratings = "\n".join(f"{k}: {v}" for k, v in ALPHA.items())
+    answer = "<think>" + "reasoning " * 600 + "</think>\n" + ratings
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=lambda **kw: _response(answer)))
+    assert judgments("--output_dir", str(out), "--judge_version", "mindeval1", "--max_workers", "1") == 0
+
+    row = json.loads((out / "judge/mindeval1/verdicts.jsonl").read_text())
+    assert parse_judge_scores(row["answer"])[0]["Clinical Accuracy & Competence"] == 6
+    assert "reasoning" not in row["answer"]
+    assert row["reasoning_content"].startswith("reasoning reasoning")
+    assert len(row["reasoning_content"]) <= MindEval1Judge.ANSWER_MAX_CHARS
 
 
 def test_mindeval2_refuses_missing_counselor_system_prompt(tmp_path, monkeypatch, capsys):
