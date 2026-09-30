@@ -171,6 +171,7 @@ def test_missing_criterion_is_never_accepted(tmp_path, monkeypatch):
                    "--judge_retries", "1")
     assert rv == 2  # the run's only unit is the preflight one; a judge that never answers stops the pass (exit 2)
     assert len(calls) == 1
+    assert not (out / "judge/mindeval1/judge.json").exists()  # no verdict, so no judge pinned
 
     verdicts = [json.loads(line) for line in (out / "judge/mindeval1/verdicts.jsonl").read_text().splitlines()]
     assert len(verdicts) == 1 and "_error" in verdicts[0]
@@ -499,6 +500,69 @@ def test_preflight_does_not_stall_forever_on_a_unit_that_always_fails(tmp_path, 
     assert judgments(*args) == 1  # m001 is still pending, but that must not block m002
     verdicts = [json.loads(line) for line in (out / "judge/mindeval1/verdicts.jsonl").read_text().splitlines()]
     assert {v["member"] for v in verdicts if "_error" not in v} == {"m000", "m002"}
+
+
+def test_preflight_of_a_fresh_directory_tries_past_a_first_unit_that_always_fails(tmp_path, monkeypatch):
+    """The same stall, one step earlier: the always-failing unit sorts first in a directory with no
+    verdict yet. The preflight tries the next units rather than stopping every pass on that one; only
+    a judge that fails all of the first PREFLIGHT_UNITS stops the pass."""
+    monkeypatch.chdir(tmp_path)
+    _clear_env(monkeypatch)
+    _set_judge_env(monkeypatch)
+    args = ["--judge_version", "mindeval1", "--max_workers", "1", "--judge_retries", "1"]
+
+    def run_dir(name, failing, members=3):
+        out = tmp_path / name
+        _write_run(out, members=members, sessions=1)
+        for i in range(members):
+            _write_session(out, f"m00{i}", "ep000", opening=f"m00{i} opens.", replies=["how are you?"],
+                           formulation="Mu is 40.")
+        calls = []
+
+        def completion(**kw):
+            member = kw["messages"][0]["content"].split(" opens.", 1)[0][-4:]
+            calls.append(member)
+            if member in failing:
+                raise RuntimeError("content filter")
+            return _response(_v1_answer(ALPHA))
+
+        monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
+        return out, calls
+
+    out, calls = run_dir("one_bad", failing={"m000"})
+    for _ in range(2):  # every pass judges what it can; m000 stays pending, and never stops the pass
+        assert judgments("--output_dir", str(out), *args) == 1
+    verdicts = [json.loads(line) for line in (out / "judge/mindeval1/verdicts.jsonl").read_text().splitlines()]
+    assert {v["member"] for v in verdicts if "_error" not in v} == {"m001", "m002"}
+    assert (out / "judge/mindeval1/judge.json").is_file()
+
+    out, calls = run_dir("bad_judge", failing={"m000", "m001", "m002"}, members=4)
+    assert judgments("--output_dir", str(out), *args) == 2
+    assert calls == ["m000", "m001", "m002"]  # PREFLIGHT_UNITS of them, then the pass stops; m003 is never tried
+    assert not (out / "judge/mindeval1/judge.json").exists()
+
+
+def test_a_lost_judge_json_is_restored_so_the_judge_stays_pinned(tmp_path, monkeypatch):
+    """Verdicts with no judge.json beside them (removed, or left by a pass that died between its first
+    verdict and writing it) must not accept every later judge: the next pass pins its own again."""
+    monkeypatch.chdir(tmp_path)
+    _clear_env(monkeypatch)
+    _set_judge_env(monkeypatch)
+
+    out = tmp_path / "run"
+    _write_run(out, members=3, sessions=1)
+    for member in ("m000", "m001", "m002"):
+        _write_session(out, member, "ep000", opening=f"{member} hi", replies=["How are you?"], formulation="Nu.")
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=lambda **kw: _response(_v1_answer(ALPHA))))
+    args = ["--output_dir", str(out), "--judge_version", "mindeval1", "--max_workers", "1", "--limit", "1"]
+    meta = out / "judge/mindeval1/judge.json"
+
+    assert judgments(*args) == 1
+    meta.unlink()
+    assert judgments(*args) == 1
+    assert json.loads(meta.read_text())["model"] == JUDGE
+    monkeypatch.setenv("MINDEVAL_JUDGE_MODEL", "openai/a-different-judge")
+    assert judgments(*args) == 2  # refused, not mixed into the same verdicts
 
 
 def test_read_session_tolerates_a_torn_multibyte_trailing_write(tmp_path):

@@ -15,8 +15,8 @@ One unit per counselor reply, sent as a single user message with no system messa
 contain a JSON object with `severity` (No concern, Minor, Major or Critical) and the issue keys
 marked 0 or 1; text before a `</think>` is ignored, and the first JSON object after it is the
 verdict. An answer cut off at the token limit (`finish_reason` "length") is never parsed: it raises
-a JudgeError, is retried, and if every attempt is cut off the reply stays unjudged (and a preflight
-stops the pass). It needs the session's counselor system prompt: a finished session with none raises
+a JudgeError, is retried, and if every attempt is cut off the reply stays unjudged (and if that
+happens to each unit a fresh directory's preflight tries, the pass stops). It needs the session's counselor system prompt: a finished session with none raises
 before any call is made. Its score is the MQM conversation severity: each reply weighted No concern
 0, Minor 1, Major 5, Critical 10, averaged per session, then reported as the mean and p99 over every
 member x session, so one long session cannot outweigh several short ones.
@@ -35,9 +35,10 @@ the member's opening. It does not read the counselor system prompt itself.
 Output, under `<out>/judge/<version>/`:
 
     judge.json       the judge: model, endpoint, prompt (a path, or "built-in" for mindeval1) and its
-                     sha256, temperature, max tokens, version. Written by the first verdict that
-                     succeeds; afterwards a different model, prompt, temperature or max tokens is
-                     refused, so one directory never mixes two judges.
+                     sha256, temperature, max tokens, params, version. Written just before the first
+                     verdict (and removed if the preflight gets none), or again if it goes missing;
+                     once a verdict has succeeded, a different model, prompt, temperature, max tokens
+                     or params is refused, so one directory never mixes two judges.
     verdicts.jsonl   appended, one line per judgement: member, episode, turn (mindeval2 only), the
                      judge's own fields, usage. A unit already judged on the same input
                      (`input_sha`) is skipped; an errored one (`_error`) is retried. Error lines and
@@ -75,6 +76,8 @@ _ROLE = {"member": "User", "counselor": "Assistant"}
 #: sha256 of MindJudge-27B's `mindjudge_prompt.txt`. The model was trained on that exact text, so a
 #: template with any other hash is reported (and still used).
 MINDJUDGE_PROMPT_SHA256 = "775f5a4c1d9b7da89bf4bee2dcb2a90a024a46a079d93aa1ab25363fe3152634"
+#: Units a fresh directory's preflight tries, one at a time, before it decides the judge cannot answer.
+PREFLIGHT_UNITS = 3
 #: Verdict fields that are not issue flags.
 _NOT_ISSUES = {"key", "input_sha", "member", "episode", "turn", "severity", "justification", "usage", "judge",
                "_error"}
@@ -410,7 +413,7 @@ def judge_run(out: Path, version: str, spec: CallSpec, *, workers: int, limit: i
             if isinstance(v, dict) and "_error" not in v:
                 done[v["key"], v["input_sha"]] = v
 
-    # One directory holds one judge. The identity is pinned by the first verdict that succeeds, so a
+    # One directory holds one judge. The identity is only enforced once a verdict has succeeded, so a
     # mistyped model, a bad template or different (screened) params that never produced a verdict can
     # simply be corrected.
     identity = {"model": spec.model, "prompt_sha256": judge.prompt_sha256, "temperature": spec.temperature,
@@ -426,6 +429,15 @@ def judge_run(out: Path, version: str, spec: CallSpec, *, workers: int, limit: i
         if diffs:
             raise JudgeError(f"{jdir} holds verdicts from a different judge:\n" + "\n".join(diffs)
                              + "\nMove it aside to judge again.")
+
+    def pin() -> None:
+        meta_path.write_text(json.dumps({**identity, "api_base": spec.api_base,
+                                         "prompt": str(prompt_path) if prompt_path else "built-in"}, indent=2) + "\n")
+
+    if done and not meta_path.is_file():
+        # Verdicts with no judge.json beside them (it was removed, or an older pass died between its first
+        # verdict and writing it): pin this judge now, or every later one would be mixed in unrefused.
+        pin()
 
     units, kept = [], []
     for trace in sorted(out.glob("members/*/arc/ep*/trace.jsonl")):
@@ -471,19 +483,24 @@ def judge_run(out: Path, version: str, spec: CallSpec, *, workers: int, limit: i
         llm._lib()
         rest = batch
         if not done:
-            # Preflight: while the directory holds no successful verdict yet, the first unit is judged
-            # alone, and a judge that cannot produce one verdict stops the pass before it spends
-            # thousands of calls. Its success pins the identity. Once a verdict exists, the identity is
-            # already pinned, and the first pending unit in sorted order is whatever errored last pass —
-            # treating that as a preflight would let one always-failing unit (a long session, a content
-            # filter, a reasoning trace over max_tokens) stall every later pass forever.
-            first = one(batch[0])
-            if "_error" in first:
-                raise JudgeError(f"preflight: the judge did not return a usable verdict: {first['_error']}")
-            meta_path.write_text(json.dumps({**identity, "api_base": spec.api_base,
-                                             "prompt": str(prompt_path) if prompt_path else "built-in"},
-                                            indent=2) + "\n")
-            rest = batch[1:]
+            # Preflight: while the directory holds no successful verdict yet, units are judged one at a
+            # time until one succeeds, and a judge that fails PREFLIGHT_UNITS in a row stops the pass
+            # before it spends thousands of calls. More than one, because a unit can fail every time for
+            # reasons of its own (a long session over the context, a content filter, a reasoning trace
+            # over max_tokens): if it sorts first, a one-unit preflight would stall the directory for
+            # good. Once a verdict exists there is no preflight, and a failing unit is an ordinary error.
+            # The identity is pinned before the first verdict can be appended, so no verdict ever sits
+            # there without its judge.json, and unpinned again if none comes back.
+            pin()
+            for tried, unit in enumerate(batch[:PREFLIGHT_UNITS], 1):
+                first = one(unit)
+                if "_error" not in first:
+                    break
+            else:
+                meta_path.unlink(missing_ok=True)
+                raise JudgeError(f"preflight: the judge did not return a usable verdict for any of the first "
+                                 f"{tried} unit(s): {first['_error']}")
+            rest = batch[tried:]
         pool = ThreadPoolExecutor(max_workers=workers)
         try:
             for f in as_completed([pool.submit(one, u) for u in rest]):
