@@ -128,10 +128,12 @@ runs/<counselor>/
 The 50 members are synthetic. Their persona seeds come from
 [nvidia/Nemotron-Personas-USA](https://huggingface.co/datasets/nvidia/Nemotron-Personas-USA) (CC BY
 4.0). A language model turned them into clinical formulations, Claude Sonnet 4.6 wrote the session-1
-situations, and a handful of words were edited by hand. The code is MIT; the profiles are CC BY 4.0; the
-MQM judge prompt (`MINDEVAL2_JUDGE_SYSTEM_PROMPT` and `MINDEVAL2_JUDGE_USER_PROMPT`, derived from
-MindJudge-27B's) is CC BY-NC-SA 4.0. MindEval 1's profiles, human annotations and meta-evaluation data are
-unchanged on the
+situations, and a handful of words were edited by hand.
+
+The code is licensed under [Apache 2.0](LICENSE). Models and data are licensed under CC BY-NC-SA 4.0: the
+member profiles, the MQM judge prompt (`MINDEVAL2_JUDGE_SYSTEM_PROMPT` and `MINDEVAL2_JUDGE_USER_PROMPT`,
+derived from MindJudge-27B's) and [MindJudge-27B](https://huggingface.co/swordhealth/MindJudge-27B). MindEval
+1's profiles, human annotations and meta-evaluation data are unchanged on the
 [`legacy`](https://github.com/SWORDHealth/mind-eval/tree/legacy) branch.
 
 ## Cite

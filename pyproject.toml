@@ -4,7 +4,7 @@ version = "2.0.0"
 description = "MindEval: a multi-session benchmark for AI mental-health counselors, played against a simulated patient."
 requires-python = ">=3.12"
 readme = "README.md"
-license = "MIT"
+license = "Apache-2.0"
 dependencies = [
     "litellm>=1.98.1",
     "pydantic>=2",
