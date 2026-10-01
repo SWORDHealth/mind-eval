@@ -603,9 +603,9 @@ def test_preflight_of_a_fresh_directory_tries_past_a_first_unit_that_always_fail
     assert not (out / "judge/mindeval1/judge.json").exists()
 
 
-def test_a_lost_judge_json_is_restored_so_the_judge_stays_pinned(tmp_path, monkeypatch):
-    """Verdicts with no judge.json beside them (removed, or left by a pass that died between its first
-    verdict and writing it) must not accept every later judge: the next pass pins its own again."""
+def test_verdicts_without_their_judge_json_are_refused(tmp_path, monkeypatch):
+    """Verdicts with no judge.json beside them can't be tied to a judge (the rows don't record one), so a
+    pass refuses them, under any judge, rather than pin itself and mix its verdicts with someone else's."""
     monkeypatch.chdir(tmp_path)
     _clear_env(monkeypatch)
     _set_judge_env(monkeypatch)
@@ -614,16 +614,58 @@ def test_a_lost_judge_json_is_restored_so_the_judge_stays_pinned(tmp_path, monke
     _write_run(out, members=3, sessions=1)
     for member in ("m000", "m001", "m002"):
         _write_session(out, member, "ep000", opening=f"{member} hi", replies=["How are you?"], formulation="Nu.")
-    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=lambda **kw: _response(_v1_answer(ALPHA))))
+    calls = []
+
+    def completion(**kw):
+        calls.append(kw["model"])
+        return _response(_v1_answer(ALPHA))
+
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
     args = ["--output_dir", str(out), "--judge_version", "mindeval1", "--max_workers", "1", "--limit", "1"]
     meta = out / "judge/mindeval1/judge.json"
+    verdicts = out / "judge/mindeval1/verdicts.jsonl"
 
-    assert judgments(*args) == 1
+    assert judgments(*args) == 1  # model A judges one session
+    before = verdicts.read_text()
     meta.unlink()
-    assert judgments(*args) == 1
-    assert json.loads(meta.read_text())["model"] == JUDGE
     monkeypatch.setenv("MINDEVAL_JUDGE_MODEL", "openai/a-different-judge")
-    assert judgments(*args) == 2  # refused, not mixed into the same verdicts
+    assert judgments(*args) == 2  # model B is refused before any call
+    monkeypatch.setenv("MINDEVAL_JUDGE_MODEL", JUDGE)
+    assert judgments(*args) == 2  # so is model A: nothing on disk says it wrote them
+    assert calls == [JUDGE] and verdicts.read_text() == before and not meta.exists()
+
+
+def test_a_torn_last_verdict_never_swallows_the_next_one(tmp_path, monkeypatch):
+    """A pass killed mid-write leaves a last line with no line break. The next pass must start its verdicts on
+    a line of their own: a torn fragment is cut off (its unit is judged again), a whole record is kept."""
+    monkeypatch.chdir(tmp_path)
+    _clear_env(monkeypatch)
+    _set_judge_env(monkeypatch)
+
+    out = tmp_path / "run"
+    _write_run(out, members=3, sessions=1)
+    for member in ("m000", "m001", "m002"):
+        _write_session(out, member, "ep000", opening=f"{member} hi", replies=["How are you?"], formulation="Nu.")
+    calls = []
+
+    def completion(**kw):
+        calls.append(next(m for m in ("m000", "m001", "m002") if f"{m} hi" in kw["messages"][0]["content"]))
+        return _response(_v1_answer(ALPHA))
+
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
+    args = ["--output_dir", str(out), "--judge_version", "mindeval1", "--max_workers", "1"]
+    verdicts = out / "judge/mindeval1/verdicts.jsonl"
+
+    assert judgments(*args, "--limit", "1") == 1
+    with verdicts.open("ab") as f:  # killed while writing m001's verdict
+        f.write(b'{"key": "m001/ep000", "input_sha": "')
+    assert judgments(*args, "--limit", "1") == 1  # m001 is judged again and lands on its own line
+    verdicts.write_bytes(verdicts.read_bytes().rstrip(b"\n"))  # a whole last record that lost its line break
+    assert judgments(*args) == 0  # only m002 is left; nothing is judged twice
+    assert calls == ["m000", "m001", "m002"]
+    rows = [json.loads(line) for line in verdicts.read_text().splitlines()]
+    assert [r["member"] for r in rows] == ["m000", "m001", "m002"]
+    assert judgments(*args) == 0 and calls == ["m000", "m001", "m002"]  # and a later pass finds them all
 
 
 def test_read_session_tolerates_a_torn_multibyte_trailing_write(tmp_path):

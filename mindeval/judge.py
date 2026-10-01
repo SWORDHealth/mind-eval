@@ -400,6 +400,25 @@ def _judge_one(judge, unit: dict, spec: CallSpec) -> dict:
     return {"_error": f"{type(last).__name__}: {last}"[:500]}
 
 
+def _end_on_a_line_break(path: Path) -> None:
+    """Make the next append to a verdicts file start a line of its own. A process killed mid-write can
+    leave the last record without its line break; appending straight after it would glue the next verdict
+    onto it, and both would be lost to the next read. A record that is whole just gets its line break; a
+    torn one is cut off, and its unit, never counted as judged, is judged again."""
+    data = path.read_bytes()
+    if not data or data.endswith(b"\n"):
+        return
+    start = data.rfind(b"\n") + 1
+    try:
+        json.loads(data[start:].decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        with path.open("r+b") as f:
+            f.truncate(start)
+    else:
+        with path.open("ab") as f:
+            f.write(b"\n")
+
+
 def judge_run(out: Path, version: str, spec: CallSpec, *, workers: int, limit: int = 0,
              prompt_path: Path | None = None) -> tuple[dict, int, int]:
     """Judge every unit of every finished session under `out` not already judged, with `version`'s
@@ -415,6 +434,7 @@ def judge_run(out: Path, version: str, spec: CallSpec, *, workers: int, limit: i
     dest = jdir / "verdicts.jsonl"
     done: dict[tuple[str, str], dict] = {}
     if dest.is_file():
+        _end_on_a_line_break(dest)
         # .split("\n"), not .splitlines(): JSON leaves U+2028/U+2029/U+0085 raw (ensure_ascii=False),
         # and .splitlines() treats them as line breaks, tearing a verdict whose text quotes one into
         # two undecodable halves — read_session and session.read_trace use the same split for it.
@@ -447,9 +467,11 @@ def judge_run(out: Path, version: str, spec: CallSpec, *, workers: int, limit: i
                                          "prompt": str(prompt_path) if prompt_path else "built-in"}, indent=2) + "\n")
 
     if done and not meta_path.is_file():
-        # Verdicts with no judge.json beside them (it was removed, or an older pass died between its first
-        # verdict and writing it): pin this judge now, or every later one would be mixed in unrefused.
-        pin()
+        # Verdicts with no judge.json beside them: it was removed, since every pass pins its judge before the
+        # first verdict. The rows don't record which model wrote them, so pinning this judge now could put a
+        # different judge's verdicts under its name, and its own would then be mixed in with them.
+        raise JudgeError(f"{jdir} holds verdicts but no judge.json, so the judge that wrote them can't be "
+                         "confirmed. Restore judge.json, or move the directory aside to judge again.")
 
     units, kept = [], []
     for trace in sorted(out.glob("members/*/arc/ep*/trace.jsonl")):
