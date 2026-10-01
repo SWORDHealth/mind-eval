@@ -1,7 +1,9 @@
 # Mind-Eval
 A benchmark for AI mental-health counselors, played against a simulated patient over multiple sessions.
 
-![MindSim, the patient-simulation harness: a patient LM, conditioned on a fixed profile and a per-session scenario, commits to a move with a tool call and then verbalises it to the counselor LM under test; a shared memory, updated after each session, is read by both in the next; the transcripts of every session are scored by the judge.](assets/mindsim.png)
+<p align="center">
+  <img src="assets/mindsim.png" width="50%" alt="MindSim, the patient-simulation harness: a patient LM, conditioned on a fixed profile and a per-session scenario, commits to a move with a tool call and then verbalises it to the counselor LM under test; a shared memory, updated after each session, is read by both in the next; the transcripts of every session are scored by the judge.">
+</p>
 
 ## What's New
 > **📢 September 2026 — MindEval 2.** `master` is now a multi-session benchmark with a new patient
