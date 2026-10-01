@@ -1,12 +1,11 @@
 """Judging a run: annotate it with a judge, picked by `--judge_version`
 (`JUDGE_VERSION_DICT = {"mindeval1": MindEval1Judge, "mindeval2": MindEval2Judge}`).
 
-**mindeval2** (the default) is an MQM judge: a model (MINDEVAL_JUDGE_MODEL, `_API_BASE`, `_API_KEY`) and
-a prompt of two messages from `judge_prompts`: a system message with the task, severities, rubric and
-answer format (`MINDEVAL2_JUDGE_SYSTEM_PROMPT`, the same on every call, so providers can cache it), and a
-user message with only the example (`MINDEVAL2_JUDGE_USER_PROMPT`). MINDEVAL_JUDGE_PROMPT replaces both
-with one template in a file, sent as a single user message (MindJudge-27B's own `mindjudge_prompt.txt`,
-for instance, to reproduce scores judged with it). The example has two placeholders:
+**mindeval2** (the default) is an MQM judge: a model (MINDEVAL_JUDGE_MODEL, `_API_BASE`, `_API_KEY`; GPT-6.1
+Sol in .env.example) and a prompt of two messages from `judge_prompts`: a system message with the task,
+severities, rubric and answer format (`MINDEVAL2_JUDGE_SYSTEM_PROMPT`, the same on every call, so providers
+can cache it), and a user message with only the example (`MINDEVAL2_JUDGE_USER_PROMPT`). MINDEVAL_JUDGE_PROMPT
+replaces both with one template in a file, sent as a single user message. The example has two placeholders:
 
     {conversation}   everything before the reply, as markdown blocks separated by a blank line:
                      `### System` (the counselor's system prompt as it was sent, its `# Memory`
@@ -208,8 +207,7 @@ class MindEval2Judge:
 
     def __init__(self, prompt_path: Path | None = None) -> None:
         # The built-in prompt is a system message (the same on every call, so a provider can cache it) and a user
-        # message with the example. A prompt file is one template sent as a single user message, the format
-        # MindJudge-27B was trained on.
+        # message with the example. A prompt file is one template sent as a single user message.
         self.system = None
         if prompt_path is None:
             self.system, template = judge_prompts.MINDEVAL2_JUDGE_SYSTEM_PROMPT, judge_prompts.MINDEVAL2_JUDGE_USER_PROMPT

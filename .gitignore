@@ -4,7 +4,6 @@ __pycache__/
 .pytest_cache/
 dist/
 *.egg-info/
-# benchmark outputs, local endpoints and keys, and the judge's prompt (downloaded; CC BY-NC-SA 4.0)
+# benchmark outputs, local endpoints and keys
 /runs/
 .env
-/mindjudge/

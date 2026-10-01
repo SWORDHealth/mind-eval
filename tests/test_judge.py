@@ -495,6 +495,35 @@ def test_judge_params_are_part_of_the_judge_identity(tmp_path, monkeypatch):
     assert json.loads((out / "judge/mindeval2/judge.json").read_text())["params"] == {"reasoning_effort": "low"}
 
 
+def test_judge_defaults_are_the_benchmark_judges_settings(tmp_path, monkeypatch):
+    """With no judge flags, a pass runs with GPT-6.1 Sol's settings: high reasoning effort, no temperature,
+    32768 max tokens; '{}' sends no extra params."""
+    monkeypatch.chdir(tmp_path)
+    _clear_env(monkeypatch)
+    prompt_path = tmp_path / "judge_prompt.txt"
+    prompt_path.write_text("Judge this reply.\n{conversation}\n\n{candidate}\n")
+    _set_judge_env(monkeypatch, prompt_path=prompt_path)
+    calls = []
+
+    def completion(**kw):
+        calls.append(kw)
+        return _response('<think>ok</think>{"severity": "Minor", "vague": 0, "other": 1}')
+
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
+    for name, extra in (("default", []), ("none", ["--judge_params", "{}"])):
+        out = tmp_path / name
+        _write_run(out, members=1, sessions=1)
+        _write_session(out, "m000", "ep000", opening="hi", replies=["how are you?"], formulation="Iota is 36.",
+                      counselor_system_prompt="Be kind.")
+        assert judgments("--output_dir", str(out), "--max_workers", "1", *extra) == 0
+    identity = json.loads((tmp_path / "default/judge/mindeval2/judge.json").read_text())
+    assert identity["params"] == {"reasoning_effort": "high"}
+    assert identity["temperature"] is None and identity["max_tokens"] == 32768
+    assert calls[0]["reasoning_effort"] == "high" and "temperature" not in calls[0]
+    assert json.loads((tmp_path / "none/judge/mindeval2/judge.json").read_text())["params"] == {}
+    assert "reasoning_effort" not in calls[-1]
+
+
 def test_preflight_does_not_stall_forever_on_a_unit_that_always_fails(tmp_path, monkeypatch):
     """The preflight is a check on the judge, not on one unlucky unit: it must only gate a pass while
     the directory holds no successful verdict yet. Once one exists, the first pending unit in sorted

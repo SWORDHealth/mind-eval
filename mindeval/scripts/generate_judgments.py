@@ -18,13 +18,16 @@ from mindeval.utils import InputError, check_params, hold_lock
 #: --judge_version's choices, read off JUDGE_VERSION_DICT so a new judge is one entry there, not two.
 JudgeVersion = Literal[tuple(JUDGE_VERSION_DICT)]
 
+#: --judge_params when none are given: the settings of the benchmark's judge, GPT-6.1 Sol.
+DEFAULT_JUDGE_PARAMS = {"reasoning_effort": "high"}
+
 
 def _missing(names: list[str]) -> InputError:
     return InputError("set " + ", ".join(names) + " in the environment or in a .env file (see .env.example)")
 
 
 def main(output_dir: Path, judge_version: JudgeVersion = "mindeval2",
-         judge_temperature: float | None = 1.0, judge_max_tokens: int = 16384, judge_params: dict | None = None,
+         judge_temperature: float | None = None, judge_max_tokens: int = 32768, judge_params: dict | None = None,
          judge_timeout: float = 1800, judge_retries: int = 3, max_workers: int = 16, limit: int = 0) -> int:
     """Annotates a run's finished sessions with the judge that judge_version picks.
 
@@ -32,7 +35,8 @@ def main(output_dir: Path, judge_version: JudgeVersion = "mindeval2",
     command to judge whatever is still pending.
 
     Models, endpoints and keys come from the environment (or a .env file in the working directory):
-    MINDEVAL_JUDGE_MODEL, with optional _API_BASE and _API_KEY. mindeval2 uses the prompt in
+    MINDEVAL_JUDGE_MODEL, with optional _API_BASE and _API_KEY; .env.example sets the benchmark's judge,
+    GPT-6.1 Sol, and the defaults below are its settings. mindeval2 uses the prompt in
     mindeval/judge_prompts.py unless MINDEVAL_JUDGE_PROMPT names another file. See .env.example.
 
     Args:
@@ -40,10 +44,11 @@ def main(output_dir: Path, judge_version: JudgeVersion = "mindeval2",
         judge_version: mindeval2 is an MQM judge, one verdict per counselor reply, and needs the
             counselor system prompt from the trace; mindeval1 is MindEval v1's five-criterion rubric,
             one verdict per session, and does not
-        judge_temperature: null to leave it unsent
+        judge_temperature: null (the default) to leave it unsent, as reasoning models such as GPT-6.1 Sol expect
         judge_max_tokens: room for the judge's reasoning and verdict
-        judge_params: JSON merged into every request, e.g. '{"reasoning_effort": "high"}'; part of the
-            judge's identity, so a later pass with different params is refused like a different model
+        judge_params: JSON merged into every request; unset, it is '{"reasoning_effort": "high"}' (GPT-6.1 Sol's
+            setting), and '{}' sends nothing extra. Part of the judge's identity, so a later pass with different
+            params is refused like a different model
         judge_timeout: seconds per request
         judge_retries: attempts per unit
         max_workers: units judged in parallel
@@ -56,7 +61,7 @@ def main(output_dir: Path, judge_version: JudgeVersion = "mindeval2",
     try:
         if max_workers < 1 or judge_retries < 1 or judge_timeout <= 0:
             raise InputError("--max_workers and --judge_retries must be at least 1, and --judge_timeout positive")
-        judge_params = judge_params or {}
+        judge_params = dict(DEFAULT_JUDGE_PARAMS) if judge_params is None else judge_params
         check_params("--judge_params", judge_params)
         missing: list[str] = []
         je = env.endpoint("JUDGE", missing)
