@@ -86,7 +86,7 @@ def test_patient_calls_between_sessions_strip_an_inline_reasoning_trace(monkeypa
     beat = next(iter(cfg.episode.episode_beats.vocabulary))
     situation = arc_mod.evolve_situation(cfg, row, row.situation, SimpleNamespace(agenda=None, member_messages=[]),
                                          2.0, PATIENT, arc_seed=0, arc_id="a", episode_id=1, now_line="now",
-                                         beat=beat)
+                                         beat=beat, log=[], knobs=row.knobs)
     assert situation.event == "The week went on."
 
 
@@ -110,6 +110,43 @@ def test_evolve_situation_retries_with_backoff(monkeypatch):
     beat = next(iter(cfg.episode.episode_beats.vocabulary))
     situation = arc_mod.evolve_situation(cfg, row, row.situation, SimpleNamespace(agenda=None, member_messages=[]),
                                          2.0, PATIENT, arc_seed=0, arc_id="a", episode_id=1, now_line="now",
-                                         beat=beat)
+                                         beat=beat, log=[], knobs=row.knobs)
     assert situation.opening_message == "hi again"
     assert pauses == [1, 2]
+
+
+def test_evolve_situation_sees_the_log_and_the_next_sessions_conduct(monkeypatch):
+    """The situation writer gets the whole running log, so a fact from session 1 that session 2 never came
+    back to still shapes session 3; and the next session's archetype, concealment and affect, so its
+    opening, spoken verbatim, can't give away more than the rest of that session is allowed to."""
+    prompts = []
+    next_situation = {"event": "e", "automatic_thoughts": ["t"], "behaviors": ["b"], "physical": [],
+                      "goal": None, "checkpoints": [], "opening_message": "hi again"}
+
+    def completion(**kw):
+        prompts.append(kw["messages"][0]["content"])
+        return _response(json.dumps(next_situation))
+
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
+    cfg = load_config()
+    row = next(MemberRow.model_validate_json(line) for line in
+              (ROOT / "data/profiles.jsonl").read_text().splitlines() if '"m000119"' in line)
+    beat = next(iter(cfg.episode.episode_beats.vocabulary))
+    log = ["Asked in session 1 to be called Sam from now on.", "[open] the letter to the landlord"]
+    guarded = row.knobs.model_copy(update={"concealment_propensity": "high", "session_affect": "fear"})
+    open_ = row.knobs.model_copy(update={"concealment_propensity": "low", "session_affect": "joy"})
+    for knobs in (guarded, open_):
+        arc_mod.evolve_situation(cfg, row, row.situation, SimpleNamespace(agenda=None, member_messages=[]),
+                                 2.0, PATIENT, arc_seed=0, arc_id="a", episode_id=2, now_line="now", beat=beat,
+                                 log=log, knobs=knobs)
+    assert all(entry in p for p in prompts for entry in log)
+    for prompt, knobs in zip(prompts, (guarded, open_)):
+        archetype_text, avoids, conduct = arc_mod.session_conduct(cfg, row, knobs)
+        assert all(line in prompt for line in conduct + avoids)
+        assert archetype_text is None or archetype_text in prompt
+    assert prompts[0] != prompts[1]
+
+    arc_mod.evolve_situation(cfg, row, row.situation, SimpleNamespace(agenda=None, member_messages=[]),
+                             2.0, PATIENT, arc_seed=0, arc_id="a", episode_id=1, now_line="now", beat=beat,
+                             log=[], knobs=guarded)
+    assert "Their log so far" not in prompts[-1]  # no log yet: no empty section

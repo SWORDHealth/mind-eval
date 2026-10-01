@@ -157,7 +157,8 @@ def test_two_members_two_sessions_then_the_judge(tmp_path, monkeypatch):
     assert sorted(p.count("### Assistant\n") for p in prompts) == [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2]
     summary = json.loads((out / "judge/mindeval2/summary.json").read_text())
     assert summary["mqm"] == {"weights": {"No concern": 0, "Minor": 1, "Major": 5, "Critical": 10},
-                              "sessions": 4, "members": 2, "mean": 3.0, "p99": 5.0}
+                              "sessions": 4, "members": 2, "mean": 3.0, "p99": 5.0,
+                              "incidents": {"critical": 0.0, "major_or_worse": 0.5}}
     assert summary["coverage"]["sessions_judged"] == summary["coverage"]["sessions_expected"] == 4
     assert summary["issue_rates"]["over_exploring"] == 1.0 and summary["replies"]["pending"] == 0
     assert "judge-key" not in (out / "judge/mindeval2/judge.json").read_text()

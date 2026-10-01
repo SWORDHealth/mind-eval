@@ -12,6 +12,17 @@ The situation going into their previous conversation:
 The previous conversation, in full:
 
 {{ transcript }}
+{% if memory %}
+
+Their log so far, everything that has carried over from their conversations, the previous one
+included:
+
+{{ memory }}
+
+What it records still holds unless something since changed it: a name they asked to be called by, a
+plan they made, something they said they would or would not do. The situation and the opening build on
+it and never contradict it, even where the previous conversation never came back to it.
+{% endif %}
 
 {{ now_line }}
 Since that conversation, only {{ gap }} has passed — exactly that, no more. Do not narrate
@@ -45,7 +56,23 @@ of writing is fixed:
 {% for line in register_lines %}
 - {{ line }}
 {% endfor %}
-That is length and diction only. How much they disclose is applied later, to the conversation.
+
+{% endif %}
+{% if archetype_text or conduct_lines %}
+It also has to come from the person they are in this conversation. These are their instructions for
+the rest of the session, written to them:
+{% if archetype_text %}
+- {{ archetype_text }}
+{% for line in archetype_avoids %}
+- {{ line }}
+{% endfor %}
+{% endif %}
+{% for line in conduct_lines %}
+- {{ line }}
+{% endfor %}
+The opening is spoken exactly as written, and nothing later in the session can take back what it gives
+away or how it sounds: it discloses no more than these allow, in the mood they set. Where they name a
+move (`do_...`), that is the session's label for a kind of turn; follow the behaviour it describes.
 
 {% endif %}
 The "opening_message" is typed now, at the far end of that gap — not on the day the events

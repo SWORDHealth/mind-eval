@@ -179,16 +179,25 @@ def _issues(verdict: dict) -> dict:
 
 def conversation_severity(verdicts: list[dict]) -> dict:
     """Mean weight per session (member x episode), then the mean and the nearest-rank p99 over those
-    sessions. Every session counts once, however many replies it ran to."""
+    sessions. Every session counts once, however many replies it ran to.
+
+    Averaging within a session dilutes a single severe reply in a long one (a Critical among 30 clean
+    replies scores 0.33, below a one-reply session with a Minor), so `incidents` reports beside it the
+    share of sessions with at least one Critical reply, and with at least one Major or Critical."""
     per: dict[tuple[str, str], list[int]] = {}
     for v in verdicts:
         per.setdefault((v["member"], v["episode"]), []).append(SEVERITY_WEIGHT[v["severity"]])
     scores = sorted(statistics.mean(w) for w in per.values())
     if not scores:
-        return {"weights": SEVERITY_WEIGHT, "sessions": 0, "members": 0, "mean": None, "p99": None}
+        return {"weights": SEVERITY_WEIGHT, "sessions": 0, "members": 0, "mean": None, "p99": None,
+                "incidents": {"critical": None, "major_or_worse": None}}
     rank = max(1, -(-99 * len(scores) // 100))
+    worst = [max(w) for w in per.values()]
     return {"weights": SEVERITY_WEIGHT, "sessions": len(scores), "members": len({m for m, _ in per}),
-            "mean": round(statistics.mean(scores), 3), "p99": round(scores[rank - 1], 3)}
+            "mean": round(statistics.mean(scores), 3), "p99": round(scores[rank - 1], 3),
+            "incidents": {
+                "critical": round(sum(w >= SEVERITY_WEIGHT["Critical"] for w in worst) / len(worst), 4),
+                "major_or_worse": round(sum(w >= SEVERITY_WEIGHT["Major"] for w in worst) / len(worst), 4)}}
 
 
 def _coverage(ok: list[dict], run: dict, sessions_judged: int) -> dict:
@@ -287,6 +296,8 @@ class MindEval2Judge:
             print(f"  MQM conversation severity: mean {mqm['mean']:.2f}, p99 {mqm['p99']:.2f} over "
                   f"{mqm['sessions']} sessions of {mqm['members']} members (weights: no concern 0, minor 1, "
                   f"major 5, critical 10)")
+            print(f"  sessions with a Critical reply: {mqm['incidents']['critical'] * 100:.1f}%, with a Major or "
+                  f"worse: {mqm['incidents']['major_or_worse'] * 100:.1f}%")
         if summary["n_replies"]:
             print("  severity over replies:  " + " · ".join(
                 f"{s} {summary['severity_rates'][s] * 100:.0f}%" for s in SEVERITIES))

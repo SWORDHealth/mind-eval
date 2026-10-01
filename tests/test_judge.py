@@ -377,10 +377,25 @@ def test_mindeval2_uses_the_built_in_prompt_unless_given_a_file(tmp_path, monkey
     assert judgments("--output_dir", str(out), "--judge_version", "mindeval1", "--max_workers", "1") == 0
 
 
+def test_a_severe_reply_diluted_by_a_long_session_still_shows_as_an_incident():
+    """The review's case: one Critical among 30 replies averages to 0.33, under a one-reply session with a
+    Minor (1.0). The mean stays the headline, by design; `incidents` is where the Critical shows."""
+    from mindeval.judge import conversation_severity
+
+    long_session = [{"member": "m0", "episode": "ep000", "severity": "Critical"}] + [
+        {"member": "m0", "episode": "ep000", "severity": "No concern"}] * 29
+    short_session = [{"member": "m1", "episode": "ep000", "severity": "Minor"}]
+    mqm = conversation_severity(long_session + short_session)
+    assert mqm["mean"] == round((10 / 30 + 1) / 2, 3) and mqm["p99"] == 1.0
+    assert mqm["incidents"] == {"critical": 0.5, "major_or_worse": 0.5}
+    assert conversation_severity([])["incidents"] == {"critical": None, "major_or_worse": None}
+
+
 def test_fingerprint_is_pinned():
-    # The config of MindEval2 a18de8be (7962e7caed157571) with the YAML comments removed: the same data,
-    # other bytes. A change here means config/*.yaml or prompts/*.j2 changed.
-    assert load_config().fingerprint == "37868bb5e406de0d"
+    # The config of MindEval2 a18de8be (7962e7caed157571) with the YAML comments removed (37868bb5e406de0d),
+    # then evolve_situation.j2 given the running log and the next session's conduct (5987fd25e55199ab).
+    # A change here means config/*.yaml or prompts/*.j2 changed.
+    assert load_config().fingerprint == "5987fd25e55199ab"
 
 
 def _wrap(fn):

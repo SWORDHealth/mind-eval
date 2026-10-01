@@ -7,8 +7,9 @@ are seeded by the member and the seed alone, so every counselor meets the same s
 Between sessions the patient model makes two calls. Compaction folds the session into one running
 log, which is the whole of memory: the member carries it into the next session and the counselor
 walks in with the same log under `# Memory`. Evolution writes the next session's situation from the
-member's formulation, the last situation, the last conversation, the time that has passed and the
-drawn beat; its opening message is the member's first line next time.
+member's formulation, the last situation, the last conversation, the running log, the time that has
+passed and the drawn beat; its opening message is the member's first line next time, spoken verbatim,
+so it is written under the archetype, concealment and affect that session is played with.
 
 A checkpoint after every session lets a member that died mid-run resume at the session it died in.
 """
@@ -34,8 +35,8 @@ from mindeval.config import (
     render,
     turn_seed,
 )
-from mindeval.member import _pause
-from mindeval.models import ArcRecord, ArcShape, EpisodeRef, MemberRow, SessionRecord, Situation
+from mindeval.member import _pause, session_conduct
+from mindeval.models import ArcRecord, ArcShape, EpisodeRef, Knobs, MemberRow, SessionRecord, Situation
 from mindeval.session import Counselor, input_hash, read_trace, run_session
 
 STATE_FILE = "_state.json"
@@ -253,14 +254,21 @@ def _situation_block(s: Situation) -> str:
 
 def evolve_situation(cfg: Config, row: MemberRow, prev: Situation, last: SessionRecord, gap_hours: float,
                      patient: CallSpec, *, arc_seed: int, arc_id: str, episode_id: int, now_line: str,
-                     beat: str) -> Situation:
-    """The next session's situation, written by the patient model. Raises after three attempts."""
+                     beat: str, log: list[str], knobs: Knobs) -> Situation:
+    """The next session's situation, written by the patient model. Raises after three attempts.
+
+    `log` is the running log so far, so a fact the last conversation never came back to (a name, a plan)
+    still holds; `knobs` are the next session's, so its opening message, spoken verbatim, already keeps to
+    the archetype, concealment and affect the rest of that session is played with."""
     leftover = [i["text"] for i in (last.agenda or {}).get("todos", []) if i["status"] == "open"]
+    archetype_text, archetype_avoids, conduct_lines = session_conduct(cfg, row, knobs)
     prompt = render("evolve_situation", formulation=row.formulation, prev_situation=_situation_block(prev),
                     transcript=_conversation(last.member_messages, "Them"), gap=describe_gap(gap_hours),
                     leftover_todos=leftover, now_line=now_line,
                     beat_gloss=cfg.episode.episode_beats.vocabulary[beat].gloss,
-                    register_lines=[cfg.knob_line(row.knobs, k) for k in REGISTER_KNOBS])
+                    register_lines=[cfg.knob_line(row.knobs, k) for k in REGISTER_KNOBS],
+                    memory=render_log(log) if log else None, archetype_text=archetype_text,
+                    archetype_avoids=archetype_avoids, conduct_lines=conduct_lines)
     seed = provider_seed(turn_seed(arc_seed, arc_id, episode_id, "evolve_situation"))
     err = None
     for attempt in range(3):
@@ -363,19 +371,19 @@ def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, patient: CallS
         if trace_path.exists():
             raise FileExistsError(f"{trace_path} already exists; move it aside before resuming")
         gap = shape.gaps_hours[ep - 1] if ep > 0 else None
+        knobs = row.knobs.model_copy(update={"concealment_propensity": shape.concealment[ep],
+                                             "session_affect": shape.affect[ep]})
         evolve_ms = None
         if ep > 0:
             t0 = time.monotonic()
             situation = evolve_situation(cfg, row, situation, done_sessions[-1], gap, patient, arc_seed=arc_seed,
                                          arc_id=arc_id, episode_id=ep, now_line=f"It is now {describe_ts(anchor, clock)}.",
-                                         beat=shape.beats[ep - 1])
+                                         beat=shape.beats[ep - 1], log=log, knobs=knobs)
             evolve_ms = round((time.monotonic() - t0) * 1000, 1)
         ep_dir.mkdir(parents=True, exist_ok=True)
         (ep_dir / "situation.yaml").write_text(_situation_file(situation, ep), encoding="utf-8")
 
         ep_seed = turn_seed(arc_seed, arc_id, ep, "episode_seed")
-        knobs = row.knobs.model_copy(update={"concealment_propensity": shape.concealment[ep],
-                                             "session_affect": shape.affect[ep]})
         prev_close = episodes[-1].closed_ts if episodes else None
         record = run_session(cfg, row, situation, knobs, counselor, patient=patient, max_turns=max_turns,
                              seed=ep_seed, trace_path=trace_path,

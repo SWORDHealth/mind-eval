@@ -500,6 +500,17 @@ def _style(cfg: Config, knobs: Knobs, knob_lines: list[str]) -> tuple[list[str],
     return lines, s2.verbosity[level], s2.rule, f"{s2.examples_intro} {examples}", cue
 
 
+def session_conduct(cfg: Config, row: MemberRow, knobs: Knobs) -> tuple[str | None, list[str], list[str]]:
+    """How the member behaves in one session, as their own prompt puts it, for writing that session's
+    opening message: the archetype's description, what it never does, and the session's concealment and
+    affect lines (avoided moves taken out, as in `build_member`). All second person."""
+    archetype = cfg.archetypes.archetypes[row.archetype] if row.archetype else None
+    avoided = set(archetype.avoided_moves) if archetype else set()
+    lines = [_without_avoided_moves(cfg.knob_line(knobs, name), avoided)
+             for name in ("concealment_propensity", "session_affect")]
+    return (archetype.description if archetype else None), (list(archetype.avoids_prose) if archetype else []), lines
+
+
 def build_member(cfg: Config, row: MemberRow, situation: Situation, knobs: Knobs, spec: CallSpec, *,
                  memory_text: str | None = None, time_context: str | None = None) -> Member:
     """The member for one session. `knobs` are this session's (concealment and affect move across
