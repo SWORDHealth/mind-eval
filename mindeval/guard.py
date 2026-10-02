@@ -119,7 +119,8 @@ class RuleContext:
     knobs: Knobs
     #: The turn: 0 is the member's opening, k the member's answer to the counselor's k-th reply.
     turn: int
-    #: The session's cap on counselor replies.
+    #: The session's length in member turns, the opening included (MindSim's measure): the cap on counselor
+    #: replies, plus one.
     max_turns: int
     params: Any
     canonical: dict[str, str]

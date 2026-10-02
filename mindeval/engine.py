@@ -13,8 +13,8 @@ and the facade sends that one when it is the same conversation (same length, sam
 something other than `chat` called the facade.
 
 Retries stay mindeval's: each call site has its own (a patient server under load is waited out, an empty or cut-off
-reply is asked for again), so a failed request reaches `chat` as it failed rather than being retried again inside
-`acall_llm`.
+reply is asked for again), so a failed request reaches `chat` as it failed, neither retried again inside `acall_llm`
+nor counted there as a call: UserSim's accounting sees the calls that answered.
 """
 
 from __future__ import annotations
@@ -48,10 +48,12 @@ async def chat(models: dict[str, Any], role: str, messages: list[dict], **kwargs
     token = _CALL.set(call)
     try:
         reply = await acall_llm(models, role, messages, **{k: v for k, v in kwargs.items() if v is not None})
+    except Exception:
+        if "error" in call:  # the facade's call failed: that failure, as it was, to the caller's retry loop
+            raise call["error"] from None
+        raise
     finally:
         _CALL.reset(token)
-    if "error" in call:
-        raise call["error"]
     if "meta" in call:
         return call["text"], call["meta"]
     return reply.get("content") or "", _meta_of(reply)  # answered by a facade that is not ours: a hosted run
@@ -85,7 +87,7 @@ async def retry_text(models: dict[str, Any], role: str, messages: list[dict], *,
             last = e
             if attempt < spec.max_retries:
                 await pause(min(2 ** attempt, 30))
-    raise RuntimeError(f"{what} failed after {spec.max_retries} attempts: {type(last).__name__}: {last}") from last
+    raise llm.TextCallError(f"{what} failed after {spec.max_retries} attempts: {type(last).__name__}: {last}") from last
 
 
 def _meta_of(reply: dict) -> dict:
@@ -94,6 +96,11 @@ def _meta_of(reply: dict) -> dict:
               "arguments": (c.get("function") or {}).get("arguments")} for c in reply.get("tool_calls") or []]
     meta = {"reasoning_content": reply.get("reasoning_content"), "tool_calls": calls}
     return {k: v for k, v in meta.items() if v}
+
+
+class _HandedBack(TypeError):
+    """A failed call on its way back to `chat`. A TypeError, because UserSim's `acall_llm` neither retries one
+    (`_NEVER_RETRY`) nor records it as a call."""
 
 
 @dataclass(frozen=True)
@@ -118,12 +125,12 @@ class Facade:
         try:
             text, meta = await llm.acall_messages(sent, s.model, s.api_base, s.temperature, s.max_tokens, timeout,
                                                   params=s.params, api_key=s.api_key, **kwargs)
-        except Exception as e:  # noqa: BLE001 — handed back to chat, whose caller decides whether to retry
+        except Exception as e:
             if call is None:
                 raise
-            call["error"] = e
-            text, meta = "", {}
-        if call is not None and "error" not in call:
+            call["error"] = e  # chat re-raises it; the caller decides whether to retry
+            raise _HandedBack(f"{s.model}: the call failed and goes back to mindeval") from None
+        if call is not None:
             call.update(text=text, meta=meta)
         usage = meta.get("usage") if isinstance(meta.get("usage"), dict) else {}
         message = SimpleNamespace(

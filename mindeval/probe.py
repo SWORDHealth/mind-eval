@@ -38,6 +38,7 @@ from usersim.engine.generator import ConversationSimulatorGenerator
 
 from mindeval import engine
 from mindeval.config import CallSpec, load_config
+from mindeval.llm import TextCallError
 from mindeval.member import MemberError, build_member
 from mindeval.models import Knobs, MemberRow, Situation, TurnRecord
 from mindeval.session import Counselor, run_session
@@ -141,11 +142,12 @@ class MindEvalProbe(BaseProbe):
                 if failure is not None:
                     failure["error"] = e
                 builder.set_wall_clock_s(time.monotonic() - t0)
-                outcome = builder.finalize(
-                    status=OutcomeStatus.FAILED, failure_class=FailureClass.INFRASTRUCTURE_ERROR,
-                    failure_attribution=(FailureAttribution.USER_MODEL if isinstance(e, MemberError)
-                                         else FailureAttribution.ASSISTANT_MODEL),
-                    failure_detail=f"{type(e).__name__}: {e}")
+                # The patient's calls failing, the counselor's, or neither (a trace that could not be written).
+                blame = (FailureAttribution.USER_MODEL if isinstance(e, MemberError)
+                         else FailureAttribution.ASSISTANT_MODEL if isinstance(e, TextCallError)
+                         else FailureAttribution.INFRASTRUCTURE)
+                outcome = builder.finalize(status=OutcomeStatus.FAILED, failure_class=FailureClass.INFRASTRUCTURE_ERROR,
+                                           failure_attribution=blame, failure_detail=f"{type(e).__name__}: {e}")
                 result = make_result(state.messages, state.metadata, False, outcome=outcome, traces=builder.traces())
                 result.update(self.build_result_extras(state))
                 return result
@@ -168,8 +170,10 @@ def trajectory_id(member_id: str, arc_id: str, episode: int, attempt: int) -> st
 
 class Runner:
     """Takes sessions through UserSim's engine: its generator over mindeval's facades (`engine.facades`), and the
-    rows written, one parquet file per session, under `rows_dir` as `usersim evaluate` reads them
-    (`run=<run_id>/locale=en_US/probe_family=mindeval/`)."""
+    rows written, one parquet file per session, under `rows_dir` as `usersim eval` reads them
+    (`run=<run_id>/locale=en_US/probe_family=mindeval/`). A session started again (after a failure, or an
+    interruption before its arc was checkpointed) replaces its earlier rows, which move to `superseded/`, so the run
+    holds each session once."""
 
     def __init__(self, patient: CallSpec, counselor: CallSpec, *, max_turns: int, rows_dir: Path | None = None,
                  run_id: str = "0", provenance: dict | None = None) -> None:
@@ -209,11 +213,29 @@ class Runner:
             raise RuntimeError(f"session {episode + 1} failed in UserSim: {outcome.get('failure_detail')}")
         return result
 
+    def _partition(self, root: Path) -> Path:
+        return run_subroot(root, self.run_id) / f"locale={LOCALE}" / f"probe_family={LABEL}"
+
+    def set_aside(self, member_id: str, episode: int) -> None:
+        """Before a session starts again: its earlier rows out of the run, into `superseded/`."""
+        if self.rows_dir is None:
+            return
+        source = self._partition(self.rows_dir)
+        for path in sorted(source.glob(f"{member_id}-ep{episode:03d}-*.parquet")):
+            target = self._partition(self.rows_dir / "superseded") / path.name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            path.rename(target)
+
     def _write(self, result: dict, name: str) -> None:
         if self.rows_dir is None:
             return
         import pandas as pd
 
+        # The stored row names the trace it wrote (`mindeval_trace`) but no longer carries it as an input: run again
+        # (replayed, or hosted), it must not append a second session to this run's trace.
+        session = json.loads(result[SESSION_COLUMN])
+        trace, session["trace_path"] = session["trace_path"], None
+        result = {**result, SESSION_COLUMN: json.dumps(session, ensure_ascii=False), "mindeval_trace": trace}
         row = {k: (json.dumps(v, ensure_ascii=False, default=str) if isinstance(v, (dict, list)) else v)
                for k, v in result.items()}
         row.update(locale=LOCALE, probe_family=LABEL)

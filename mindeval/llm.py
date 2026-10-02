@@ -173,6 +173,10 @@ def parse_json(text: str) -> dict:
 THINK_OPEN, THINK_CLOSE = "<think>", "</think>"
 
 
+class TextCallError(RuntimeError):
+    """A counselor completion that failed every attempt; probe.py blames the session on the counselor for it."""
+
+
 def split_inline_trace(text: str, meta: dict) -> tuple[str, dict]:
     """The words after a reasoning trace left inline, with the trace moved to
     `meta["reasoning_content"]`.

@@ -7,6 +7,7 @@ once, when the counselor is called, so the counselor sees itself as the assistan
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -187,7 +188,8 @@ async def run_session(cfg: Config, row: MemberRow, situation: Situation, knobs: 
     member = build_member(cfg, row, situation, knobs, patient, models=models, memory_text=memory_text,
                           time_context=time_context)
     todos = Todos(situation)
-    guard = Guard.from_config(cfg, knobs, max_turns) if cfg.guard.enabled else None
+    # The Guard measures a session as MindSim does, in member turns with the opening: one more than the replies.
+    guard = Guard.from_config(cfg, knobs, max_turns + 1) if cfg.guard.enabled else None
     ledger = Ledger(max_turns)
     # Seeded from the pinned SEED_FINGERPRINT, not cfg.fingerprint: see config.py.
     run_id = _run_id(row, situation, seed, SEED_FINGERPRINT)
@@ -214,7 +216,7 @@ async def run_session(cfg: Config, row: MemberRow, situation: Situation, knobs: 
             rec.flags = ["opening_message"]
             ledger.record(rec)
             turns.append(rec)
-            trace.write_turn(rec)
+            await asyncio.to_thread(trace.write_turn, rec)  # it fsyncs: off the loop the other members run on
             if on_turn is not None:
                 on_turn(rec)
             member.said(rec.utterance)
@@ -231,7 +233,7 @@ async def run_session(cfg: Config, row: MemberRow, situation: Situation, knobs: 
                 rec.timings["counselor_ms"] = counselor_ms
                 ledger.record(rec)
                 turns.append(rec)
-                trace.write_turn(rec)
+                await asyncio.to_thread(trace.write_turn, rec)
                 if on_turn is not None:
                     on_turn(rec)
                 transcript.append({"role": "assistant", "content": rec.utterance})

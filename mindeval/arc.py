@@ -26,7 +26,7 @@ import re
 import time
 from pathlib import Path
 
-from usersim.engine.core.llm import set_conversation_id
+from usersim.engine.core.llm import flush_debug_log, set_conversation_id
 
 from mindeval import engine, llm
 from mindeval.config import (
@@ -378,6 +378,7 @@ async def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, runner: 
                 cfg, row, situation, done_sessions[-1], gap, runner.models, arc_seed=arc_seed, arc_id=arc_id,
                 episode_id=ep, now_line=f"It is now {describe_ts(shape, clock)}.", beat=shape.beats[ep - 1],
                 log=log, knobs=knobs)
+            flush_debug_log()
             evolve_ms = round((time.monotonic() - t0) * 1000, 1)
         ep_dir.mkdir(parents=True, exist_ok=True)
         (ep_dir / "situation.yaml").write_text(_situation_file(situation, ep), encoding="utf-8")
@@ -391,6 +392,8 @@ async def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, runner: 
                                   time_context=describe_now(shape, clock, prev_close))
         # A session started again after a failure is a new trajectory: count the earlier starts set aside.
         attempt = len(list((out / "partial").glob(f"ep{ep:03d}-*"))) if (out / "partial").is_dir() else 0
+        if attempt:
+            runner.set_aside(row.member_id, ep)
         await runner.session(session, trajectory=trajectory_id(row.member_id, arc_id, ep, attempt), episode=ep)
         turns, record = read_trace(trace_path)
         turn_ts = [clock + i * spacing_hours for i in range(len(turns))]
@@ -400,6 +403,7 @@ async def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, runner: 
         set_conversation_id(f"{row.member_id} | arc {arc_id} | compact {ep}")
         log = await compact_log(log, record, runner.models, max_entries=cfg.patient.log_max_entries,
                                 arc_seed=arc_seed, arc_id=arc_id, episode_id=ep)
+        flush_debug_log()
         compact_ms = round((time.monotonic() - t0) * 1000, 1)
         rendered = render_log(log)
         (ep_dir / "log.md").write_text(rendered + "\n", encoding="utf-8")
