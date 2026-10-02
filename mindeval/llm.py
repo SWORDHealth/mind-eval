@@ -143,27 +143,16 @@ def _extract_json(text: str):
 
 def parse_json(text: str) -> dict:
     """Parse a JSON answer, tolerating ```fences``` and prose around it."""
-    s = text.strip()
-    if s.startswith("```"):
-        nl = s.find("\n")
-        if nl >= 0:
-            s = s[nl + 1:]
-        if s.rstrip().endswith("```"):
-            s = s.rstrip()[:-3].rstrip()
     try:
-        return json.loads(s)
+        return json.loads(text)
     except json.JSONDecodeError:
-        obj = _extract_json(s)
+        obj = _extract_json(text)
         if obj is not None:
             return obj
         raise
 
 
 THINK_OPEN, THINK_CLOSE = "<think>", "</think>"
-
-
-class TextCallError(RuntimeError):
-    pass
 
 
 def split_inline_trace(text: str, meta: dict) -> tuple[str, dict]:
@@ -209,4 +198,4 @@ def retry_text(messages: list[dict], *, spec, seed: int | None = None, what: str
             last = e
             if attempt < spec.max_retries:
                 time.sleep(min(2 ** attempt, 30))
-    raise TextCallError(f"{what} failed after {spec.max_retries} attempts: {type(last).__name__}: {last}") from last
+    raise RuntimeError(f"{what} failed after {spec.max_retries} attempts: {type(last).__name__}: {last}") from last

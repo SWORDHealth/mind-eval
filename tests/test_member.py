@@ -27,7 +27,7 @@ def _spec(**over):
 
 def _member(**over):
     return Member(system_prompt="be a member", spec=_spec(**over), tool=move_tool({"do_answer_question": "answer"}),
-                 vocab=frozenset({"do_answer_question"}), profile_id="p", situation_id="s")
+                 vocab=frozenset({"do_answer_question"}))
 
 
 # -- speak(): attempt state must not leak across retries (member.py, MAX_STRAY_COMMITS) -----------

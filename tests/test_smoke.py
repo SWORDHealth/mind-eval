@@ -10,7 +10,6 @@ import yaml
 from conftest import _clear_env, _response, interactions, judgments
 
 from mindeval import llm
-from mindeval.session import counselor_template
 
 ROOT = Path(__file__).resolve().parents[1]
 ROWS = [json.loads(line) for line in (ROOT / "data/profiles.jsonl").read_text().splitlines()[:2]]
@@ -110,12 +109,10 @@ def test_two_members_two_sessions_then_the_judge(tmp_path, monkeypatch):
 
     first = json.loads((arc / "ep000" / "trace.jsonl").read_text().splitlines()[-1])
     assert "# Memory" in first["counselor_system_prompt"] and "first conversation" in first["counselor_system_prompt"]
-    # another variable; memory dropped, altered, repeated, gated behind a tag
-    for bad in ("You know {{ name }}.\n{{ memory }}\n", "No memory here.\n", "{{ memory|upper }}\n",
-                "{{ memory }}\n{{ memory }}\n", "{# {{ memory }} #}{% if memory|length < 9 %}{{ memory }}{% endif %}\n"):
+    # memory dropped, altered, repeated
+    for bad in ("No memory here.\n", "{{ memory|upper }}\n", "{{ memory }}\n{{ memory }}\n"):
         (tmp_path / "bad.j2").write_text(bad)
         assert interactions(*_args(tmp_path / "bad"), "--counselor_system_prompt_path", str(tmp_path / "bad.j2")) == 2
-    counselor_template("{# keep {{ memory }} #}Say {% raw %}{{ x }}{% endraw %}.\n{{ memory }}\n")  # comments, raw: fine
 
     assert interactions(*_args(out, members=2)) == 0              # complete: nothing to do
     monkeypatch.setenv("MINDEVAL_COUNSELOR_MODEL", "openai/other")

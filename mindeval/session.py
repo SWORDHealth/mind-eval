@@ -15,7 +15,6 @@ import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
-from jinja2 import Environment, StrictUndefined, Template, TemplateSyntaxError, nodes
 from pydantic import BaseModel, ValidationError
 
 from mindeval import llm
@@ -26,46 +25,18 @@ from mindeval.models import Knobs, MemberRow, SessionRecord, Situation, TurnReco
 ERROR_FILENAME = "error.jsonl"
 
 
-#: Where a counselor template receives the running log of earlier sessions. Every template must carry
-#: it exactly once, as written, and may use no other variable, so every counselor gets the same memory.
+#: Where a counselor prompt receives the running log of earlier sessions. Every prompt must carry it
+#: exactly once, as written, so every counselor gets the same memory.
 MEMORY_FIELD = "{{ memory }}"
 
 
-def counselor_template(text: str) -> Template:
-    """A counselor system prompt as a Jinja template. `{{ memory }}` is filled with the running log of
-    earlier sessions, framed for the counselor (in session 1 it says there are none).
-
-    The template is checked on its parse tree, not by rendering a sample: it may be text (comments and
-    `{% raw %}` blocks included) and a single bare `{{ memory }}`, and nothing else. A filter, a tag, a
-    condition, a slice or any other name could change what the counselor receives, so each is refused
-    with a ValueError."""
-    env = Environment(undefined=StrictUndefined, autoescape=False)  # a single trailing newline is dropped
-    try:
-        tree = env.parse(text)
-    except TemplateSyntaxError as e:
-        raise ValueError(f"not a valid Jinja template (line {e.lineno}: {e.message}); to write a literal "
-                         "{{, {% or {# in the text, wrap it in {% raw %}...{% endraw %}") from None
-    parts = []
-    for node in tree.body:
-        if not isinstance(node, nodes.Output):
-            where = f"line {node.lineno}: " if getattr(node, "lineno", None) else ""  # autoescape has none
-            raise ValueError(f"{where}a {{% ... %}} tag; a counselor template is text and {MEMORY_FIELD}, "
-                             "with no tags")
-        parts += node.nodes
-    names = []
-    for part in parts:
-        if isinstance(part, nodes.Name):
-            names.append(part.name)
-        elif not isinstance(part, nodes.TemplateData):
-            raise ValueError(f"line {part.lineno}: an expression; write the memory as {MEMORY_FIELD}, with no "
-                             "filter, index or call")
-    if set(names) - {"memory"}:
-        raise ValueError(f"uses {sorted(set(names) - {'memory'})}; {MEMORY_FIELD} is the only variable a "
-                         "counselor template may use")
-    if len(names) != 1:
-        raise ValueError(f"must contain {MEMORY_FIELD} exactly once (found {len(names)}): it is where the "
+def counselor_template(text: str) -> str:
+    """A counselor system prompt: any text around one `{{ memory }}`, which is filled with the running
+    log of earlier sessions (in session 1 it says there are none). A single trailing newline is dropped."""
+    if (n := text.count(MEMORY_FIELD)) != 1:
+        raise ValueError(f"must contain {MEMORY_FIELD} exactly once (found {n}): it is where the "
                          "counselor receives its log of earlier sessions")
-    return env.from_string(text)
+    return text.removesuffix("\n")
 
 
 #: What a counselor's own earlier turns carry back besides their words: its reasoning, exactly as the model returned
@@ -87,11 +58,11 @@ class Counselor:
     Its earlier turns come back to it as it returned them, reasoning included (`CARRIED`)."""
 
     spec: CallSpec
-    template: Template
+    template: str
 
     def prompt_with(self, memory: str) -> str:
         """The system prompt for one session."""
-        return self.template.render(memory=memory)
+        return self.template.replace(MEMORY_FIELD, memory)
 
     def respond(self, system_prompt: str, transcript: list[dict]) -> tuple[str, dict]:
         flipped = {"user": "assistant", "assistant": "user"}

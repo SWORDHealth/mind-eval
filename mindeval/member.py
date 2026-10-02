@@ -172,8 +172,6 @@ class Member:
     tool: dict
     #: The member's move vocabulary, checked at the parse boundary for providers that ignore the enum.
     vocab: frozenset
-    profile_id: str
-    situation_id: str
     #: What the template put into the system prompt, by variable.
     injections: dict = field(default_factory=dict)
     #: The answer an accepted commit gets: "accepted" plus the writing cue.
@@ -482,7 +480,7 @@ def _without_avoided_moves(text: str, avoided: set[str]) -> str:
     return "\n".join(paragraphs)
 
 
-def _style(cfg: Config, knobs: Knobs, knob_lines: list[str]) -> tuple[list[str], str, str, str, str | None]:
+def _style(cfg: Config, knobs: Knobs, knob_lines: list[str]) -> tuple[list[str], str, str, str, str]:
     """The style layer (config/style2.yaml): the writing-style sentence with its casing appended,
     the verbosity sentence, the orthography rule, the example turns, and the writing cue."""
     s2 = cfg.style2
@@ -492,11 +490,7 @@ def _style(cfg: Config, knobs: Knobs, knob_lines: list[str]) -> tuple[list[str],
     styled = f"{diction} {s2.orthography[style]}"
     lines = [styled if line == own else line for line in knob_lines]
     examples = " ".join(f"[ {turn} ]" for turn in s2.examples[level][style])
-    cue = s2.write_cue.get(level)
-    if cue and s2.write_note:
-        cue = f"{cue} {s2.write_note}"
-    if cue and s2.write_rule.get(style):
-        cue = f"{cue} {s2.write_rule[style]}"
+    cue = f"{s2.write_cue[level]} {s2.write_note} {s2.write_rule[style]}"
     return lines, s2.verbosity[level], s2.rule, f"{s2.examples_intro} {examples}", cue
 
 
@@ -526,68 +520,47 @@ def build_member(cfg: Config, row: MemberRow, situation: Situation, knobs: Knobs
     knob_lines = [_without_avoided_moves(line, avoided) for line in knob_lines]
     secondary_note = _without_avoided_moves(cfg.style2.secondary_note, avoided)
     repertoire = {name: desc for name, desc in cfg.moves.moves.items() if name not in avoided}
-    described = {**repertoire, **{m: d for m, d in cfg.style2.move_descriptions.items() if m in repertoire}}
-    move_lines = [f"`{name}` — {desc}" for name, desc in described.items()]
+    move_lines = [f"`{name}` — {desc}" for name, desc in repertoire.items()]
     # The depth moves the member can reach, least to most.
     depth_moves = [cfg.moves.canonical_move_by_level[level] for level in ("minimize", "partial", "full")
                    if cfg.moves.canonical_move_by_level.get(level) in repertoire]
     # The agenda is shown in a fixed per-member order, without ids.
     checkpoints = list(situation.checkpoints)
     random.Random(f"{row.member_id}\x00agenda").shuffle(checkpoints)
-    injections = {
-        "archetype": row.archetype,
+    ctx = {
+        "formulation": row.formulation,
+        "situation": situation,
+        "knob_lines": knob_lines,
+        "verbosity_line": verbosity_line,
+        "style_rule": style_rule,
+        "style_examples": style_examples,
+        "secondary_note": secondary_note,
+        "memory_text": memory_text,
+        "time_context": time_context,
+        "move_lines": move_lines,
+        "depth_moves": depth_moves,
         "archetype_text": archetype.description if archetype else None,
-        "archetype_avoided": sorted(avoided),
         "archetype_avoids": archetype.avoids_prose if archetype else [],
         "agenda_goal": situation.goal,
         "agenda_checkpoints": checkpoints,
-        "agenda_plain": True,
-        "move_lines": move_lines,
-        "depth_moves": depth_moves,
-        "formulation": row.formulation,
-        "situation.event": situation.event,
-        "situation.automatic_thoughts": situation.automatic_thoughts,
-        "situation.behaviors": situation.behaviors,
-        "situation.physical": situation.physical,
-        "knob_lines": knob_lines,
-        "verbosity_line": verbosity_line,
-        "style": "style2",
-        "style_rule": style_rule,
-        "style_examples": style_examples,
-        "write_cue": write_cue,
-        "memory_text": memory_text,
-        "time_context": time_context,
     }
-    system_prompt = render(
-        "member_system",
-        formulation=row.formulation,
-        situation=situation,
-        knob_lines=knob_lines,
-        verbosity_line=verbosity_line,
-        style_rule=style_rule,
-        style_examples=style_examples,
-        secondary_note=secondary_note,
-        memory_text=memory_text,
-        time_context=time_context,
-        move_lines=move_lines,
-        depth_moves=depth_moves,
-        archetype_text=archetype.description if archetype else None,
-        archetype_avoids=archetype.avoids_prose if archetype else [],
-        agenda_goal=situation.goal,
-        agenda_checkpoints=checkpoints,
-        agenda_plain=True,
-    )
     # De-dashed after rendering, so the profile and situation text lose theirs too.
-    system_prompt = system_prompt.replace(" —", ",")
+    system_prompt = render("member_system", **ctx).replace(" —", ",")
+    # What the template put into the system prompt, by variable, for the session record.
+    injections = {
+        **{k: v for k, v in ctx.items() if k not in ("situation", "secondary_note")},
+        **{f"situation.{k}": getattr(situation, k) for k in ("event", "automatic_thoughts", "behaviors", "physical")},
+        "archetype": row.archetype,
+        "archetype_avoided": sorted(avoided),
+        "write_cue": write_cue,
+    }
     return Member(
         tool=move_tool(repertoire),
         vocab=frozenset(repertoire),
         injections=injections,
         system_prompt=system_prompt,
-        accepted_text=f"{ACCEPTED}. {write_cue}" if write_cue else ACCEPTED,
+        accepted_text=f"{ACCEPTED}. {write_cue}",
         spec=spec,
-        profile_id=row.member_id,
-        situation_id=situation.situation_id,
     )
 
 
@@ -595,7 +568,7 @@ class Todos:
     """The session's agenda: the situation's checkpoints, ticked off or added to by the member.
 
     Items keep short ids, but the member never sees them and the answers do not echo the list. A
-    completion is matched to an open item by id, then containment, then token overlap, because the
+    completion is matched to an open item by containment, then token overlap, because the
     member names items in its own words."""
 
     def __init__(self, situation: Situation) -> None:
@@ -613,10 +586,6 @@ class Todos:
         return " ".join("".join(ch if ch.isalnum() else " " for ch in text.lower()).split())
 
     def _resolve(self, todo: str) -> dict | None:
-        by_id = next((i for i in self.items if i["status"] == "open"
-                      and i["id"] == todo.strip().strip("[]").lower()), None)
-        if by_id is not None:
-            return by_id
         norm = self._norm(todo)
         if not norm:
             return None

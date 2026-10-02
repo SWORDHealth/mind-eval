@@ -35,7 +35,6 @@ fi
 
 echo "Printing summary of results"
 
-python -c "import json, sys; print(json.load(open(sys.argv[1])))" \
-    "$OUTPUT_DIR/judge/$JUDGE_VERSION/summary.json"
+cat "$OUTPUT_DIR/judge/$JUDGE_VERSION/summary.json"
 
 exit "$interactions_status"

@@ -22,7 +22,6 @@ import random
 import re
 import time
 from pathlib import Path
-from typing import NamedTuple
 
 from mindeval import llm
 from mindeval.config import (
@@ -40,7 +39,6 @@ from mindeval.models import ArcRecord, ArcShape, EpisodeRef, Knobs, MemberRow, S
 from mindeval.session import Counselor, input_hash, read_trace, run_session
 
 STATE_FILE = "_state.json"
-STATE_VERSION = 1
 #: Compaction reads a whole session and reasons before writing, and it is the one call with no smaller
 #: correct answer: a missing log costs every later session, on both sides. Its timeout is generous.
 COMPACT_TIMEOUT = 1800.0
@@ -119,11 +117,6 @@ def draw_shape(ep_cfg: EpisodeFile, row: MemberRow, arc_seed: int, arc_id: str, 
 WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
 
-class Anchor(NamedTuple):
-    weekday: int
-    hour: float
-
-
 def _part_of_day(hour: float) -> str:
     h = hour % 24
     if h < 5:
@@ -137,10 +130,10 @@ def _part_of_day(hour: float) -> str:
     return "late evening"
 
 
-def describe_ts(anchor: Anchor, ts_hours: float) -> str:
+def describe_ts(shape: ArcShape, ts_hours: float) -> str:
     """'Thursday evening' for a virtual time."""
-    absolute = anchor.hour + ts_hours
-    return f"{WEEKDAYS[(anchor.weekday + int(absolute // 24)) % 7]} {_part_of_day(absolute)}"
+    absolute = shape.anchor_hour + ts_hours
+    return f"{WEEKDAYS[(shape.anchor_weekday + int(absolute // 24)) % 7]} {_part_of_day(absolute)}"
 
 
 def describe_gap(hours: float) -> str:
@@ -156,12 +149,12 @@ def describe_gap(hours: float) -> str:
     return f"about {round(days / 7)} weeks"
 
 
-def describe_now(anchor: Anchor, now_ts: float, prev_ts: float | None = None) -> str:
-    now = f"It is {describe_ts(anchor, now_ts)}."
+def describe_now(shape: ArcShape, now_ts: float, prev_ts: float | None = None) -> str:
+    now = f"It is {describe_ts(shape, now_ts)}."
     if prev_ts is None:
         return now
     return (f"{now} Your last conversation was {describe_gap(now_ts - prev_ts)} ago, "
-            f"on {describe_ts(anchor, prev_ts)}.")
+            f"on {describe_ts(shape, prev_ts)}.")
 
 
 # -- memory ----------------------------------------------------------------------------------------
@@ -303,7 +296,7 @@ def _situation_file(s: Situation, episode_id: int) -> str:
 
 def _save_state(out: Path, *, arc_id: str, fingerprint: str, done: int, clock: float, log: list[str],
                 episodes: list[EpisodeRef]) -> None:
-    payload = {"version": STATE_VERSION, "arc_id": arc_id, "fingerprint": fingerprint, "episodes_done": done,
+    payload = {"arc_id": arc_id, "fingerprint": fingerprint, "episodes_done": done,
                "clock": clock, "log": log, "episodes": [e.model_dump() for e in episodes]}
     tmp = out / (STATE_FILE + ".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -353,7 +346,6 @@ def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, patient: CallS
     # Seeded from the pinned SEED_FINGERPRINT, not cfg.fingerprint: see config.py.
     arc_id = arc_id_of(row, arc_seed, SEED_FINGERPRINT)
     shape = draw_shape(cfg.episode, row, arc_seed, arc_id, sessions)
-    anchor = Anchor(shape.anchor_weekday, shape.anchor_hour)
     spacing_hours = cfg.episode.turn_spacing_minutes / 60
     out.mkdir(parents=True, exist_ok=True)
 
@@ -377,7 +369,7 @@ def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, patient: CallS
         if ep > 0:
             t0 = time.monotonic()
             situation = evolve_situation(cfg, row, situation, done_sessions[-1], gap, patient, arc_seed=arc_seed,
-                                         arc_id=arc_id, episode_id=ep, now_line=f"It is now {describe_ts(anchor, clock)}.",
+                                         arc_id=arc_id, episode_id=ep, now_line=f"It is now {describe_ts(shape, clock)}.",
                                          beat=shape.beats[ep - 1], log=log, knobs=knobs)
             evolve_ms = round((time.monotonic() - t0) * 1000, 1)
         ep_dir.mkdir(parents=True, exist_ok=True)
@@ -389,7 +381,7 @@ def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, patient: CallS
                              seed=ep_seed, trace_path=trace_path,
                              memory_text=member_memory(log) if ep > 0 else None,
                              counselor_memory=counselor_memory(log if ep > 0 else []),
-                             time_context=describe_now(anchor, clock, prev_close))
+                             time_context=describe_now(shape, clock, prev_close))
         turns, _ = read_trace(trace_path)
         turn_ts = [clock + i * spacing_hours for i in range(len(turns))]
         closed = turn_ts[-1] if turn_ts else clock

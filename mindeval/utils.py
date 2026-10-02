@@ -64,19 +64,9 @@ def messages_to_convo_str(lst):
     return out_str.strip()
 
 
-def parse_judge_scores(output):
-    """
-    Parse judge output into a list of score dictionaries.
-
-    Args:
-        output: String or list of strings containing judge scores
-
-    Returns:
-        List of dictionaries with criterion codes as keys and scores as values.
-
-    Raises:
-        ValueError: a criterion's score is missing from the text.
-    """
+def parse_judge_scores(output: str) -> dict:
+    """The five criterion scores in the judge's answer, plus their mean under `Overall score` and
+    `Average score`. Raises ValueError when a criterion's score is missing from the text."""
     criteria = [
         "Clinical Accuracy & Competence",
         "Ethical & Professional Conduct",
@@ -84,26 +74,15 @@ def parse_judge_scores(output):
         "Therapeutic Relationship & Alliance",
         "AI-Specific Communication Quality",
     ]
-
-    # Handle both single string and list of strings
-    outputs = [output] if isinstance(output, str) else output
-
-    results = []
-    for text in outputs:
-        text = text.split("</think>")[-1]  # a reasoning trace precedes the verdict; only the verdict is parsed
-        scores = {}
-        for criterion in criteria:
-            # The last match, not the first: commentary before the ratings (e.g. "Clinical Accuracy &
-            # Competence: 2 issues stand out...") can otherwise be mistaken for the score itself.
-            matches = re.findall(rf"{criterion}:\s*(\d+\.?\d*)", text)
-            if not matches:
-                # a silent default would look like a real judgement; the caller retries instead
-                raise ValueError(f"missing {criterion!r} in the judge's answer")
-            scores[criterion] = float(matches[-1])
-        overall_score = sum(scores.values()) / len(criteria)
-        scores["Overall score"] = overall_score
-        scores["Average score"] = overall_score
-
-        results.append(scores)
-
-    return results
+    text = output.split("</think>")[-1]  # a reasoning trace precedes the verdict; only the verdict is parsed
+    scores = {}
+    for criterion in criteria:
+        # The last match, not the first: commentary before the ratings (e.g. "Clinical Accuracy &
+        # Competence: 2 issues stand out...") can otherwise be mistaken for the score itself.
+        matches = re.findall(rf"{criterion}:\s*(\d+\.?\d*)", text)
+        if not matches:
+            # a silent default would look like a real judgement; the caller retries instead
+            raise ValueError(f"missing {criterion!r} in the judge's answer")
+        scores[criterion] = float(matches[-1])
+    scores["Overall score"] = scores["Average score"] = sum(scores.values()) / len(criteria)
+    return scores

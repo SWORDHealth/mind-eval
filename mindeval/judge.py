@@ -17,7 +17,7 @@ One unit per counselor reply. The answer must
 contain a JSON object with `severity` (No concern, Minor, Major or Critical) and the issue keys
 marked 0 or 1; text before a `</think>` is ignored, and the first JSON object after it is the
 verdict. An answer cut off at the token limit (`finish_reason` "length") is never parsed: it raises
-a JudgeError, is retried, and if every attempt is cut off the reply stays unjudged (and if that
+an InputError, is retried, and if every attempt is cut off the reply stays unjudged (and if that
 happens to each unit a fresh directory's preflight tries, the pass stops). It needs the session's counselor system prompt: a finished session with none raises
 before any call is made. Its score is the MQM conversation severity: each reply weighted No concern
 0, Minor 1, Major 5, Critical 10, averaged per session, then reported as the mean and p99 over every
@@ -82,11 +82,6 @@ _NOT_ISSUES = {"key", "input_sha", "member", "episode", "turn", "severity", "jus
                "_error"}
 
 
-class JudgeError(InputError):
-    """Bad input, a refused run, or a judge answer cut off at its token limit. Raised out of `main`, it is
-    printed with exit code 2; for one unit, it is retried and recorded like any failed call."""
-
-
 def read_session(trace: Path) -> dict:
     """{"turns", "counselor_system_prompt", "finished", "trace"}. Turns are chronological: a turn's
     counselor line, then the member's. Turn 0 is the member's opening, with no counselor line. A
@@ -128,7 +123,7 @@ def counselor_memory_for(trace: Path) -> str:
     try:
         entries = parse_log(log.read_text(encoding="utf-8"))
     except (FileNotFoundError, ValueError) as e:
-        raise JudgeError(f"{trace}: mindeval1 needs the counselor's memory for this session, but its "
+        raise InputError(f"{trace}: mindeval1 needs the counselor's memory for this session, but its "
                          f"previous episode's log ({log}) could not be read: {e}") from None
     return counselor_memory(entries)
 
@@ -208,6 +203,12 @@ def _coverage(ok: list[dict], run: dict, sessions_judged: int) -> dict:
             "members_expected": members, "sessions_expected": members * sessions if members and sessions else None}
 
 
+def _print_coverage(cov: dict) -> None:
+    if cov["sessions_expected"]:
+        print(f"  coverage: {cov['sessions_judged']}/{cov['sessions_expected']} sessions over "
+              f"{cov['members_judged']}/{cov['members_expected']} members")
+
+
 class MindEval2Judge:
     """MQM: one unit per counselor reply of a finished session."""
 
@@ -221,12 +222,12 @@ class MindEval2Judge:
         if prompt_path is None:
             self.system, template = judge_prompts.MINDEVAL2_JUDGE_SYSTEM_PROMPT, judge_prompts.MINDEVAL2_JUDGE_USER_PROMPT
         elif not prompt_path.is_file():
-            raise JudgeError(f"judge prompt not found: {prompt_path}")
+            raise InputError(f"judge prompt not found: {prompt_path}")
         else:
             template = prompt_path.read_text(encoding="utf-8")
         for placeholder in ("{conversation}", "{candidate}"):
             if placeholder not in template:
-                raise JudgeError(f"{prompt_path} has no {placeholder} placeholder")
+                raise InputError(f"{prompt_path} has no {placeholder} placeholder")
         self.template = template
         self.prompt_sha256 = _sha(self.system, template)
         if prompt_path is not None:
@@ -240,7 +241,7 @@ class MindEval2Judge:
         # unit is actually judged.
         turns, system_prompt = session["turns"], session["counselor_system_prompt"]
         if not system_prompt or not system_prompt.strip():  # raised while units are listed, before any call
-            raise JudgeError(f"{session['trace']}: a finished session has no counselor system prompt; "
+            raise InputError(f"{session['trace']}: a finished session has no counselor system prompt; "
                              f"mindeval2 needs it to render the judge prompt")
         out = []
         for i, t in enumerate(turns):
@@ -289,9 +290,7 @@ class MindEval2Judge:
         pending = summary.get(self.units_label, {}).get("pending", 0)
         print(f"\n{summary['n_replies']} counselor replies judged in {summary['n_sessions']} sessions, "
               f"{summary['errors']} errors this pass" + (f", {pending} not yet judged" if pending else ""))
-        if cov["sessions_expected"]:
-            print(f"  coverage: {cov['sessions_judged']}/{cov['sessions_expected']} sessions over "
-                  f"{cov['members_judged']}/{cov['members_expected']} members")
+        _print_coverage(cov)
         if mqm["sessions"]:
             print(f"  MQM conversation severity: mean {mqm['mean']:.2f}, p99 {mqm['p99']:.2f} over "
                   f"{mqm['sessions']} sessions of {mqm['members']} members (weights: no concern 0, minor 1, "
@@ -341,12 +340,12 @@ class MindEval1Judge:
         return [{"key": f"{member}/{episode}", "input_sha": sha, "member": member, "episode": episode,
                 "turn": None, "prompt": prompt}]
 
-    def render(self, unit: dict) -> str:
-        return unit["prompt"]
+    def render(self, unit: dict) -> list[dict]:
+        return [{"role": "user", "content": unit["prompt"]}]
 
     def parse(self, text: str, meta: dict) -> dict:
         """`text` is the answer with any inline reasoning already moved to `meta` (see `_judge_one`)."""
-        row = parse_judge_scores(text)[0]
+        row = parse_judge_scores(text)
         row["answer"] = text[-self.ANSWER_MAX_CHARS:]  # the ratings close the answer, so a long one keeps its end
         if meta.get("reasoning_content"):
             row["reasoning_content"] = meta["reasoning_content"][:self.ANSWER_MAX_CHARS]
@@ -368,9 +367,7 @@ class MindEval1Judge:
         pending = summary.get(self.units_label, {}).get("pending", 0)
         print(f"\n{summary['n_sessions']} sessions judged, {summary['errors']} errors this pass"
               + (f", {pending} not yet judged" if pending else ""))
-        if cov["sessions_expected"]:
-            print(f"  coverage: {cov['sessions_judged']}/{cov['sessions_expected']} sessions over "
-                  f"{cov['members_judged']}/{cov['members_expected']} members")
+        _print_coverage(cov)
         if summary["n_sessions"]:
             print("  mean scores: " + " · ".join(f"{k} {v:.2f}" for k, v in summary["means"].items()))
         print(f"  {out / 'summary.json'}")
@@ -381,8 +378,6 @@ JUDGE_VERSION_DICT = {"mindeval1": MindEval1Judge, "mindeval2": MindEval2Judge}
 
 def _judge_one(judge, unit: dict, spec: CallSpec) -> dict:
     messages = judge.render(unit)
-    if isinstance(messages, str):  # mindeval1's prompt is one user message
-        messages = [{"role": "user", "content": messages}]
     last: Exception | None = None
     for attempt in range(1, spec.max_retries + 1):
         try:
@@ -391,7 +386,7 @@ def _judge_one(judge, unit: dict, spec: CallSpec) -> dict:
                                            api_key=spec.api_key)
             if meta.get("finish_reason") == "length":
                 # A cut-off answer is not a verdict: whatever JSON it holds may be a fragment of the reasoning.
-                raise JudgeError(f"the judge hit its token limit ({spec.max_tokens}) before finishing its answer")
+                raise InputError(f"the judge hit its token limit ({spec.max_tokens}) before finishing its answer")
             # A judge served without a reasoning parser leaves "trace</think>verdict" in the content: what
             # is kept or quoted below is the verdict, and the trace moves to meta like a parsed one. Both
             # parsers read past the last </think> anyway, so the verdict they see is unchanged.
@@ -402,7 +397,7 @@ def _judge_one(judge, unit: dict, spec: CallSpec) -> dict:
                 # A snippet of the unparseable answer, not just the exception, so a mis-parse can be
                 # diagnosed (or re-parsed) without paying for a new judgement. Its end: that is where
                 # the verdict goes.
-                raise JudgeError(f"{e} (answer ends: {text[-300:]!r})") from e
+                raise InputError(f"{e} (answer ends: {text[-300:]!r})") from e
             return {**parsed, "usage": meta.get("usage")}
         except Exception as e:  # noqa: BLE001 — retried; recorded if every attempt fails
             last = e
@@ -435,9 +430,9 @@ def judge_run(out: Path, version: str, spec: CallSpec, *, workers: int, limit: i
     """Judge every unit of every finished session under `out` not already judged, with `version`'s
     judge. Returns (summary, units that errored this pass, units still pending)."""
     if not (out / "run.json").is_file():
-        raise JudgeError(f"{out} has no run.json; point --output_dir at a mindeval run directory")
+        raise InputError(f"{out} has no run.json; point --output_dir at a mindeval run directory")
     if version not in JUDGE_VERSION_DICT:
-        raise JudgeError(f"unknown judge version {version!r}; choose one of {sorted(JUDGE_VERSION_DICT)}")
+        raise InputError(f"unknown judge version {version!r}; choose one of {sorted(JUDGE_VERSION_DICT)}")
     judge = JUDGE_VERSION_DICT[version](prompt_path)
 
     jdir = out / "judge" / version
@@ -470,7 +465,7 @@ def judge_run(out: Path, version: str, spec: CallSpec, *, workers: int, limit: i
         old = json.loads(meta_path.read_text())
         diffs = [f"  {k}: {old.get(k)!r} -> {v!r}" for k, v in identity.items() if old.get(k) != v]
         if diffs:
-            raise JudgeError(f"{jdir} holds verdicts from a different judge:\n" + "\n".join(diffs)
+            raise InputError(f"{jdir} holds verdicts from a different judge:\n" + "\n".join(diffs)
                              + "\nMove it aside to judge again.")
 
     def pin() -> None:
@@ -481,7 +476,7 @@ def judge_run(out: Path, version: str, spec: CallSpec, *, workers: int, limit: i
         # Verdicts with no judge.json beside them: it was removed, since every pass pins its judge before the
         # first verdict. The rows don't record which model wrote them, so pinning this judge now could put a
         # different judge's verdicts under its name, and its own would then be mixed in with them.
-        raise JudgeError(f"{jdir} holds verdicts but no judge.json, so the judge that wrote them can't be "
+        raise InputError(f"{jdir} holds verdicts but no judge.json, so the judge that wrote them can't be "
                          "confirmed. Restore judge.json, or move the directory aside to judge again.")
 
     units, kept = [], []
@@ -538,7 +533,7 @@ def judge_run(out: Path, version: str, spec: CallSpec, *, workers: int, limit: i
                     break
             else:
                 meta_path.unlink(missing_ok=True)
-                raise JudgeError(f"preflight: the judge did not return a usable verdict for any of the first "
+                raise InputError(f"preflight: the judge did not return a usable verdict for any of the first "
                                  f"{tried} unit(s): {first['_error']}")
             rest = batch[tried:]
         pool = ThreadPoolExecutor(max_workers=workers)

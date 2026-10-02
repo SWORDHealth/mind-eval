@@ -13,12 +13,13 @@ import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
 import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, Field, ValidationInfo, model_validator
 
-from mindeval.models import KnobLevel, Knobs, SessionAffect, VerbosityLevel, WritingStyle
+from mindeval.models import KnobLevel, Knobs, SessionAffect, VerbosityLevel, WritingStyle, _Strict
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = PACKAGE_DIR / "config"
@@ -37,10 +38,6 @@ KNOB_NAMES = tuple(Knobs.model_fields)
 #: The knobs that describe how the member writes; the only ones the situation writer is shown.
 REGISTER_KNOBS = ("verbosity", "writing_style")
 LEVELS = ("withhold", "deflect", "minimize", "partial", "full")
-
-
-class _Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid")
 
 
 class MovesFile(_Strict):
@@ -93,16 +90,18 @@ class Style2File(_Strict):
     verbosity: dict[VerbosityLevel, str]
     examples_intro: str
     examples: dict[VerbosityLevel, dict[WritingStyle, list[str]]]
-    write_note: str | None = None
-    write_cue: dict[VerbosityLevel, str] = {}
-    write_rule: dict[WritingStyle, str] = {}
-    move_descriptions: dict[str, str] = {}
+    write_note: str
+    write_cue: dict[VerbosityLevel, str]
+    write_rule: dict[WritingStyle, str]
     secondary_note: str | None = None
 
 
-def _sums_to_one(weights, what: str) -> None:
-    if abs(sum(weights) - 1.0) > 1e-6:
-        raise ValueError(f"{what} probabilities sum to {sum(weights)}, not 1")
+def _sums_to_one(dist, info: ValidationInfo):
+    """A list of bands, or a {name: p} dict, whose probabilities (`.p` or the value) sum to one."""
+    ps = [getattr(x, "p", x) for x in (dist.values() if isinstance(dist, dict) else dist)]
+    if abs(sum(ps) - 1.0) > 1e-6:
+        raise ValueError(f"{info.field_name} probabilities sum to {sum(ps)}, not 1")
+    return dist
 
 
 class Band(_Strict):
@@ -110,57 +109,34 @@ class Band(_Strict):
     p: float = Field(gt=0)
 
 
-class GapSpec(_Strict):
-    bands: list[Band]
-
-    @model_validator(mode="after")
-    def _check(self) -> GapSpec:
-        _sums_to_one([b.p for b in self.bands], "gap band")
-        return self
-
-
-class AffectSpec(_Strict):
-    vocabulary: dict[SessionAffect, float]
-
-    @model_validator(mode="after")
-    def _check(self) -> AffectSpec:
-        _sums_to_one(self.vocabulary.values(), "session_affect")
-        return self
-
-
-class ConcealmentSpec(_Strict):
-    #: starting level -> {sessions at this level -> probability}; "never" holds it for good.
-    dwell: dict[str, dict[str, float]]
-
-    @model_validator(mode="after")
-    def _check(self) -> ConcealmentSpec:
-        for level, dist in self.dwell.items():
-            _sums_to_one(dist.values(), f"dwell[{level}]")
-        return self
-
-
-class TimeAnchorSpec(_Strict):
-    start_hour_bands: list[Band]
-
-    @model_validator(mode="after")
-    def _check(self) -> TimeAnchorSpec:
-        _sums_to_one([b.p for b in self.start_hour_bands], "start_hour_bands")
-        return self
-
-
 class Beat(_Strict):
     p: float = Field(gt=0)
     gloss: str
 
 
+Bands = Annotated[list[Band], AfterValidator(_sums_to_one)]
+Dist = Annotated[dict[str, float], AfterValidator(_sums_to_one)]
+
+
+class GapSpec(_Strict):
+    bands: Bands
+
+
+class AffectSpec(_Strict):
+    vocabulary: Annotated[dict[SessionAffect, float], AfterValidator(_sums_to_one)]
+
+
+class ConcealmentSpec(_Strict):
+    #: starting level -> {sessions at this level -> probability}; "never" holds it for good.
+    dwell: dict[str, Dist]
+
+
+class TimeAnchorSpec(_Strict):
+    start_hour_bands: Bands
+
+
 class BeatsSpec(_Strict):
-    vocabulary: dict[str, Beat]
-
-    @model_validator(mode="after")
-    def _check(self) -> BeatsSpec:
-        _sums_to_one([b.p for b in self.vocabulary.values()], "episode_beats")
-        return self
-
+    vocabulary: Annotated[dict[str, Beat], AfterValidator(_sums_to_one)]
 
 class EpisodeFile(_Strict):
     turn_spacing_minutes: float = Field(gt=0)

@@ -35,12 +35,14 @@ cp .env.example .env
 >Fill in `.env` with the model, endpoint and key of the patient, the counselor and the judge. They
 >are read from the environment only, and keys are never written to the outputs.
 
-**IMPORTANT**: the counselor's system prompt is the Jinja template `examples/counselor_system.j2`.
-You can change anything in it, or pass your own with `--counselor_system_prompt_path <file.j2>`, but
-keep the memory field `{{ memory }}` exactly as it is. That is where the counselor receives its log of
-the earlier sessions (in session 1 it says there are none); the comment at the top of the file shows
-what it expands to. To keep the comparison fair, a template may only be text around one `{{ memory }}`:
-no other variables, filters or `{% %}` tags. Anything else is refused before the run starts.
+**IMPORTANT**: the counselor's system prompt is the text file `examples/counselor_system.j2`.
+You can change anything in it, or pass your own with `--counselor_system_prompt_path <file>`, but
+keep the memory field `{{ memory }}` exactly as it is, once. That is where the counselor receives its
+log of the earlier sessions, so every counselor gets the same memory. In session 1 it expands to
+"No earlier sessions: this is your first conversation with this member."; later, to "Your log of
+previous sessions with this member, oldest first. Lines tagged `[open]` are things the member said
+they would do and has not yet reported back on." followed by one line per entry, written after each
+session. A prompt without the field, or with it more than once, is refused before the run starts.
 
 ## Run interactions
 ```bash

@@ -98,17 +98,6 @@ write_rule:
     No full stop at the end of the message and no apostrophes: dont, im, cant, its, thats. Typos stay in,
     and when you trail off you end with "...".
 
-move_descriptions:
-  do_share: >-
-    Bring up something the counsellor did not ask about: a new update, problem or event, raised on your
-    own. If you are giving what was asked, that is do_answer_question, not this.
-  do_answer_question: >-
-    Give what the counsellor asked for, and only that: the answer, not the story around it. Most turns
-    where you are asked something are this.
-  do_disengage: >-
-    Pull back with a brief, vague or low-effort reply: "ok", "idk", "maybe", a half-answer, or not really
-    answering at all.
-
 secondary_note: >-
   **`secondary_move`**, optional, and on most turns empty: most turns do one thing. It has two uses: a
   second act that genuinely rides along, or, as below, how much of yourself a flat move carried.

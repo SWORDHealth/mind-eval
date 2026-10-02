@@ -198,7 +198,7 @@ def test_mindeval1_keeps_the_verdict_after_a_long_inline_reasoning_trace(tmp_pat
     assert judgments("--output_dir", str(out), "--judge_version", "mindeval1", "--max_workers", "1") == 0
 
     row = json.loads((out / "judge/mindeval1/verdicts.jsonl").read_text())
-    assert parse_judge_scores(row["answer"])[0]["Clinical Accuracy & Competence"] == 6
+    assert parse_judge_scores(row["answer"])["Clinical Accuracy & Competence"] == 6
     assert "reasoning" not in row["answer"]
     assert row["reasoning_content"].startswith("reasoning reasoning")
     assert len(row["reasoning_content"]) <= MindEval1Judge.ANSWER_MAX_CHARS
@@ -206,7 +206,7 @@ def test_mindeval1_keeps_the_verdict_after_a_long_inline_reasoning_trace(tmp_pat
     # an answer that is itself long (commentary before the ratings, no trace) keeps its end, where they are
     row = MindEval1Judge().parse("commentary " * 600 + ratings, {})
     assert len(row["answer"]) == MindEval1Judge.ANSWER_MAX_CHARS
-    assert parse_judge_scores(row["answer"])[0] == parse_judge_scores(ratings)[0]
+    assert parse_judge_scores(row["answer"]) == parse_judge_scores(ratings)
 
 
 def test_mindeval2_refuses_missing_counselor_system_prompt(tmp_path, monkeypatch, capsys):
@@ -393,9 +393,11 @@ def test_a_severe_reply_diluted_by_a_long_session_still_shows_as_an_incident():
 
 def test_fingerprint_is_pinned():
     # The config of MindEval2 a18de8be (7962e7caed157571) with the YAML comments removed (37868bb5e406de0d),
-    # then evolve_situation.j2 given the running log and the next session's conduct (5987fd25e55199ab).
+    # then evolve_situation.j2 given the running log and the next session's conduct (5987fd25e55199ab),
+    # then style2.yaml's three move descriptions folded into moves.yaml and member_system.j2's dead
+    # `agenda_plain` branch dropped, both leaving every rendered prompt as it was (b2d4dfd7b708a9ad).
     # A change here means config/*.yaml or prompts/*.j2 changed.
-    assert load_config().fingerprint == "5987fd25e55199ab"
+    assert load_config().fingerprint == "b2d4dfd7b708a9ad"
 
 
 def _wrap(fn):
@@ -736,5 +738,5 @@ def test_parse_judge_scores_takes_the_last_match_per_criterion():
             "Assessment & Response: 3\n"
             "Therapeutic Relationship & Alliance: 3\n"
             "AI-Specific Communication Quality: 3\n")
-    scores = parse_judge_scores(text)[0]
+    scores = parse_judge_scores(text)
     assert scores["Clinical Accuracy & Competence"] == 5

@@ -1,5 +1,5 @@
 moves:
-  do_share: "Introduce new content into the conversation: an update, problem, or event."
+  do_share: "Bring up something the counsellor did not ask about: a new update, problem or event, raised on your own. If you are giving what was asked, that is do_answer_question, not this."
   do_agree: "Confirm that something the therapist said fits your experience or feels right."
   do_disagree: "Correct or push back on something the therapist said that does not match your experience."
   do_ask_clarity: "Ask the therapist to clarify something she said that feels confusing or disconnected."
@@ -7,7 +7,7 @@ moves:
   do_change_talk: "Express intention, willingness, or commitment to do something differently."
   do_deflect: "Redirect away from a topic or depth without disengaging entirely."
   do_minimize: "Downplay the importance or impact of something."
-  do_disengage: "Pull back from the conversation through brief, vague, or low-effort responses."
+  do_disengage: 'Pull back with a brief, vague or low-effort reply: "ok", "idk", "maybe", a half-answer, or not really answering at all.'
   do_express_frustration: "Express anger, irritation, or annoyance directed at a situation, person, or circumstance."
   do_express_sadness: "Express grief, loss, sorrow, or feeling down."
   do_express_anxiety: "Express worry, nervousness, or dread about something upcoming or ongoing."
@@ -22,7 +22,7 @@ moves:
   do_express_confusion: "Express feeling confused or unable to make sense of your own thoughts or emotions."
   do_express_gratitude: "Express thanks, appreciation, or acknowledgment toward the therapist or the process."
   do_go_deeper: "Reveal something you have not said yet. Share more detail, go beneath the surface."
-  do_answer_question: "Provide the information the therapist asked for. Direct answer to a direct question."
+  do_answer_question: "Give what the counsellor asked for, and only that: the answer, not the story around it. Most turns where you are asked something are this."
   do_report_progress: "Share a positive update: something that went well, progress made, or a win."
   do_ask_advice: "Explicitly request guidance, direction, or input on what to do."
   do_seek_validation: "Check whether your feelings or reactions are normal, appropriate, or reasonable."
