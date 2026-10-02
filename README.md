@@ -21,6 +21,9 @@ A benchmark for AI mental-health counselors, played against a simulated patient 
 - **Pinned arcs** — each member's schedule, time context and per-call seeds are drawn from its id,
   `--seed` and a fixed namespace, never from the config's bytes: every counselor meets the same arcs
   (the ones MindEval 2 was developed on), and an edit such as a comment never re-draws the benchmark.
+- **On NeMo UserSim** — every session runs on [NeMo UserSim](https://github.com/NVIDIA-NeMo/UserSim)'s
+  engine as its `mindeval` probe, and is also stored as a UserSim trajectory, so UserSim's own tools
+  read the run.
 
 ## Installation
 ```bash
@@ -30,7 +33,8 @@ uv sync
 source .venv/bin/activate
 cp .env.example .env
 ```
->Python 3.12; [uv](https://docs.astral.sh/uv/).
+>Python 3.12; [uv](https://docs.astral.sh/uv/). `uv sync` also installs NeMo UserSim, from GitHub at the
+>commit pinned in `pyproject.toml`.
 
 >Fill in `.env` with the model, endpoint and key of the patient, the counselor and the judge. They
 >are read from the environment only, and keys are never written to the outputs.
@@ -67,6 +71,22 @@ python mindeval/scripts/generate_interactions.py --output_dir runs/<counselor>
 >`--counselor_params '{"include": ["reasoning.encrypted_content"], "store": false}'`.
 
 >Rerun the same command to resume: finished members are kept, and unfinished sessions restart.
+
+>Every session runs on NeMo UserSim's engine. `mindeval/probe.py` registers the `mindeval` probe (also
+>through the `usersim.probes` entry point, so `usersim smoke` lists it): it runs the whole session itself,
+>member and counselor alternating, and every model call goes through UserSim's `acall_llm`. A session's
+>UserSim row carries everything it reads except keys, so a host can also run it through UserSim's hosted
+>runtime, provided its patient answers the move as JSON content: that runtime takes tool calls only from
+>the assistant. The rows are written under `usersim/` (see Outputs), where
+>`usersim eval --trajectories runs/<counselor>/usersim --out <dir>` reads them; the MQM judge below reads
+>the traces.
+
+>The member can be railed by the Guard from MindSim, mindeval's patient harness: seven pure rules over
+>each committed move's disclosure level, which veto a move that gives away more, or less, than this
+>member would at this point of the session, and clamp it after `max_retries`. It is off; set
+>`enabled: true` in `mindeval/config/guard.yaml` to turn it on. That changes the config fingerprint, so
+>a railed run is a different benchmark, and its verdicts are recorded on each turn
+>(`meta.guard`, and the `guard_*` flags).
 
 ## Run judgments
 ```bash
@@ -131,6 +151,9 @@ bash run_benchmark.sh runs/<counselor> [mindeval2|mindeval1]
 runs/<counselor>/
   run.json                  what ran: models, endpoints, prompt and profile hashes, settings
   members/<id>/arc/ep00N/   per session: trace.jsonl (every turn), situation.yaml, log.md (the memory after it)
+  usersim/run=<id>/locale=en_US/probe_family=mindeval/
+                            per session: its NeMo UserSim row (conversation, outcome, call accounting), as
+                            `usersim simulate` stores one
   judge/mindeval2/          MQM: judge.json, verdicts.jsonl, summary.json
   judge/mindeval1/          five-criterion rubric: judge.json, verdicts.jsonl, summary.json
 ```
