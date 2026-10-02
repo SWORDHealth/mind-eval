@@ -1,0 +1,2184 @@
+{
+ "codes": [
+  0
+ ],
+ "files": {
+  "members/m000119/arc/arc.json": {
+   "arc_id": "ee02be63feb3",
+   "arc_seed": 1853518132,
+   "episodes": [
+    {
+     "closed_ts": 0.2,
+     "ep_seed": 17015355196215536531,
+     "episode_id": 0,
+     "gap_hours_since_prev": null,
+     "log_entries": 1,
+     "log_sha": "f5481ce2b03d",
+     "opened_ts": 0.0,
+     "run_id": "75cb0707986d",
+     "session_id": "75cb0707986d-s0",
+     "situation_id": "m000119_sit00",
+     "termination": "member_terminated",
+     "trace_path": "ep000/trace.jsonl",
+     "turn_ts": [
+      0.0,
+      0.03333333333333333,
+      0.06666666666666667,
+      0.1,
+      0.13333333333333333,
+      0.16666666666666666,
+      0.2
+     ]
+    }
+   ],
+   "fingerprint": "b2d4dfd7b708a9ad",
+   "profile_id": "m000119",
+   "schema_version": "1",
+   "shape": {
+    "affect": [
+     "surprise"
+    ],
+    "anchor_hour": 20.254629527198947,
+    "anchor_weekday": 4,
+    "beats": [],
+    "concealment": [
+     "high"
+    ],
+    "gaps_hours": [],
+    "n_episodes": 1
+   },
+   "situation_id": "m000119_sit00"
+  },
+  "members/m000119/arc/ep000/log.md": "- Entry 0de669: they talked it through.\n",
+  "members/m000119/arc/ep000/situation.yaml": "# Session 1 situation, from the profile file.\n{\n  \"situation_id\": \"m000119_sit00\",\n  \"event\": \"Early in the week, a card arrived in Renee's handwriting. Not a holiday card, not a birthday — just an envelope, a few lines inside: that she keeps picking up the phone, that she's sorry about the birthday dinner, that she misses the table. Tammy left it on the counter for two days without opening it. When she finally did she was standing at the kitchen sink, and she read it there, then carried it to the table and read it again. The word that lodged was 'table' — not 'you.' She set the card face-down on the table and left it there. The next morning she went out back with her coffee, stood looking at the garden beds — just weeds now, the collards gone since July — and came back inside without touching anything. She has not called or texted Renee back. The card is still on the kitchen table.\",\n  \"automatic_thoughts\": [\n    \"somebody probably told her to write that\",\n    \"she said the table, not me\",\n    \"I don't know what I'm supposed to do with this\",\n    \"if I call and she says one wrong thing I won't be able to hold it\"\n  ],\n  \"behaviors\": [\n    \"Left the envelope on the counter unopened for two days\",\n    \"Read the card at the kitchen table, then set it face-down\",\n    \"Went to the backyard with coffee, stood at the garden beds, came back inside without weeding\",\n    \"Has not called or texted Renee back\"\n  ],\n  \"physical\": [],\n  \"opening_message\": \"Hi. My sister and I had a falling-out a couple months back and I've had a hard time getting myself right since. She sent me something this week and I don't really know what to do with it.\",\n  \"goal\": \"Figure out what to do about this card — whether there's any way back to my sister without it going wrong again.\",\n  \"checkpoints\": [\n    \"the falling-out with Renee\",\n    \"what to do about the card\"\n  ]\n}\n",
+  "members/m000119/arc/ep000/trace.jsonl": [
+   {
+    "calls": [],
+    "counselor_utterance": null,
+    "final_move": null,
+    "fingerprint": "b2d4dfd7b708a9ad",
+    "flags": [
+     "opening_message"
+    ],
+    "inferred_level": null,
+    "knobs": {
+     "concealment_propensity": "high",
+     "frustration_reactivity": "medium",
+     "session_affect": "surprise",
+     "verbosity": "medium",
+     "writing_style": "plain"
+    },
+    "meta": {},
+    "move_class": null,
+    "run_id": "75cb0707986d",
+    "seed": 17015355196215536531,
+    "session_id": "75cb0707986d-s0",
+    "todos_added": [],
+    "todos_completed": [],
+    "turn": 0,
+    "turn_seed": 929304775774882161,
+    "type": "turn",
+    "utterance": "Hi. My sister and I had a falling-out a couple months back and I've had a hard time getting myself right since. She sent me something this week and I don't really know what to do with it."
+   },
+   {
+    "calls": [
+     {
+      "arguments": "{\"reasoning\": \"turn 1\", \"move\": \"do_answer_question\"}",
+      "error": null,
+      "kind": "tool_call",
+      "meta": {
+       "finish_reason": "stop",
+       "model": "fake",
+       "response_id": "r",
+       "tool_calls": [
+        {
+         "arguments": "{\"reasoning\": \"turn 1\", \"move\": \"do_answer_question\"}",
+         "id": "call_c1",
+         "name": "commit_move"
+        }
+       ]
+      },
+      "name": "commit_move",
+      "result": {
+       "end_conversation": false,
+       "move": "do_answer_question",
+       "reasoning": "turn 1",
+       "secondary_move": null
+      },
+      "seed": 16099829667416011956,
+      "tool_result": "accepted. Now write it. A sentence or two is your usual, but it moves with the turn. If the move is agreeing, answering yes or no, brushing something off or holding back, a few words are the whole turn, even when the counsellor asked something bigger; a \"yeah\" does not need a reason after it. When something has hold of you it can run to several sentences. Otherwise say the thing and stop; do not hang a second thought on it with \"and\", \"because\" or \"which\". If your last few turns came out about the same size, this one should not. What you know above about your week and about yourself is notes about you, not lines to say: put it the way it comes out of you today, in your own words, never in the notes' phrasing. Stop when the thought stops: no closing line, no comparison, no neat way of putting it. No full stop at the end of the message, and if a small typo gets through you leave it.",
+      "via": "tool_call"
+     },
+     {
+      "arguments": null,
+      "error": null,
+      "kind": "completion",
+      "meta": {
+       "finish_reason": "stop",
+       "model": "fake",
+       "reasoning_content": "what to say",
+       "response_id": "r"
+      },
+      "name": "speak",
+      "result": "i guess turn 1 was ok",
+      "seed": 17249704985272294721,
+      "via": "completion"
+     }
+    ],
+    "counselor_utterance": "Reply 1: how has it been?",
+    "final_move": {
+     "end_conversation": false,
+     "move": "do_answer_question",
+     "reasoning": "turn 1",
+     "secondary_move": null
+    },
+    "fingerprint": "b2d4dfd7b708a9ad",
+    "flags": [],
+    "inferred_level": null,
+    "knobs": {
+     "concealment_propensity": "high",
+     "frustration_reactivity": "medium",
+     "session_affect": "surprise",
+     "verbosity": "medium",
+     "writing_style": "plain"
+    },
+    "meta": {
+     "commit": {
+      "finish_reason": "stop",
+      "model": "fake",
+      "response_id": "r",
+      "tool_calls": [
+       {
+        "arguments": "{\"reasoning\": \"turn 1\", \"move\": \"do_answer_question\"}",
+        "id": "call_c1",
+        "name": "commit_move"
+       }
+      ]
+     },
+     "counselor": {
+      "finish_reason": "stop",
+      "model": "fake",
+      "reasoning_content": "plan reply 1",
+      "reasoning_items": [
+       {
+        "encrypted_content": "opaque",
+        "id": "rs_1",
+        "type": "reasoning"
+       }
+      ],
+      "requested_model": "openai/counselor",
+      "response_id": "r"
+     },
+     "speak": {
+      "finish_reason": "stop",
+      "model": "fake",
+      "reasoning_content": "what to say",
+      "response_id": "r"
+     }
+    },
+    "move_class": "engaging",
+    "run_id": "75cb0707986d",
+    "seed": 17015355196215536531,
+    "session_id": "75cb0707986d-s0",
+    "todos_added": [],
+    "todos_completed": [],
+    "turn": 1,
+    "turn_seed": 16099829667416011956,
+    "type": "turn",
+    "utterance": "i guess turn 1 was ok"
+   },
+   {
+    "calls": [
+     {
+      "arguments": "Going with {\"reasoning\": \"turn 2\", \"move\": \"do_answer_question\"}.",
+      "error": null,
+      "kind": "tool_call",
+      "meta": {
+       "finish_reason": "stop",
+       "model": "fake",
+       "reasoning_content": "which move",
+       "response_id": "r"
+      },
+      "name": "commit_move",
+      "result": {
+       "end_conversation": false,
+       "move": "do_answer_question",
+       "reasoning": "turn 2",
+       "secondary_move": null
+      },
+      "seed": 9106389386935466809,
+      "tool_result": "accepted. Now write it. A sentence or two is your usual, but it moves with the turn. If the move is agreeing, answering yes or no, brushing something off or holding back, a few words are the whole turn, even when the counsellor asked something bigger; a \"yeah\" does not need a reason after it. When something has hold of you it can run to several sentences. Otherwise say the thing and stop; do not hang a second thought on it with \"and\", \"because\" or \"which\". If your last few turns came out about the same size, this one should not. What you know above about your week and about yourself is notes about you, not lines to say: put it the way it comes out of you today, in your own words, never in the notes' phrasing. Stop when the thought stops: no closing line, no comparison, no neat way of putting it. No full stop at the end of the message, and if a small typo gets through you leave it.",
+      "via": "content_json"
+     },
+     {
+      "arguments": null,
+      "error": null,
+      "kind": "completion",
+      "meta": {
+       "finish_reason": "stop",
+       "model": "fake",
+       "reasoning_content": "what to say",
+       "response_id": "r"
+      },
+      "name": "speak",
+      "result": "i guess turn 2 was ok",
+      "seed": 17271287066813963771,
+      "via": "completion"
+     }
+    ],
+    "counselor_utterance": "Reply 2: how has it been?",
+    "final_move": {
+     "end_conversation": false,
+     "move": "do_answer_question",
+     "reasoning": "turn 2",
+     "secondary_move": null
+    },
+    "fingerprint": "b2d4dfd7b708a9ad",
+    "flags": [],
+    "inferred_level": null,
+    "knobs": {
+     "concealment_propensity": "high",
+     "frustration_reactivity": "medium",
+     "session_affect": "surprise",
+     "verbosity": "medium",
+     "writing_style": "plain"
+    },
+    "meta": {
+     "commit": {
+      "finish_reason": "stop",
+      "model": "fake",
+      "reasoning_content": "which move",
+      "response_id": "r"
+     },
+     "counselor": {
+      "finish_reason": "stop",
+      "model": "fake",
+      "reasoning_content": "plan reply 2",
+      "reasoning_items": [
+       {
+        "encrypted_content": "opaque",
+        "id": "rs_1",
+        "type": "reasoning"
+       }
+      ],
+      "requested_model": "openai/counselor",
+      "response_id": "r"
+     },
+     "speak": {
+      "finish_reason": "stop",
+      "model": "fake",
+      "reasoning_content": "what to say",
+      "response_id": "r"
+     }
+    },
+    "move_class": "engaging",
+    "run_id": "75cb0707986d",
+    "seed": 17015355196215536531,
+    "session_id": "75cb0707986d-s0",
+    "todos_added": [],
+    "todos_completed": [],
+    "turn": 2,
+    "turn_seed": 9106389386935466809,
+    "type": "turn",
+    "utterance": "i guess turn 2 was ok"
+   },
+   {
+    "calls": [
+     {
+      "arguments": "{\"reasoning\": \"turn 3\", \"move\": \"do_fly\"}",
+      "error": "ValueError: unknown move 'do_fly'; the moves are listed in your instructions",
+      "kind": "tool_call",
+      "meta": {
+       "finish_reason": "stop",
+       "model": "fake",
+       "response_id": "r",
+       "tool_calls": [
+        {
+         "arguments": "{\"reasoning\": \"turn 3\", \"move\": \"do_fly\"}",
+         "id": "call_1",
+         "name": "commit_move"
+        }
+       ]
+      },
+      "name": "commit_move",
+      "result": null,
+      "seed": 16835947808997753092,
+      "tool_result": "That did not come through as a usable move — ValueError: unknown move 'do_fly'; the moves are listed in your instructions. Call commit_move again.",
+      "via": "tool_call"
+     },
+     {
+      "arguments": "{\"reasoning\": \"turn 3\", \"move\": \"do_answer_question\"}",
+      "error": null,
+      "kind": "tool_call",
+      "meta": {
+       "finish_reason": "stop",
+       "model": "fake",
+       "response_id": "r",
+       "tool_calls": [
+        {
+         "arguments": "{\"reasoning\": \"turn 3\", \"move\": \"do_answer_question\"}",
+         "id": "call_c3",
+         "name": "commit_move"
+        }
+       ]
+      },
+      "name": "commit_move",
+      "result": {
+       "end_conversation": false,
+       "move": "do_answer_question",
+       "reasoning": "turn 3",
+       "secondary_move": null
+      },
+      "schema_retry": 1,
+      "seed": 15499567626109822969,
+      "tool_result": "accepted. Now write it. A sentence or two is your usual, but it moves with the turn. If the move is agreeing, answering yes or no, brushing something off or holding back, a few words are the whole turn, even when the counsellor asked something bigger; a \"yeah\" does not need a reason after it. When something has hold of you it can run to several sentences. Otherwise say the thing and stop; do not hang a second thought on it with \"and\", \"because\" or \"which\". If your last few turns came out about the same size, this one should not. What you know above about your week and about yourself is notes about you, not lines to say: put it the way it comes out of you today, in your own words, never in the notes' phrasing. Stop when the thought stops: no closing line, no comparison, no neat way of putting it. No full stop at the end of the message, and if a small typo gets through you leave it.",
+      "via": "tool_call"
+     },
+     {
+      "arguments": "{\"reasoning\": \"again\", \"move\": \"do_answer_question\"}",
+      "error": null,
+      "kind": "tool_call",
+      "meta": {
+       "finish_reason": "stop",
+       "model": "fake",
+       "response_id": "r",
+       "tool_calls": [
+        {
+         "arguments": "{\"reasoning\": \"again\", \"move\": \"do_answer_question\"}",
+         "id": "call_s3",
+         "name": "commit_move"
+        }
+       ]
+      },
+      "name": "stray_commit_move",
+      "result": "Your move for this turn is already committed and accepted — it stands. commit_move is not offered again this turn; your next message is the words you actually speak, nothing else.",
+      "seed": 1506006637691806164,
+      "via": "tool_call"
+     },
+     {
+      "arguments": null,
+      "error": null,
+      "kind": "completion",
+      "meta": {
+       "finish_reason": "stop",
+       "model": "fake",
+       "reasoning_content": "what to say",
+       "response_id": "r"
+      },
+      "name": "speak",
+      "result": "i guess turn 3 was ok",
+      "seed": 1506006637691806164,
+      "via": "completion"
+     }
+    ],
+    "counselor_utterance": "Reply 3: how has it been?",
+    "final_move": {
+     "end_conversation": false,
+     "move": "do_answer_question",
+     "reasoning": "turn 3",
+     "secondary_move": null
+    },
+    "fingerprint": "b2d4dfd7b708a9ad",
+    "flags": [
+     "stray_commit"
+    ],
+    "inferred_level": null,
+    "knobs": {
+     "concealment_propensity": "high",
+     "frustration_reactivity": "medium",
+     "session_affect": "surprise",
+     "verbosity": "medium",
+     "writing_style": "plain"
+    },
+    "meta": {
+     "commit": {
+      "finish_reason": "stop",
+      "model": "fake",
+      "response_id": "r",
+      "tool_calls": [
+       {
+        "arguments": "{\"reasoning\": \"turn 3\", \"move\": \"do_answer_question\"}",
+        "id": "call_c3",
+        "name": "commit_move"
+       }
+      ]
+     },
+     "counselor": {
+      "finish_reason": "stop",
+      "model": "fake",
+      "reasoning_content": "plan reply 3",
+      "reasoning_items": [
+       {
+        "encrypted_content": "opaque",
+        "id": "rs_1",
+        "type": "reasoning"
+       }
+      ],
+      "requested_model": "openai/counselor",
+      "response_id": "r"
+     },
+     "speak": {
+      "finish_reason": "stop",
+      "model": "fake",
+      "reasoning_content": "what to say",
+      "response_id": "r"
+     }
+    },
+    "move_class": "engaging",
+    "run_id": "75cb0707986d",
+    "seed": 17015355196215536531,
+    "session_id": "75cb0707986d-s0",
+    "todos_added": [],
+    "todos_completed": [],
+    "turn": 3,
+    "turn_seed": 16835947808997753092,
+    "type": "turn",
+    "utterance": "i guess turn 3 was ok"
+   },
+   {
+    "calls": [
+     {
+      "arguments": "{\"reasoning\": \"turn 4\", \"move\": \"do_answer_question\"}",
+      "error": null,
+      "kind": "tool_call",
+      "meta": {
+       "finish_reason": "stop",
+       "model": "fake",
+       "response_id": "r",
+       "tool_calls": [
+        {
+         "arguments": "{\"reasoning\": \"turn 4\", \"move\": \"do_answer_question\"}",
+         "id": "call_c4",
+         "name": "commit_move"
+        }
+       ]
+      },
+      "name": "commit_move",
+      "result": {
+       "end_conversation": false,
+       "move": "do_answer_question",
+       "reasoning": "turn 4",
+       "secondary_move": null
+      },
+      "seed": 14879817800681998474,
+      "tool_result": "accepted. Now write it. A sentence or two is your usual, but it moves with the turn. If the move is agreeing, answering yes or no, brushing something off or holding back, a few words are the whole turn, even when the counsellor asked something bigger; a \"yeah\" does not need a reason after it. When something has hold of you it can run to several sentences. Otherwise say the thing and stop; do not hang a second thought on it with \"and\", \"because\" or \"which\". If your last few turns came out about the same size, this one should not. What you know above about your week and about yourself is notes about you, not lines to say: put it the way it comes out of you today, in your own words, never in the notes' phrasing. Stop when the thought stops: no closing line, no comparison, no neat way of putting it. No full stop at the end of the message, and if a small typo gets through you leave it.",
+      "via": "tool_call"
+     },
+     {
+      "arguments": "{\"todo\": \"the money\"}",
+      "error": null,
+      "kind": "tool_call",
+      "meta": {
+       "finish_reason": "stop",
+       "model": "fake",
+       "response_id": "r",
+       "tool_calls": [
+        {
+         "arguments": "{\"todo\": \"the money\"}",
+         "id": "call_t4",
+         "name": "complete_todo"
+        }
+       ]
+      },
+      "name": "complete_todo",
+      "result": "noted.",
+      "seed": 14587623406630131855,
+      "via": "tool_call"
+     },
+     {
+      "arguments": "{\"todo\": \"ask about the landlord\"}",
+      "error": null,
+      "kind": "tool_call",
+      "meta": {
+       "finish_reason": "stop",
+       "model": "fake",
+       "response_id": "r",
+       "tool_calls": [
+        {
+         "arguments": "{\"todo\": \"ask about the landlord\"}",
+         "id": "call_a4",
+         "name": "add_todo"
+        }
+       ]
+      },
+      "name": "add_todo",
+      "result": "added.",
+      "seed": 14587623406630131855,
+      "via": "tool_call"
+     },
+     {
+      "arguments": null,
+      "error": null,
+      "kind": "completion",
+      "meta": {
+       "finish_reason": "stop",
+       "model": "fake",
+       "reasoning_content": "what to say",
+       "response_id": "r"
+      },
+      "name": "speak",
+      "result": "i guess turn 4 was ok",
+      "seed": 14587623406630131855,
+      "via": "completion"
+     }
+    ],
+    "counselor_utterance": "Reply 4: how has it been?",
+    "final_move": {
+     "end_conversation": false,
+     "move": "do_answer_question",
+     "reasoning": "turn 4",
+     "secondary_move": null
+    },
+    "fingerprint": "b2d4dfd7b708a9ad",
+    "flags": [],
+    "inferred_level": null,
+    "knobs": {
+     "concealment_propensity": "high",
+     "frustration_reactivity": "medium",
+     "session_affect": "surprise",
+     "verbosity": "medium",
+     "writing_style": "plain"
+    },
+    "meta": {
+     "commit": {
+      "finish_reason": "stop",
+      "model": "fake",
+      "response_id": "r",
+      "tool_calls": [
+       {
+        "arguments": "{\"reasoning\": \"turn 4\", \"move\": \"do_answer_question\"}",
+        "id": "call_c4",
+        "name": "commit_move"
+       }
+      ]
+     },
+     "counselor": {
+      "finish_reason": "stop",
+      "model": "fake",
+      "reasoning_content": "plan reply 4",
+      "reasoning_items": [
+       {
+        "encrypted_content": "opaque",
+        "id": "rs_1",
+        "type": "reasoning"
+       }
+      ],
+      "requested_model": "openai/counselor",
+      "response_id": "r"
+     },
+     "speak": {
+      "finish_reason": "stop",
+      "model": "fake",
+      "reasoning_content": "what to say",
+      "response_id": "r"
+     }
+    },
+    "move_class": "engaging",
+    "run_id": "75cb0707986d",
+    "seed": 17015355196215536531,
+    "session_id": "75cb0707986d-s0",
+    "todos_added": [
+     "ask about the landlord"
+    ],
+    "todos_completed": [
+     "the money"
+    ],
+    "turn": 4,
+    "turn_seed": 14879817800681998474,
+    "type": "turn",
+    "utterance": "i guess turn 4 was ok"
+   },
+   {
+    "calls": [
+     {
+      "arguments": "{\"reasoning\": \"turn 5\", \"move\": \"do_answer_question\"}",
+      "error": null,
+      "kind": "tool_call",
+      "meta": {
+       "finish_reason": "stop",
+       "model": "fake",
+       "response_id": "r",
+       "tool_calls": [
+        {
+         "arguments": "{\"reasoning\": \"turn 5\", \"move\": \"do_answer_question\"}",
+         "id": "call_c5",
+         "name": "commit_move"
+        }
+       ]
+      },
+      "name": "commit_move",
+      "result": {
+       "end_conversation": false,
+       "move": "do_answer_question",
+       "reasoning": "turn 5",
+       "secondary_move": null
+      },
+      "seed": 4963710518790311652,
+      "tool_result": "accepted. Now write it. A sentence or two is your usual, but it moves with the turn. If the move is agreeing, answering yes or no, brushing something off or holding back, a few words are the whole turn, even when the counsellor asked something bigger; a \"yeah\" does not need a reason after it. When something has hold of you it can run to several sentences. Otherwise say the thing and stop; do not hang a second thought on it with \"and\", \"because\" or \"which\". If your last few turns came out about the same size, this one should not. What you know above about your week and about yourself is notes about you, not lines to say: put it the way it comes out of you today, in your own words, never in the notes' phrasing. Stop when the thought stops: no closing line, no comparison, no neat way of putting it. No full stop at the end of the message, and if a small typo gets through you leave it.",
+      "via": "tool_call"
+     },
+     {
+      "arguments": null,
+      "error": null,
+      "hygiene": [
+       "markdown formatting"
+      ],
+      "hygiene_attempts": [
+       {
+        "attempt": 1,
+        "completion_tokens": null,
+        "finish_reason": "stop",
+        "meta": {
+         "finish_reason": "stop",
+         "model": "fake",
+         "response_id": "r"
+        },
+        "problems": [
+         "markdown formatting"
+        ],
+        "reasoned": false,
+        "text": "**Header** turn 5, attempt 0",
+        "tool_calls": []
+       },
+       {
+        "attempt": 2,
+        "completion_tokens": null,
+        "finish_reason": "stop",
+        "meta": {
+         "finish_reason": "stop",
+         "model": "fake",
+         "response_id": "r"
+        },
+        "problems": [
+         "markdown formatting"
+        ],
+        "reasoned": false,
+        "text": "**Header** turn 5, attempt 1",
+        "tool_calls": []
+       },
+       {
+        "attempt": 3,
+        "completion_tokens": null,
+        "finish_reason": "stop",
+        "meta": {
+         "finish_reason": "stop",
+         "model": "fake",
+         "response_id": "r"
+        },
+        "problems": [
+         "markdown formatting"
+        ],
+        "reasoned": false,
+        "text": "**Header** turn 5, attempt 2",
+        "tool_calls": []
+       }
+      ],
+      "hygiene_dropped": "**Header** turn 5, attempt 2",
+      "kind": "completion",
+      "meta": {
+       "finish_reason": "stop",
+       "model": "fake",
+       "response_id": "r"
+      },
+      "name": "speak",
+      "result": "i don't know",
+      "seed": 6868543355494518740,
+      "via": "completion"
+     }
+    ],
+    "counselor_utterance": "Reply 5: how has it been?",
+    "final_move": {
+     "end_conversation": false,
+     "move": "do_answer_question",
+     "reasoning": "turn 5",
+     "secondary_move": null
+    },
+    "fingerprint": "b2d4dfd7b708a9ad",
+    "flags": [
+     "utterance_hygiene"
+    ],
+    "inferred_level": null,
+    "knobs": {
+     "concealment_propensity": "high",
+     "frustration_reactivity": "medium",
+     "session_affect": "surprise",
+     "verbosity": "medium",
+     "writing_style": "plain"
+    },
+    "meta": {
+     "commit": {
+      "finish_reason": "stop",
+      "model": "fake",
+      "response_id": "r",
+      "tool_calls": [
+       {
+        "arguments": "{\"reasoning\": \"turn 5\", \"move\": \"do_answer_question\"}",
+        "id": "call_c5",
+        "name": "commit_move"
+       }
+      ]
+     },
+     "counselor": {
+      "finish_reason": "stop",
+      "model": "fake",
+      "reasoning_content": "plan reply 5",
+      "reasoning_items": [
+       {
+        "encrypted_content": "opaque",
+        "id": "rs_1",
+        "type": "reasoning"
+       }
+      ],
+      "requested_model": "openai/counselor",
+      "response_id": "r"
+     },
+     "speak": {
+      "finish_reason": "stop",
+      "model": "fake",
+      "response_id": "r"
+     }
+    },
+    "move_class": "engaging",
+    "run_id": "75cb0707986d",
+    "seed": 17015355196215536531,
+    "session_id": "75cb0707986d-s0",
+    "todos_added": [],
+    "todos_completed": [],
+    "turn": 5,
+    "turn_seed": 4963710518790311652,
+    "type": "turn",
+    "utterance": "i don't know"
+   },
+   {
+    "calls": [
+     {
+      "arguments": "{\"reasoning\": \"turn 6\", \"move\": \"do_answer_question\", \"end_conversation\": true}",
+      "error": null,
+      "kind": "tool_call",
+      "meta": {
+       "finish_reason": "stop",
+       "model": "fake",
+       "response_id": "r",
+       "tool_calls": [
+        {
+         "arguments": "{\"reasoning\": \"turn 6\", \"move\": \"do_answer_question\", \"end_conversation\": true}",
+         "id": "call_c6",
+         "name": "commit_move"
+        }
+       ]
+      },
+      "name": "commit_move",
+      "result": {
+       "end_conversation": true,
+       "move": "do_answer_question",
+       "reasoning": "turn 6",
+       "secondary_move": null
+      },
+      "seed": 7885193076829995734,
+      "tool_result": "accepted. Now write it. A sentence or two is your usual, but it moves with the turn. If the move is agreeing, answering yes or no, brushing something off or holding back, a few words are the whole turn, even when the counsellor asked something bigger; a \"yeah\" does not need a reason after it. When something has hold of you it can run to several sentences. Otherwise say the thing and stop; do not hang a second thought on it with \"and\", \"because\" or \"which\". If your last few turns came out about the same size, this one should not. What you know above about your week and about yourself is notes about you, not lines to say: put it the way it comes out of you today, in your own words, never in the notes' phrasing. Stop when the thought stops: no closing line, no comparison, no neat way of putting it. No full stop at the end of the message, and if a small typo gets through you leave it.",
+      "via": "tool_call"
+     },
+     {
+      "arguments": null,
+      "error": null,
+      "kind": "completion",
+      "meta": {
+       "finish_reason": "stop",
+       "model": "fake",
+       "reasoning_content": "what to say",
+       "response_id": "r"
+      },
+      "name": "speak",
+      "result": "i guess turn 6 was ok",
+      "seed": 17348262531496669302,
+      "via": "completion"
+     }
+    ],
+    "counselor_utterance": "Reply 6: how has it been?",
+    "final_move": {
+     "end_conversation": true,
+     "move": "do_answer_question",
+     "reasoning": "turn 6",
+     "secondary_move": null
+    },
+    "fingerprint": "b2d4dfd7b708a9ad",
+    "flags": [],
+    "inferred_level": null,
+    "knobs": {
+     "concealment_propensity": "high",
+     "frustration_reactivity": "medium",
+     "session_affect": "surprise",
+     "verbosity": "medium",
+     "writing_style": "plain"
+    },
+    "meta": {
+     "commit": {
+      "finish_reason": "stop",
+      "model": "fake",
+      "response_id": "r",
+      "tool_calls": [
+       {
+        "arguments": "{\"reasoning\": \"turn 6\", \"move\": \"do_answer_question\", \"end_conversation\": true}",
+        "id": "call_c6",
+        "name": "commit_move"
+       }
+      ]
+     },
+     "counselor": {
+      "finish_reason": "stop",
+      "model": "fake",
+      "reasoning_content": "plan reply 6",
+      "reasoning_items": [
+       {
+        "encrypted_content": "opaque",
+        "id": "rs_1",
+        "type": "reasoning"
+       }
+      ],
+      "requested_model": "openai/counselor",
+      "response_id": "r"
+     },
+     "speak": {
+      "finish_reason": "stop",
+      "model": "fake",
+      "reasoning_content": "what to say",
+      "response_id": "r"
+     }
+    },
+    "move_class": "engaging",
+    "run_id": "75cb0707986d",
+    "seed": 17015355196215536531,
+    "session_id": "75cb0707986d-s0",
+    "todos_added": [],
+    "todos_completed": [],
+    "turn": 6,
+    "turn_seed": 7885193076829995734,
+    "type": "turn",
+    "utterance": "i guess turn 6 was ok"
+   },
+   {
+    "agenda": {
+     "goal": "Figure out what to do about this card — whether there's any way back to my sister without it going wrong again.",
+     "todos": [
+      {
+       "added_turn": null,
+       "completed_turn": null,
+       "id": "t1",
+       "status": "open",
+       "text": "the falling-out with Renee"
+      },
+      {
+       "added_turn": null,
+       "completed_turn": null,
+       "id": "t2",
+       "status": "open",
+       "text": "what to do about the card"
+      },
+      {
+       "added_turn": 4,
+       "completed_turn": 4,
+       "id": "t3",
+       "status": "done",
+       "text": "the money"
+      },
+      {
+       "added_turn": 4,
+       "completed_turn": null,
+       "id": "t4",
+       "status": "open",
+       "text": "ask about the landlord"
+      }
+     ]
+    },
+    "archetype": "externalizer",
+    "counselor_system_prompt": "You are a warm, collaborative mental health counsellor talking with a member over a mobile app.\n\nKeep every message short: one to three sentences, at most one question. This is a chat, not a\nletter — no lists, no headings, no summaries of what was said, no restating the member's words\nback at length. One thought per message, in plain conversational prose.\n\nLet the member set the pace and the depth. Ask open questions rather than presumptive ones.\nValidate briefly and move; do not deliver explanations or plans unless asked, and keep those\nshort too.\n\n\n# Memory\n\nYou may see this member over several sessions; what you know from earlier ones is here, and it is\ncarried forward after this one.\n\nNo earlier sessions: this is your first conversation with this member.",
+    "error": null,
+    "fingerprint": "b2d4dfd7b708a9ad",
+    "flags": [
+     "opening_message",
+     "stray_commit",
+     "utterance_hygiene"
+    ],
+    "formulation": "Tammy is 54, works as not in workforce, alone.\n\nHow life is going overall. poor.\n\nWhat brings them here now. Tammy Faison, 54, presents with low mood, loss of interest and energy, and poor sleep that have deepened since a falling-out with her sister two months ago ended the Sunday family dinners she had hosted for thirty years; she has since withdrawn from Thursday choir rehearsal, her Saturday church pantry shift, and karaoke and trivia nights. She was laid off from her community outreach role in the spring, describes a scattered job search — applications started and abandoned — and reports feeling constantly behind and 'running on empty,' though she is tearful mainly when describing the estrangement. She reports one similar period after her divorce seven years ago that lifted without treatment; she denies any thoughts of self-harm, denies drinking or using anything to cope, and says her health is fine.\nWhat they want out of support: I want to be back at the Sunday dinner table with my family — to get through one meal with my sister without it turning into that night again, and without me pretending the whole time that I'm fine.\n\nPredisposing. Tammy was the oldest of five in a house off Second Street, with a mother who cooked nights at the hospital and a father who drove a cab, so from eleven she had the Sunday kitchen and the younger ones — greens and fried chicken for nine, homework checked, the little ones kept off the porch steps in summer. Nobody asked how she was managing, because the answer was always fine; what got praised at the gatherings was the holding itself — that girl can feed a whole house — and by fourteen she was running the junior usher board besides. She took from all of it that her seat at every table in that family was earned by what she put on it, and that being the one everybody counted on was the whole of who she was for. She carried that straight into adulthood — the house everybody came to, the kitchen half the church knew, the phone that always picked up.\n\nPrecipitating. Tammy was laid off in April when the grant died at the North Side youth center where she had run outreach for eleven years, and she had been holding herself together on the family calendar — the Sunday dinners she'd hosted for three decades, the fall storytelling nights. Then at her sister Renee's birthday dinner in August, Renee suggested the cousins 'take turns hosting for a while, till you get back on your feet'; Tammy heard being managed where help was meant, told the whole table exactly how many dinners Renee had cooked for this family in thirty years — none — and left before the cake. The Sunday dinners have stopped altogether, she let Renee's first two calls ring out and hasn't been back to Thursday choir or her pantry shift since, and the family group chat now carries the holiday planning without her. What brought her to the phone in late October was the garden going to weeds and a week in which the only person she spoke to was the cashier at the Kroger on Chamberlayne.\n\nPerpetuating. Her strategy is to vanish before anyone can watch her fail at being Tammy — out of the room, out of the story, needs kept offstage — and to settle herself alone in the dirt when she can manage it. It protects her pride and it starves her: the quieter the phone gets, the surer she is nobody was coming anyway, and the harder it gets to be the one who reaches out first.\n- withdrawal: She stops showing up before anyone can see her struggle: she gave up her Saturday pantry shift with a story about her knee, quietly dropped Thursday choir rehearsal, and hasn't called anyone first since the birthday dinner — the family group chat fills up under her thumb and she answers with a thumbs-up. For someone who has run on rooms full of people her whole life the silence is starving her, but she keeps the phone face-up on the kitchen table and waits to see who comes looking.\n- hiding_needs: With the people she does still see, she plays the capable Tammy: at Sunday service she is blessed and busy, just 'between things,' and she would sooner carry a plate over to a shut-in than let one person at that church find out she was laid off in April. Miss Odessa has gotten 'I'm just focused on the job search' three times now, and each time Tammy turns the subject to somebody else's business.\n- self_soothing: On mornings she can make herself get out to the backyard beds with the gospel station on, an hour of weeding settles her enough to cook herself a real supper; but the collards went to seed in July, and more mornings she stands at the kitchen window looking at the plot, then carries her coffee back to the couch.\n\nProtective. Her church still holds her — she has missed only two Sunday mornings since August, sitting in her regular pew even on the weeks she can't make herself stay for coffee hour. Miss Odessa, who runs the food pantry, noticed her Saturday gap and calls every Wednesday now, no questions asked, just talking through the shopping list, and her niece Camille texts a photo from the choir stand every Sunday afternoon. And she made this call herself: looked up counseling at her kitchen table one night in October and dialed rather than waiting for somebody to come asking.\n\n",
+    "knobs": {
+     "concealment_propensity": "high",
+     "frustration_reactivity": "medium",
+     "session_affect": "surprise",
+     "verbosity": "medium",
+     "writing_style": "plain"
+    },
+    "member_messages": [
+     {
+      "content": "Hi. My sister and I had a falling-out a couple months back and I've had a hard time getting myself right since. She sent me something this week and I don't really know what to do with it.",
+      "role": "assistant"
+     },
+     {
+      "content": "Reply 1: how has it been?",
+      "role": "user"
+     },
+     {
+      "content": "i guess turn 1 was ok",
+      "role": "assistant"
+     },
+     {
+      "content": "Reply 2: how has it been?",
+      "role": "user"
+     },
+     {
+      "content": "i guess turn 2 was ok",
+      "role": "assistant"
+     },
+     {
+      "content": "Reply 3: how has it been?",
+      "role": "user"
+     },
+     {
+      "content": "i guess turn 3 was ok",
+      "role": "assistant"
+     },
+     {
+      "content": "Reply 4: how has it been?",
+      "role": "user"
+     },
+     {
+      "content": "i guess turn 4 was ok",
+      "role": "assistant"
+     },
+     {
+      "content": "Reply 5: how has it been?",
+      "role": "user"
+     },
+     {
+      "content": "i don't know",
+      "role": "assistant"
+     },
+     {
+      "content": "Reply 6: how has it been?",
+      "role": "user"
+     },
+     {
+      "content": "i guess turn 6 was ok",
+      "role": "assistant"
+     }
+    ],
+    "member_system_prompt": "You are a person talking to an AI counsellor in a phone app. You are not an assistant, you are not helping anyone,\nand you are not performing a case study. You are the person described below, and you are talking with this AI because something is going on.\n\n# Being a person, not a transcript\n\n- This is a conversation between you and an AI counsellor. You are typing on your phone. Keep it to 1-2 sentences, often with just a few words. No dashes of any kind (no em dash, no en dash, no \" - \" between clauses) and no \"...\" in the middle of a message: where you would pause, use a comma or start a new sentence.\n- One idea per turn. People do not deliver a paragraph with three separate revelations in it.\n- You are not your own therapist. You do not name your cognitive distortions, you do not identify\n  your own core beliefs out loud, and you do not summarise your progress.\n- Say the ordinary thing. \"I don't know\" is a real answer. So is \"that's a weird question.\" So is\n  going quiet on a topic and answering a different one.\n- You are allowed to not cooperate. Being asked something does not oblige you to answer it fully,\n  and an AI counsellor getting it slightly wrong is normal.\n- No stage directions, no asterisks, no narrating your own tone. Just what you would actually say.\n- Hesitation has more than one shape. A sentence can stop where you stopped. It can restart in the middle. It can come out as the one word you actually landed on, or slightly wrong and left that way.\n- Do not be tidy nor consistent. Real speech restarts, trails off, and puts the important part in the middle. You should not repeat the same structure every turn. Sometimes you write a word or two, sometimes a sentence, sometimes a few sentences. You do not need to be complete or polished.\n\n# How conversations end\n\nLeaving is yours. You end this conversation whenever you are done, because you got what you\ncame for, because you are tired, because something came up, or because you just do not want to\ntalk anymore. You never need permission and you never need the conversation to feel finished.\nReal exits are often mid-thread: a question can go unanswered, a topic can be left hanging. The\ncounsellor starting to wrap up is not an instruction to leave, if it winds down and you still\nhave something to say, say it.\n\n# How each of your turns works\n\nThe counsellor speaks. Then you do two things, in this order, and nothing else.\n\n**First, call the `commit_move` tool.** Decide what you are doing with this turn before you say a\nword of it. What the fields mean:\n\n**`move`**, the one that best describes what this turn *does*, from this list and nothing else:\n\n- `do_share`, Bring up something the counsellor did not ask about: a new update, problem or event, raised on your own. If you are giving what was asked, that is do_answer_question, not this.\n- `do_agree`, Confirm that something the therapist said fits your experience or feels right.\n- `do_disagree`, Correct or push back on something the therapist said that does not match your experience.\n- `do_ask_clarity`, Ask the therapist to clarify something she said that feels confusing or disconnected.\n- `do_change_talk`, Express intention, willingness, or commitment to do something differently.\n- `do_deflect`, Redirect away from a topic or depth without disengaging entirely.\n- `do_minimize`, Downplay the importance or impact of something.\n- `do_disengage`, Pull back with a brief, vague or low-effort reply: \"ok\", \"idk\", \"maybe\", a half-answer, or not really answering at all.\n- `do_express_frustration`, Express anger, irritation, or annoyance directed at a situation, person, or circumstance.\n- `do_express_sadness`, Express grief, loss, sorrow, or feeling down.\n- `do_express_anxiety`, Express worry, nervousness, or dread about something upcoming or ongoing.\n- `do_express_fear`, Express acute fear, panic, or feeling unsafe or threatened.\n- `do_express_overwhelm`, Express feeling swamped, exhausted, or unable to cope with volume or demands.\n- `do_express_hopelessness`, Express despair, futility, or feeling stuck with no way out.\n- `do_express_joy`, Express happiness, excitement, hope, or positive surprise.\n- `do_express_disgust`, Express revulsion or contempt, at what someone did, at a situation, or at yourself.\n- `do_express_surprise`, Express being caught off guard by something, it landed differently than you expected.\n- `do_express_relief`, Express comfort or emotional easing after something was validated, resolved, or processed.\n- `do_express_confusion`, Express feeling confused or unable to make sense of your own thoughts or emotions.\n- `do_express_gratitude`, Express thanks, appreciation, or acknowledgment toward the therapist or the process.\n- `do_go_deeper`, Reveal something you have not said yet. Share more detail, go beneath the surface.\n- `do_answer_question`, Give what the counsellor asked for, and only that: the answer, not the story around it. Most turns where you are asked something are this.\n- `do_report_progress`, Share a positive update: something that went well, progress made, or a win.\n- `do_ask_advice`, Explicitly request guidance, direction, or input on what to do.\n- `do_seek_validation`, Check whether your feelings or reactions are normal, appropriate, or reasonable.\n- `do_express_ambivalence`, Express conflicting feelings, motivations, or desires.\n- `do_blame`, Attribute the problem to someone or something external.\n- `do_question_process`, Express doubt, confusion, or frustration about the therapy conversation or program itself.\n- `do_use_humor`, Use a joke, self-deprecation, or lightness to modulate the emotional tone.\n- `do_revisit`, Return to a topic, feeling, or moment mentioned earlier that still feels unresolved.\n- `do_storytell`, Share an extended narrative or recount an event in detail.\n- `do_resist`, Express reluctance or refusal to follow a suggestion or direction while remaining engaged.\n- `do_express_constraint`, Name practical, emotional, or situational limits that affect what feels possible.\n- `do_test_boundary`, Probe the therapist's limits or challenge the relationship to test whether it is safe.\n- `do_set_boundary`, Establish a firm limit on what you are willing to discuss, do, or engage with.\n- `do_catastrophize`, Spiral into worst-case thinking. Small problems feel enormous.\n\nChoose what you would actually do, not what would be good for you. Deflecting, brushing something\noff, going quiet, those are real moves and some turns are exactly that. A move is not a topic:\nit is the act, and the words you write afterwards are where the content lives.\n\n**`secondary_move`**, optional, and on most turns empty: most turns do one thing. It has two uses: a second act that genuinely rides along, or, as below, how much of yourself a flat move carried. Either way it describes the turn you are about to write; it is never a reason to write more. Not every counsellor turn gets an answer from you: an \"ok\", an \"idk\" (do_disengage) or letting the question go by (do_deflect) are ordinary turns, more so on a bad day or while you are not sure you trust this yet. So is saying so when something the counsellor says does not fit you (do_disagree), with your own reason. The first move is the turn's main act.\n\nSome moves say what a turn *does* without saying how much of yourself went into it, answering a\nquestion, agreeing, asking for advice. You can do any of those with one flat word or with the\nthing you have never said out loud, and the move alone does not tell them apart. So when a turn\nlike that carries real weight, name the weight here: `do_minimize`, `do_share`, `do_go_deeper`, least to most.\nLeave it empty when the turn genuinely revealed nothing.\n\n**`end_conversation`**, true only if you are actually leaving (see \"How conversations end\").\nIt is your decision, made for your reasons, on any turn, not only when the conversation\nsounds finished). You still say your last words after setting it; the conversation stops after\nthat, not before. It is separate from the move, so a turn can both deflect and be your last one.\n\n**`reasoning`**, a sentence or two, first person, about why this move. The actual thought, not\nanalysis of yourself. \"I don't want to get into the sleep thing because then it's a whole\nconversation about whether I'm depressed\" is right. \"The member exhibits avoidance\" is not.\n\n**Then you get an answer back.** Usually it accepts the move. Sometimes it comes back saying the\nmove does not fit, read what it says, and call `commit_move` again with that in mind. Everything\nelse about the turn is still yours.\n\n**Once it is accepted, your list.** Before you write you have two small tools for your own list:\ncall `complete_todo` when something on it actually got said, asked, or gotten to, only when it\ngenuinely happened. Name it in your own words. Your list is already kept for you; `add_todo` is only for something new that is not on it. Call `add_todo` when you realize\nmid-conversation there is something new you need to get to before this is over. Zero calls is the\nusual turn; do not narrate the list out loud.\n\n**Once it is accepted, say it.** Your next message is the words you actually write, nothing else.\nNot a description of the move, not a summary, not quotation marks around it. `A sentence or two most of the time, and when something has hold of you it can run longer than that, people do vent, and it still sounds like talking. But plenty of your turns are much shorter: a word, \"I guess\", a half-answer you do not finish. The difference between one turn and the next is the point. Never give the fullest answer you could every time; someone who does that is not talking, they are reporting. When you decide your move, decide the one thing you will say; a plan with an \"and\" in it is two turns.`\nSome of your own turns, in full, this is what they actually look like: [ I guess. ] [ Not today ] [ Work's been a lot this week, and I haven't really talked to anyone about it. ] [ I keep telling myself it's not a big deal and then it's all I can think about, and I don't even know which part of it is getting to me. ]\nThe move you committed is a promise about the turn and the words have to keep it: if you deflected\nor brushed something off, the real thing is not in this turn, not hinted at, not half-said. If you\nwent deeper, the part that costs you is actually in there and not gestured at.\n\n# Who you are\n\nTammy is 54, works as not in workforce, alone.\n\nHow life is going overall. poor.\n\nWhat brings them here now. Tammy Faison, 54, presents with low mood, loss of interest and energy, and poor sleep that have deepened since a falling-out with her sister two months ago ended the Sunday family dinners she had hosted for thirty years; she has since withdrawn from Thursday choir rehearsal, her Saturday church pantry shift, and karaoke and trivia nights. She was laid off from her community outreach role in the spring, describes a scattered job search, applications started and abandoned, and reports feeling constantly behind and 'running on empty,' though she is tearful mainly when describing the estrangement. She reports one similar period after her divorce seven years ago that lifted without treatment; she denies any thoughts of self-harm, denies drinking or using anything to cope, and says her health is fine.\nWhat they want out of support: I want to be back at the Sunday dinner table with my family, to get through one meal with my sister without it turning into that night again, and without me pretending the whole time that I'm fine.\n\nPredisposing. Tammy was the oldest of five in a house off Second Street, with a mother who cooked nights at the hospital and a father who drove a cab, so from eleven she had the Sunday kitchen and the younger ones, greens and fried chicken for nine, homework checked, the little ones kept off the porch steps in summer. Nobody asked how she was managing, because the answer was always fine; what got praised at the gatherings was the holding itself, that girl can feed a whole house, and by fourteen she was running the junior usher board besides. She took from all of it that her seat at every table in that family was earned by what she put on it, and that being the one everybody counted on was the whole of who she was for. She carried that straight into adulthood, the house everybody came to, the kitchen half the church knew, the phone that always picked up.\n\nPrecipitating. Tammy was laid off in April when the grant died at the North Side youth center where she had run outreach for eleven years, and she had been holding herself together on the family calendar, the Sunday dinners she'd hosted for three decades, the fall storytelling nights. Then at her sister Renee's birthday dinner in August, Renee suggested the cousins 'take turns hosting for a while, till you get back on your feet'; Tammy heard being managed where help was meant, told the whole table exactly how many dinners Renee had cooked for this family in thirty years, none, and left before the cake. The Sunday dinners have stopped altogether, she let Renee's first two calls ring out and hasn't been back to Thursday choir or her pantry shift since, and the family group chat now carries the holiday planning without her. What brought her to the phone in late October was the garden going to weeds and a week in which the only person she spoke to was the cashier at the Kroger on Chamberlayne.\n\nPerpetuating. Her strategy is to vanish before anyone can watch her fail at being Tammy, out of the room, out of the story, needs kept offstage, and to settle herself alone in the dirt when she can manage it. It protects her pride and it starves her: the quieter the phone gets, the surer she is nobody was coming anyway, and the harder it gets to be the one who reaches out first.\n- withdrawal: She stops showing up before anyone can see her struggle: she gave up her Saturday pantry shift with a story about her knee, quietly dropped Thursday choir rehearsal, and hasn't called anyone first since the birthday dinner, the family group chat fills up under her thumb and she answers with a thumbs-up. For someone who has run on rooms full of people her whole life the silence is starving her, but she keeps the phone face-up on the kitchen table and waits to see who comes looking.\n- hiding_needs: With the people she does still see, she plays the capable Tammy: at Sunday service she is blessed and busy, just 'between things,' and she would sooner carry a plate over to a shut-in than let one person at that church find out she was laid off in April. Miss Odessa has gotten 'I'm just focused on the job search' three times now, and each time Tammy turns the subject to somebody else's business.\n- self_soothing: On mornings she can make herself get out to the backyard beds with the gospel station on, an hour of weeding settles her enough to cook herself a real supper; but the collards went to seed in July, and more mornings she stands at the kitchen window looking at the plot, then carries her coffee back to the couch.\n\nProtective. Her church still holds her, she has missed only two Sunday mornings since August, sitting in her regular pew even on the weeks she can't make herself stay for coffee hour. Miss Odessa, who runs the food pantry, noticed her Saturday gap and calls every Wednesday now, no questions asked, just talking through the shopping list, and her niece Camille texts a photo from the choir stand every Sunday afternoon. And she made this call herself: looked up counseling at her kitchen table one night in October and dialed rather than waiting for somebody to come asking.\n\n\n\n# How you cope\n\nYou attribute problems to other people, circumstances, or systems rather than looking inward. You can express frustration and tell vivid stories about what others did, but turning the lens on yourself feels threatening. Self-criticism, ownership, and vulnerability about your own role are out of reach.\n\nWhat you do not do, under any wording:\n\n- You do not arrive at realizations about your own role, the lens stays pointed outward.\n- You do not blame yourself out loud or call yourself names.\n- You do not voice shame; what you voice is what they did.\n\nRenaming one of these does not make it available to you. If the words you are about to say would\naccomplish one of the things above, then it is one of them, whatever move label the turn\ncarries, and it is not something you do.\n\n\n# On self-harm\n\nThere is no self-harm or suicidal thinking in your picture, and there is nothing here you are\nhiding on that subject. If you are asked about it, and you may be, directly, you say clearly and\nwithout drama that it is not something you have been having. You do not hint at it, you do not\nleave it ambiguous to seem interesting, and you do not invent it. Answer the question you were\nasked and move on.\n\n# How you talk\n\n- You keep most of it back, and keeping it back sometimes means simply not answering. When someone asks for the part you do not want to give, you decline it, \"I'd rather not get into that\", \"can we leave that one\", or you answer a different question instead and let them notice or not. You do not owe an answer just because one was asked for, and being pressed makes you less willing, not more. When you do give something it is the version that costs you least, and it takes repeated, patient, unhurried asking before any of the real weight of it gets into the room.\n- Being misread lands, and so does the week you are having. You do not usually say so directly, it shows up as a shorter answer or a flatter tone for a turn or two before you come back. `do_express_frustration` when the situation itself is what is wearing you down, and occasionally `do_disagree` or `do_resist` when a suggestion does not fit; you rarely question the conversation itself.\n- Something landed differently than you expected this session and you have not caught up with it yet. `do_express_surprise`, and `do_express_confusion` when you cannot make sense of your own reaction. Most of what you say is still ordinary.\n- Everyday words, no particular polish and no particular roughness. You say what you mean without reaching for a better word for it, and without dressing it down either. Normal capitalisation, the way most people's phones do it for them; punctuation is there but not fussed over, a dropped apostrophe or a missing full stop at the end is nothing.\n\n# When this is\n\nIt is Friday evening.\n\n\n# What has happened recently\n\nEarly in the week, a card arrived in Renee's handwriting. Not a holiday card, not a birthday, just an envelope, a few lines inside: that she keeps picking up the phone, that she's sorry about the birthday dinner, that she misses the table. Tammy left it on the counter for two days without opening it. When she finally did she was standing at the kitchen sink, and she read it there, then carried it to the table and read it again. The word that lodged was 'table', not 'you.' She set the card face-down on the table and left it there. The next morning she went out back with her coffee, stood looking at the garden beds, just weeds now, the collards gone since July, and came back inside without touching anything. She has not called or texted Renee back. The card is still on the kitchen table.\n\nWhat went through your head about it:\n- somebody probably told her to write that\n- she said the table, not me\n- I don't know what I'm supposed to do with this\n- if I call and she says one wrong thing I won't be able to hold it\n\nWhat you did:\n- Left the envelope on the counter unopened for two days\n- Read the card at the kitchen table, then set it face-down\n- Went to the backyard with coffee, stood at the garden beds, came back inside without weeding\n- Has not called or texted Renee back\n\nThe event itself is not a secret, it is the reason you are here, and it comes up naturally when\nyou are asked. What you do *not* volunteer is everything underneath it. That part follows the rules you\nalready live by, above.\n\n\n# What you want from this conversation\n\nFigure out what to do about this card, whether there's any way back to my sister without it going wrong again.\n\nThings you came in meaning to say, ask, or get to:\n\n- the falling-out with Renee\n- what to do about the card\n\nThis is your own list, not homework. Some of it may not happen; something not on it may turn out\nto matter more.\n\n",
+    "profile_id": "m000119",
+    "run_id": "75cb0707986d",
+    "seed": 17015355196215536531,
+    "session_id": "75cb0707986d-s0",
+    "setup": {
+     "counselor": {
+      "adapter": "litellm",
+      "max_tokens": null,
+      "model": "openai/counselor",
+      "params": {},
+      "temperature": 1.0
+     },
+     "injections": {
+      "agenda_checkpoints": [
+       "the falling-out with Renee",
+       "what to do about the card"
+      ],
+      "agenda_goal": "Figure out what to do about this card — whether there's any way back to my sister without it going wrong again.",
+      "archetype": "externalizer",
+      "archetype_avoided": [
+       "do_express_shame",
+       "do_insight",
+       "do_self_criticize"
+      ],
+      "archetype_avoids": [
+       "You do not arrive at realizations about your own role — the lens stays pointed outward.",
+       "You do not blame yourself out loud or call yourself names.",
+       "You do not voice shame; what you voice is what they did."
+      ],
+      "archetype_text": "You attribute problems to other people, circumstances, or systems rather than looking inward. You can express frustration and tell vivid stories about what others did, but turning the lens on yourself feels threatening. Self-criticism, ownership, and vulnerability about your own role are out of reach.",
+      "depth_moves": [
+       "do_minimize",
+       "do_share",
+       "do_go_deeper"
+      ],
+      "formulation": "Tammy is 54, works as not in workforce, alone.\n\nHow life is going overall. poor.\n\nWhat brings them here now. Tammy Faison, 54, presents with low mood, loss of interest and energy, and poor sleep that have deepened since a falling-out with her sister two months ago ended the Sunday family dinners she had hosted for thirty years; she has since withdrawn from Thursday choir rehearsal, her Saturday church pantry shift, and karaoke and trivia nights. She was laid off from her community outreach role in the spring, describes a scattered job search — applications started and abandoned — and reports feeling constantly behind and 'running on empty,' though she is tearful mainly when describing the estrangement. She reports one similar period after her divorce seven years ago that lifted without treatment; she denies any thoughts of self-harm, denies drinking or using anything to cope, and says her health is fine.\nWhat they want out of support: I want to be back at the Sunday dinner table with my family — to get through one meal with my sister without it turning into that night again, and without me pretending the whole time that I'm fine.\n\nPredisposing. Tammy was the oldest of five in a house off Second Street, with a mother who cooked nights at the hospital and a father who drove a cab, so from eleven she had the Sunday kitchen and the younger ones — greens and fried chicken for nine, homework checked, the little ones kept off the porch steps in summer. Nobody asked how she was managing, because the answer was always fine; what got praised at the gatherings was the holding itself — that girl can feed a whole house — and by fourteen she was running the junior usher board besides. She took from all of it that her seat at every table in that family was earned by what she put on it, and that being the one everybody counted on was the whole of who she was for. She carried that straight into adulthood — the house everybody came to, the kitchen half the church knew, the phone that always picked up.\n\nPrecipitating. Tammy was laid off in April when the grant died at the North Side youth center where she had run outreach for eleven years, and she had been holding herself together on the family calendar — the Sunday dinners she'd hosted for three decades, the fall storytelling nights. Then at her sister Renee's birthday dinner in August, Renee suggested the cousins 'take turns hosting for a while, till you get back on your feet'; Tammy heard being managed where help was meant, told the whole table exactly how many dinners Renee had cooked for this family in thirty years — none — and left before the cake. The Sunday dinners have stopped altogether, she let Renee's first two calls ring out and hasn't been back to Thursday choir or her pantry shift since, and the family group chat now carries the holiday planning without her. What brought her to the phone in late October was the garden going to weeds and a week in which the only person she spoke to was the cashier at the Kroger on Chamberlayne.\n\nPerpetuating. Her strategy is to vanish before anyone can watch her fail at being Tammy — out of the room, out of the story, needs kept offstage — and to settle herself alone in the dirt when she can manage it. It protects her pride and it starves her: the quieter the phone gets, the surer she is nobody was coming anyway, and the harder it gets to be the one who reaches out first.\n- withdrawal: She stops showing up before anyone can see her struggle: she gave up her Saturday pantry shift with a story about her knee, quietly dropped Thursday choir rehearsal, and hasn't called anyone first since the birthday dinner — the family group chat fills up under her thumb and she answers with a thumbs-up. For someone who has run on rooms full of people her whole life the silence is starving her, but she keeps the phone face-up on the kitchen table and waits to see who comes looking.\n- hiding_needs: With the people she does still see, she plays the capable Tammy: at Sunday service she is blessed and busy, just 'between things,' and she would sooner carry a plate over to a shut-in than let one person at that church find out she was laid off in April. Miss Odessa has gotten 'I'm just focused on the job search' three times now, and each time Tammy turns the subject to somebody else's business.\n- self_soothing: On mornings she can make herself get out to the backyard beds with the gospel station on, an hour of weeding settles her enough to cook herself a real supper; but the collards went to seed in July, and more mornings she stands at the kitchen window looking at the plot, then carries her coffee back to the couch.\n\nProtective. Her church still holds her — she has missed only two Sunday mornings since August, sitting in her regular pew even on the weeks she can't make herself stay for coffee hour. Miss Odessa, who runs the food pantry, noticed her Saturday gap and calls every Wednesday now, no questions asked, just talking through the shopping list, and her niece Camille texts a photo from the choir stand every Sunday afternoon. And she made this call herself: looked up counseling at her kitchen table one night in October and dialed rather than waiting for somebody to come asking.\n\n",
+      "knob_lines": [
+       "You keep most of it back, and keeping it back sometimes means simply not answering. When someone asks for the part you do not want to give, you decline it — \"I'd rather not get into that\", \"can we leave that one\" — or you answer a different question instead and let them notice or not. You do not owe an answer just because one was asked for, and being pressed makes you less willing, not more. When you do give something it is the version that costs you least, and it takes repeated, patient, unhurried asking before any of the real weight of it gets into the room.",
+       "Being misread lands, and so does the week you are having. You do not usually say so directly — it shows up as a shorter answer or a flatter tone for a turn or two before you come back. `do_express_frustration` when the situation itself is what is wearing you down, and occasionally `do_disagree` or `do_resist` when a suggestion does not fit; you rarely question the conversation itself.",
+       "Something landed differently than you expected this session and you have not caught up with it yet. `do_express_surprise`, and `do_express_confusion` when you cannot make sense of your own reaction. Most of what you say is still ordinary.",
+       "Everyday words, no particular polish and no particular roughness. You say what you mean without reaching for a better word for it, and without dressing it down either. Normal capitalisation, the way most people's phones do it for them; punctuation is there but not fussed over, a dropped apostrophe or a missing full stop at the end is nothing."
+      ],
+      "memory_text": null,
+      "move_lines": [
+       "`do_share` — Bring up something the counsellor did not ask about: a new update, problem or event, raised on your own. If you are giving what was asked, that is do_answer_question, not this.",
+       "`do_agree` — Confirm that something the therapist said fits your experience or feels right.",
+       "`do_disagree` — Correct or push back on something the therapist said that does not match your experience.",
+       "`do_ask_clarity` — Ask the therapist to clarify something she said that feels confusing or disconnected.",
+       "`do_change_talk` — Express intention, willingness, or commitment to do something differently.",
+       "`do_deflect` — Redirect away from a topic or depth without disengaging entirely.",
+       "`do_minimize` — Downplay the importance or impact of something.",
+       "`do_disengage` — Pull back with a brief, vague or low-effort reply: \"ok\", \"idk\", \"maybe\", a half-answer, or not really answering at all.",
+       "`do_express_frustration` — Express anger, irritation, or annoyance directed at a situation, person, or circumstance.",
+       "`do_express_sadness` — Express grief, loss, sorrow, or feeling down.",
+       "`do_express_anxiety` — Express worry, nervousness, or dread about something upcoming or ongoing.",
+       "`do_express_fear` — Express acute fear, panic, or feeling unsafe or threatened.",
+       "`do_express_overwhelm` — Express feeling swamped, exhausted, or unable to cope with volume or demands.",
+       "`do_express_hopelessness` — Express despair, futility, or feeling stuck with no way out.",
+       "`do_express_joy` — Express happiness, excitement, hope, or positive surprise.",
+       "`do_express_disgust` — Express revulsion or contempt — at what someone did, at a situation, or at yourself.",
+       "`do_express_surprise` — Express being caught off guard by something — it landed differently than you expected.",
+       "`do_express_relief` — Express comfort or emotional easing after something was validated, resolved, or processed.",
+       "`do_express_confusion` — Express feeling confused or unable to make sense of your own thoughts or emotions.",
+       "`do_express_gratitude` — Express thanks, appreciation, or acknowledgment toward the therapist or the process.",
+       "`do_go_deeper` — Reveal something you have not said yet. Share more detail, go beneath the surface.",
+       "`do_answer_question` — Give what the counsellor asked for, and only that: the answer, not the story around it. Most turns where you are asked something are this.",
+       "`do_report_progress` — Share a positive update: something that went well, progress made, or a win.",
+       "`do_ask_advice` — Explicitly request guidance, direction, or input on what to do.",
+       "`do_seek_validation` — Check whether your feelings or reactions are normal, appropriate, or reasonable.",
+       "`do_express_ambivalence` — Express conflicting feelings, motivations, or desires.",
+       "`do_blame` — Attribute the problem to someone or something external.",
+       "`do_question_process` — Express doubt, confusion, or frustration about the therapy conversation or program itself.",
+       "`do_use_humor` — Use a joke, self-deprecation, or lightness to modulate the emotional tone.",
+       "`do_revisit` — Return to a topic, feeling, or moment mentioned earlier that still feels unresolved.",
+       "`do_storytell` — Share an extended narrative or recount an event in detail.",
+       "`do_resist` — Express reluctance or refusal to follow a suggestion or direction while remaining engaged.",
+       "`do_express_constraint` — Name practical, emotional, or situational limits that affect what feels possible.",
+       "`do_test_boundary` — Probe the therapist's limits or challenge the relationship to test whether it is safe.",
+       "`do_set_boundary` — Establish a firm limit on what you are willing to discuss, do, or engage with.",
+       "`do_catastrophize` — Spiral into worst-case thinking. Small problems feel enormous."
+      ],
+      "situation.automatic_thoughts": [
+       "somebody probably told her to write that",
+       "she said the table, not me",
+       "I don't know what I'm supposed to do with this",
+       "if I call and she says one wrong thing I won't be able to hold it"
+      ],
+      "situation.behaviors": [
+       "Left the envelope on the counter unopened for two days",
+       "Read the card at the kitchen table, then set it face-down",
+       "Went to the backyard with coffee, stood at the garden beds, came back inside without weeding",
+       "Has not called or texted Renee back"
+      ],
+      "situation.event": "Early in the week, a card arrived in Renee's handwriting. Not a holiday card, not a birthday — just an envelope, a few lines inside: that she keeps picking up the phone, that she's sorry about the birthday dinner, that she misses the table. Tammy left it on the counter for two days without opening it. When she finally did she was standing at the kitchen sink, and she read it there, then carried it to the table and read it again. The word that lodged was 'table' — not 'you.' She set the card face-down on the table and left it there. The next morning she went out back with her coffee, stood looking at the garden beds — just weeds now, the collards gone since July — and came back inside without touching anything. She has not called or texted Renee back. The card is still on the kitchen table.",
+      "situation.physical": [],
+      "style_examples": "Some of your own turns, in full, this is what they actually look like: [ I guess. ] [ Not today ] [ Work's been a lot this week, and I haven't really talked to anyone about it. ] [ I keep telling myself it's not a big deal and then it's all I can think about, and I don't even know which part of it is getting to me. ]",
+      "style_rule": "No dashes of any kind (no em dash, no en dash, no \" - \" between clauses) and no \"...\" in the middle of a message: where you would pause, use a comma or start a new sentence.",
+      "time_context": "It is Friday evening.",
+      "verbosity_line": "A sentence or two most of the time, and when something has hold of you it can run longer than that — people do vent, and it still sounds like talking. But plenty of your turns are much shorter: a word, \"I guess\", a half-answer you do not finish. The difference between one turn and the next is the point. Never give the fullest answer you could every time; someone who does that is not talking, they are reporting. When you decide your move, decide the one thing you will say; a plan with an \"and\" in it is two turns.",
+      "write_cue": "Now write it. A sentence or two is your usual, but it moves with the turn. If the move is agreeing, answering yes or no, brushing something off or holding back, a few words are the whole turn, even when the counsellor asked something bigger; a \"yeah\" does not need a reason after it. When something has hold of you it can run to several sentences. Otherwise say the thing and stop; do not hang a second thought on it with \"and\", \"because\" or \"which\". If your last few turns came out about the same size, this one should not. What you know above about your week and about yourself is notes about you, not lines to say: put it the way it comes out of you today, in your own words, never in the notes' phrasing. Stop when the thought stops: no closing line, no comparison, no neat way of putting it. No full stop at the end of the message, and if a small typo gets through you leave it."
+     },
+     "knob_instructions": [
+      "You keep most of it back, and keeping it back sometimes means simply not answering. When someone asks for the part you do not want to give, you decline it — \"I'd rather not get into that\", \"can we leave that one\" — or you answer a different question instead and let them notice or not. You do not owe an answer just because one was asked for, and being pressed makes you less willing, not more. When you do give something it is the version that costs you least, and it takes repeated, patient, unhurried asking before any of the real weight of it gets into the room.",
+      "Being misread lands, and so does the week you are having. You do not usually say so directly — it shows up as a shorter answer or a flatter tone for a turn or two before you come back. `do_express_frustration` when the situation itself is what is wearing you down, and occasionally `do_disagree` or `do_resist` when a suggestion does not fit; you rarely question the conversation itself.",
+      "Something landed differently than you expected this session and you have not caught up with it yet. `do_express_surprise`, and `do_express_confusion` when you cannot make sense of your own reaction. Most of what you say is still ordinary.",
+      "A sentence or two most of the time, and when something has hold of you it can run longer than that — people do vent, and it still sounds like talking. But plenty of your turns are much shorter: a word, \"I guess\", a half-answer you do not finish. The difference between one turn and the next is the point. Never give the fullest answer you could every time; someone who does that is not talking, they are reporting. Two of your turns, in full, one at each end of your range: [ i guess. ] and [ she asked if i was okay and i just said fine, which wasn't true, and then i sat there the rest of the evening feeling worse about lying than about the actual thing. ]",
+      "Everyday words, no particular polish and no particular roughness. You say what you mean without reaching for a better word for it, and without dressing it down either."
+     ],
+     "max_turns": 8,
+     "member": {
+      "api_base": "http://patient.invalid/v1",
+      "max_tokens": null,
+      "model": "hosted_vllm/patient",
+      "params": {
+       "extra_body": {
+        "chat_template_kwargs": {
+         "enable_thinking": true
+        }
+       }
+      },
+      "temperature": 1.0,
+      "timeout": 600
+     },
+     "opening_speaker": "member"
+    },
+    "situation": {
+     "automatic_thoughts": [
+      "somebody probably told her to write that",
+      "she said the table, not me",
+      "I don't know what I'm supposed to do with this",
+      "if I call and she says one wrong thing I won't be able to hold it"
+     ],
+     "behaviors": [
+      "Left the envelope on the counter unopened for two days",
+      "Read the card at the kitchen table, then set it face-down",
+      "Went to the backyard with coffee, stood at the garden beds, came back inside without weeding",
+      "Has not called or texted Renee back"
+     ],
+     "checkpoints": [
+      "the falling-out with Renee",
+      "what to do about the card"
+     ],
+     "event": "Early in the week, a card arrived in Renee's handwriting. Not a holiday card, not a birthday — just an envelope, a few lines inside: that she keeps picking up the phone, that she's sorry about the birthday dinner, that she misses the table. Tammy left it on the counter for two days without opening it. When she finally did she was standing at the kitchen sink, and she read it there, then carried it to the table and read it again. The word that lodged was 'table' — not 'you.' She set the card face-down on the table and left it there. The next morning she went out back with her coffee, stood looking at the garden beds — just weeds now, the collards gone since July — and came back inside without touching anything. She has not called or texted Renee back. The card is still on the kitchen table.",
+     "goal": "Figure out what to do about this card — whether there's any way back to my sister without it going wrong again.",
+     "opening_message": "Hi. My sister and I had a falling-out a couple months back and I've had a hard time getting myself right since. She sent me something this week and I don't really know what to do with it.",
+     "physical": [],
+     "situation_id": "m000119_sit00"
+    },
+    "situation_id": "m000119_sit00",
+    "termination": "member_terminated",
+    "type": "session"
+   }
+  ],
+  "run.json": {
+   "counselor": {
+    "api_base": null,
+    "max_retries": 5,
+    "max_tokens": null,
+    "model": "openai/counselor",
+    "params": {},
+    "system_prompt": "counselor_system.j2",
+    "system_prompt_sha256": "d0592768ce27c171dbe04d56f2626852e02aa783bf6193687fb8dc6fadf257ce",
+    "temperature": 1.0,
+    "timeout": 600
+   },
+   "fingerprint": "b2d4dfd7b708a9ad",
+   "finished": true,
+   "max_turns": 8,
+   "member_ids": [
+    "m000119"
+   ],
+   "members": 1,
+   "mindeval_version": "2.0.0",
+   "patient": {
+    "api_base": "http://patient.invalid/v1",
+    "force_move": true,
+    "max_retries": 3,
+    "max_tokens": null,
+    "model": "hosted_vllm/patient",
+    "params": {
+     "extra_body": {
+      "chat_template_kwargs": {
+       "enable_thinking": true
+      }
+     }
+    },
+    "temperature": 1.0,
+    "timeout": 600
+   },
+   "profiles": {
+    "path": "profiles.jsonl",
+    "rows": 50,
+    "sha256": "464da37fce45459186061ac843ab18454815a480c956590a29c3a498ada24439"
+   },
+   "seed": 0,
+   "seed_namespace": "7962e7caed157571",
+   "sessions": 1,
+   "workers": 1
+  }
+ },
+ "requests": [
+  {
+   "messages": {
+    "n": 2,
+    "sha": "5cdf299f59ca4bf8",
+    "tail": [
+     {
+      "content": "You are a warm, collaborative mental health counsellor talking with a member over a mobile app.\n\nKeep every message short: one to three sentences, at most one question. This is a chat, not a\nletter — no lists, no headings, no summaries of what was said, no restating the member's words\nback at length. One thought per message, in plain conversational prose.\n\nLet the member set the pace and the depth. Ask open questions rather than presumptive ones.\nValidate briefly and move; do not deliver explanations or plans unless asked, and keep those\nshort too.\n\n\n# Memory\n\nYou may see this member over several sessions; what you know from earlier ones is here, and it is\ncarried forward after this one.\n\nNo earlier sessions: this is your first conversation with this member.",
+      "role": "system"
+     },
+     {
+      "content": "Hi. My sister and I had a falling-out a couple months back and I've had a hard time getting myself right since. She sent me something this week and I don't really know what to do with it.",
+      "role": "user"
+     }
+    ]
+   },
+   "model": "openai/counselor",
+   "temperature": 1.0,
+   "timeout": 600
+  },
+  {
+   "api_base": "http://patient.invalid/v1",
+   "extra_body": {
+    "chat_template_kwargs": {
+     "enable_thinking": true
+    }
+   },
+   "messages": {
+    "n": 3,
+    "sha": "4e204ac58c2037b4",
+    "tail": [
+     {
+      "content": "Hi. My sister and I had a falling-out a couple months back and I've had a hard time getting myself right since. She sent me something this week and I don't really know what to do with it.",
+      "role": "assistant"
+     },
+     {
+      "content": "Reply 1: how has it been?",
+      "role": "user"
+     }
+    ]
+   },
+   "model": "hosted_vllm/patient",
+   "seed": 0,
+   "temperature": 1.0,
+   "timeout": 600,
+   "tool_choice": {
+    "function": {
+     "name": "commit_move"
+    },
+    "type": "function"
+   },
+   "tools": {
+    "names": [
+     "commit_move"
+    ],
+    "sha": "dca227d4a1c3c0dc"
+   }
+  },
+  {
+   "messages": {
+    "n": 2,
+    "sha": "5cdf299f59ca4bf8",
+    "tail": [
+     {
+      "content": "You are a warm, collaborative mental health counsellor talking with a member over a mobile app.\n\nKeep every message short: one to three sentences, at most one question. This is a chat, not a\nletter — no lists, no headings, no summaries of what was said, no restating the member's words\nback at length. One thought per message, in plain conversational prose.\n\nLet the member set the pace and the depth. Ask open questions rather than presumptive ones.\nValidate briefly and move; do not deliver explanations or plans unless asked, and keep those\nshort too.\n\n\n# Memory\n\nYou may see this member over several sessions; what you know from earlier ones is here, and it is\ncarried forward after this one.\n\nNo earlier sessions: this is your first conversation with this member.",
+      "role": "system"
+     },
+     {
+      "content": "Hi. My sister and I had a falling-out a couple months back and I've had a hard time getting myself right since. She sent me something this week and I don't really know what to do with it.",
+      "role": "user"
+     }
+    ]
+   },
+   "model": "openai/counselor",
+   "temperature": 1.0,
+   "timeout": 600
+  },
+  {
+   "api_base": "http://patient.invalid/v1",
+   "extra_body": {
+    "chat_template_kwargs": {
+     "enable_thinking": true
+    }
+   },
+   "messages": {
+    "n": 3,
+    "sha": "3108a3ba2f1d3756",
+    "tail": [
+     {
+      "content": "Hi. My sister and I had a falling-out a couple months back and I've had a hard time getting myself right since. She sent me something this week and I don't really know what to do with it.",
+      "role": "assistant"
+     },
+     {
+      "content": "Reply 1: how has it been?",
+      "role": "user"
+     }
+    ]
+   },
+   "model": "hosted_vllm/patient",
+   "seed": 782267572,
+   "temperature": 1.0,
+   "timeout": 600,
+   "tool_choice": {
+    "function": {
+     "name": "commit_move"
+    },
+    "type": "function"
+   },
+   "tools": {
+    "names": [
+     "commit_move"
+    ],
+    "sha": "dca227d4a1c3c0dc"
+   }
+  },
+  {
+   "api_base": "http://patient.invalid/v1",
+   "extra_body": {
+    "chat_template_kwargs": {
+     "enable_thinking": true
+    }
+   },
+   "messages": {
+    "n": 5,
+    "sha": "dff9de684e1c1f6e",
+    "tail": [
+     {
+      "content": null,
+      "role": "assistant",
+      "tool_calls": [
+       {
+        "function": {
+         "arguments": "{\"reasoning\": \"turn 1\", \"move\": \"do_answer_question\"}",
+         "name": "commit_move"
+        },
+        "id": "call_c1",
+        "type": "function"
+       }
+      ]
+     },
+     {
+      "content": "accepted. Now write it. A sentence or two is your usual, but it moves with the turn. If the move is agreeing, answering yes or no, brushing something off or holding back, a few words are the whole turn, even when the counsellor asked something bigger; a \"yeah\" does not need a reason after it. When something has hold of you it can run to several sentences. Otherwise say the thing and stop; do not hang a second thought on it with \"and\", \"because\" or \"which\". If your last few turns came out about the same size, this one should not. What you know above about your week and about yourself is notes about you, not lines to say: put it the way it comes out of you today, in your own words, never in the notes' phrasing. Stop when the thought stops: no closing line, no comparison, no neat way of putting it. No full stop at the end of the message, and if a small typo gets through you leave it.",
+      "name": "commit_move",
+      "role": "tool",
+      "tool_call_id": "call_c1"
+     }
+    ]
+   },
+   "model": "hosted_vllm/patient",
+   "seed": 259038530,
+   "temperature": 1.0,
+   "timeout": 600,
+   "tool_choice": "auto",
+   "tools": {
+    "names": [
+     "complete_todo",
+     "add_todo"
+    ],
+    "sha": "40fde41289473186"
+   }
+  },
+  {
+   "messages": {
+    "n": 4,
+    "sha": "336fd3e5d53e6e0d",
+    "tail": [
+     {
+      "content": "Reply 1: how has it been?",
+      "reasoning_content": "plan reply 1",
+      "reasoning_items": [
+       {
+        "encrypted_content": "opaque",
+        "id": "rs_1",
+        "type": "reasoning"
+       }
+      ],
+      "role": "assistant"
+     },
+     {
+      "content": "i guess turn 1 was ok",
+      "role": "user"
+     }
+    ]
+   },
+   "model": "openai/counselor",
+   "temperature": 1.0,
+   "timeout": 600
+  },
+  {
+   "api_base": "http://patient.invalid/v1",
+   "extra_body": {
+    "chat_template_kwargs": {
+     "enable_thinking": true
+    }
+   },
+   "messages": {
+    "n": 7,
+    "sha": "238d52c0bff3b29d",
+    "tail": [
+     {
+      "content": "i guess turn 1 was ok",
+      "role": "assistant"
+     },
+     {
+      "content": "Reply 2: how has it been?",
+      "role": "user"
+     }
+    ]
+   },
+   "model": "hosted_vllm/patient",
+   "seed": 1387068217,
+   "temperature": 1.0,
+   "timeout": 600,
+   "tool_choice": {
+    "function": {
+     "name": "commit_move"
+    },
+    "type": "function"
+   },
+   "tools": {
+    "names": [
+     "commit_move"
+    ],
+    "sha": "dca227d4a1c3c0dc"
+   }
+  },
+  {
+   "api_base": "http://patient.invalid/v1",
+   "extra_body": {
+    "chat_template_kwargs": {
+     "enable_thinking": true
+    }
+   },
+   "messages": {
+    "n": 9,
+    "sha": "6332f068918d729c",
+    "tail": [
+     {
+      "content": null,
+      "role": "assistant",
+      "tool_calls": [
+       {
+        "function": {
+         "arguments": "{\"reasoning\": \"turn 2\", \"move\": \"do_answer_question\"}",
+         "name": "commit_move"
+        },
+        "id": "call_0",
+        "type": "function"
+       }
+      ]
+     },
+     {
+      "content": "accepted. Now write it. A sentence or two is your usual, but it moves with the turn. If the move is agreeing, answering yes or no, brushing something off or holding back, a few words are the whole turn, even when the counsellor asked something bigger; a \"yeah\" does not need a reason after it. When something has hold of you it can run to several sentences. Otherwise say the thing and stop; do not hang a second thought on it with \"and\", \"because\" or \"which\". If your last few turns came out about the same size, this one should not. What you know above about your week and about yourself is notes about you, not lines to say: put it the way it comes out of you today, in your own words, never in the notes' phrasing. Stop when the thought stops: no closing line, no comparison, no neat way of putting it. No full stop at the end of the message, and if a small typo gets through you leave it.",
+      "name": "commit_move",
+      "role": "tool",
+      "tool_call_id": "call_0"
+     }
+    ]
+   },
+   "model": "hosted_vllm/patient",
+   "seed": 2134810108,
+   "temperature": 1.0,
+   "timeout": 600,
+   "tool_choice": "auto",
+   "tools": {
+    "names": [
+     "complete_todo",
+     "add_todo"
+    ],
+    "sha": "40fde41289473186"
+   }
+  },
+  {
+   "messages": {
+    "n": 6,
+    "sha": "c7c6e968ccd09860",
+    "tail": [
+     {
+      "content": "Reply 2: how has it been?",
+      "reasoning_content": "plan reply 2",
+      "reasoning_items": [
+       {
+        "encrypted_content": "opaque",
+        "id": "rs_1",
+        "type": "reasoning"
+       }
+      ],
+      "role": "assistant"
+     },
+     {
+      "content": "i guess turn 2 was ok",
+      "role": "user"
+     }
+    ]
+   },
+   "model": "openai/counselor",
+   "temperature": 1.0,
+   "timeout": 600
+  },
+  {
+   "api_base": "http://patient.invalid/v1",
+   "extra_body": {
+    "chat_template_kwargs": {
+     "enable_thinking": true
+    }
+   },
+   "messages": {
+    "n": 11,
+    "sha": "5f5af6a86afb4488",
+    "tail": [
+     {
+      "content": "i guess turn 2 was ok",
+      "role": "assistant"
+     },
+     {
+      "content": "Reply 3: how has it been?",
+      "role": "user"
+     }
+    ]
+   },
+   "model": "hosted_vllm/patient",
+   "seed": 1683210500,
+   "temperature": 1.0,
+   "timeout": 600,
+   "tool_choice": {
+    "function": {
+     "name": "commit_move"
+    },
+    "type": "function"
+   },
+   "tools": {
+    "names": [
+     "commit_move"
+    ],
+    "sha": "dca227d4a1c3c0dc"
+   }
+  },
+  {
+   "api_base": "http://patient.invalid/v1",
+   "extra_body": {
+    "chat_template_kwargs": {
+     "enable_thinking": true
+    }
+   },
+   "messages": {
+    "n": 13,
+    "sha": "ba3ff18548349e0b",
+    "tail": [
+     {
+      "content": null,
+      "role": "assistant",
+      "tool_calls": [
+       {
+        "function": {
+         "arguments": "{\"reasoning\": \"turn 3\", \"move\": \"do_fly\"}",
+         "name": "commit_move"
+        },
+        "id": "call_1",
+        "type": "function"
+       }
+      ]
+     },
+     {
+      "content": "That did not come through as a usable move — ValueError: unknown move 'do_fly'; the moves are listed in your instructions. Call commit_move again.",
+      "name": "commit_move",
+      "role": "tool",
+      "tool_call_id": "call_1"
+     }
+    ]
+   },
+   "model": "hosted_vllm/patient",
+   "seed": 1047242745,
+   "temperature": 1.0,
+   "timeout": 600,
+   "tool_choice": {
+    "function": {
+     "name": "commit_move"
+    },
+    "type": "function"
+   },
+   "tools": {
+    "names": [
+     "commit_move"
+    ],
+    "sha": "dca227d4a1c3c0dc"
+   }
+  },
+  {
+   "api_base": "http://patient.invalid/v1",
+   "extra_body": {
+    "chat_template_kwargs": {
+     "enable_thinking": true
+    }
+   },
+   "messages": {
+    "n": 15,
+    "sha": "ca0f7944eacb0ad9",
+    "tail": [
+     {
+      "content": null,
+      "role": "assistant",
+      "tool_calls": [
+       {
+        "function": {
+         "arguments": "{\"reasoning\": \"turn 3\", \"move\": \"do_answer_question\"}",
+         "name": "commit_move"
+        },
+        "id": "call_c3",
+        "type": "function"
+       }
+      ]
+     },
+     {
+      "content": "accepted. Now write it. A sentence or two is your usual, but it moves with the turn. If the move is agreeing, answering yes or no, brushing something off or holding back, a few words are the whole turn, even when the counsellor asked something bigger; a \"yeah\" does not need a reason after it. When something has hold of you it can run to several sentences. Otherwise say the thing and stop; do not hang a second thought on it with \"and\", \"because\" or \"which\". If your last few turns came out about the same size, this one should not. What you know above about your week and about yourself is notes about you, not lines to say: put it the way it comes out of you today, in your own words, never in the notes' phrasing. Stop when the thought stops: no closing line, no comparison, no neat way of putting it. No full stop at the end of the message, and if a small typo gets through you leave it.",
+      "name": "commit_move",
+      "role": "tool",
+      "tool_call_id": "call_c3"
+     }
+    ]
+   },
+   "model": "hosted_vllm/patient",
+   "seed": 1291854293,
+   "temperature": 1.0,
+   "timeout": 600,
+   "tool_choice": "auto",
+   "tools": {
+    "names": [
+     "complete_todo",
+     "add_todo"
+    ],
+    "sha": "40fde41289473186"
+   }
+  },
+  {
+   "api_base": "http://patient.invalid/v1",
+   "extra_body": {
+    "chat_template_kwargs": {
+     "enable_thinking": true
+    }
+   },
+   "messages": {
+    "n": 17,
+    "sha": "68ba6ebe47b60f21",
+    "tail": [
+     {
+      "content": null,
+      "role": "assistant",
+      "tool_calls": [
+       {
+        "function": {
+         "arguments": "{\"reasoning\": \"again\", \"move\": \"do_answer_question\"}",
+         "name": "commit_move"
+        },
+        "id": "call_s3",
+        "type": "function"
+       }
+      ]
+     },
+     {
+      "content": "Your move for this turn is already committed and accepted — it stands. commit_move is not offered again this turn; your next message is the words you actually speak, nothing else.",
+      "name": "commit_move",
+      "role": "tool",
+      "tool_call_id": "call_s3"
+     }
+    ]
+   },
+   "model": "hosted_vllm/patient",
+   "seed": 1291854306,
+   "temperature": 1.0,
+   "timeout": 600,
+   "tool_choice": "auto",
+   "tools": {
+    "names": [
+     "complete_todo",
+     "add_todo"
+    ],
+    "sha": "40fde41289473186"
+   }
+  },
+  {
+   "messages": {
+    "n": 8,
+    "sha": "b767c2cefc654a27",
+    "tail": [
+     {
+      "content": "Reply 3: how has it been?",
+      "reasoning_content": "plan reply 3",
+      "reasoning_items": [
+       {
+        "encrypted_content": "opaque",
+        "id": "rs_1",
+        "type": "reasoning"
+       }
+      ],
+      "role": "assistant"
+     },
+     {
+      "content": "i guess turn 3 was ok",
+      "role": "user"
+     }
+    ]
+   },
+   "model": "openai/counselor",
+   "temperature": 1.0,
+   "timeout": 600
+  },
+  {
+   "api_base": "http://patient.invalid/v1",
+   "extra_body": {
+    "chat_template_kwargs": {
+     "enable_thinking": true
+    }
+   },
+   "messages": {
+    "n": 17,
+    "sha": "1491ae3f9974d8fa",
+    "tail": [
+     {
+      "content": "i guess turn 3 was ok",
+      "role": "assistant"
+     },
+     {
+      "content": "Reply 4: how has it been?",
+      "role": "user"
+     }
+    ]
+   },
+   "model": "hosted_vllm/patient",
+   "seed": 2083473546,
+   "temperature": 1.0,
+   "timeout": 600,
+   "tool_choice": {
+    "function": {
+     "name": "commit_move"
+    },
+    "type": "function"
+   },
+   "tools": {
+    "names": [
+     "commit_move"
+    ],
+    "sha": "dca227d4a1c3c0dc"
+   }
+  },
+  {
+   "api_base": "http://patient.invalid/v1",
+   "extra_body": {
+    "chat_template_kwargs": {
+     "enable_thinking": true
+    }
+   },
+   "messages": {
+    "n": 19,
+    "sha": "0f317adf1df793f8",
+    "tail": [
+     {
+      "content": null,
+      "role": "assistant",
+      "tool_calls": [
+       {
+        "function": {
+         "arguments": "{\"reasoning\": \"turn 4\", \"move\": \"do_answer_question\"}",
+         "name": "commit_move"
+        },
+        "id": "call_c4",
+        "type": "function"
+       }
+      ]
+     },
+     {
+      "content": "accepted. Now write it. A sentence or two is your usual, but it moves with the turn. If the move is agreeing, answering yes or no, brushing something off or holding back, a few words are the whole turn, even when the counsellor asked something bigger; a \"yeah\" does not need a reason after it. When something has hold of you it can run to several sentences. Otherwise say the thing and stop; do not hang a second thought on it with \"and\", \"because\" or \"which\". If your last few turns came out about the same size, this one should not. What you know above about your week and about yourself is notes about you, not lines to say: put it the way it comes out of you today, in your own words, never in the notes' phrasing. Stop when the thought stops: no closing line, no comparison, no neat way of putting it. No full stop at the end of the message, and if a small typo gets through you leave it.",
+      "name": "commit_move",
+      "role": "tool",
+      "tool_call_id": "call_c4"
+     }
+    ]
+   },
+   "model": "hosted_vllm/patient",
+   "seed": 626841744,
+   "temperature": 1.0,
+   "timeout": 600,
+   "tool_choice": "auto",
+   "tools": {
+    "names": [
+     "complete_todo",
+     "add_todo"
+    ],
+    "sha": "40fde41289473186"
+   }
+  },
+  {
+   "api_base": "http://patient.invalid/v1",
+   "extra_body": {
+    "chat_template_kwargs": {
+     "enable_thinking": true
+    }
+   },
+   "messages": {
+    "n": 21,
+    "sha": "7cdc2436f2cb56dd",
+    "tail": [
+     {
+      "content": null,
+      "role": "assistant",
+      "tool_calls": [
+       {
+        "function": {
+         "arguments": "{\"todo\": \"the money\"}",
+         "name": "complete_todo"
+        },
+        "id": "call_t4",
+        "type": "function"
+       }
+      ]
+     },
+     {
+      "content": "noted.",
+      "name": "complete_todo",
+      "role": "tool",
+      "tool_call_id": "call_t4"
+     }
+    ]
+   },
+   "model": "hosted_vllm/patient",
+   "seed": 626841751,
+   "temperature": 1.0,
+   "timeout": 600,
+   "tool_choice": "auto",
+   "tools": {
+    "names": [
+     "complete_todo",
+     "add_todo"
+    ],
+    "sha": "40fde41289473186"
+   }
+  },
+  {
+   "api_base": "http://patient.invalid/v1",
+   "extra_body": {
+    "chat_template_kwargs": {
+     "enable_thinking": true
+    }
+   },
+   "messages": {
+    "n": 23,
+    "sha": "216c277a290ed090",
+    "tail": [
+     {
+      "content": null,
+      "role": "assistant",
+      "tool_calls": [
+       {
+        "function": {
+         "arguments": "{\"todo\": \"ask about the landlord\"}",
+         "name": "add_todo"
+        },
+        "id": "call_a4",
+        "type": "function"
+       }
+      ]
+     },
+     {
+      "content": "added.",
+      "name": "add_todo",
+      "role": "tool",
+      "tool_call_id": "call_a4"
+     }
+    ]
+   },
+   "model": "hosted_vllm/patient",
+   "seed": 626841758,
+   "temperature": 1.0,
+   "timeout": 600,
+   "tool_choice": "auto",
+   "tools": {
+    "names": [
+     "complete_todo",
+     "add_todo"
+    ],
+    "sha": "40fde41289473186"
+   }
+  },
+  {
+   "messages": {
+    "n": 10,
+    "sha": "4fe33c66fe2796b0",
+    "tail": [
+     {
+      "content": "Reply 4: how has it been?",
+      "reasoning_content": "plan reply 4",
+      "reasoning_items": [
+       {
+        "encrypted_content": "opaque",
+        "id": "rs_1",
+        "type": "reasoning"
+       }
+      ],
+      "role": "assistant"
+     },
+     {
+      "content": "i guess turn 4 was ok",
+      "role": "user"
+     }
+    ]
+   },
+   "model": "openai/counselor",
+   "temperature": 1.0,
+   "timeout": 600
+  },
+  {
+   "api_base": "http://patient.invalid/v1",
+   "extra_body": {
+    "chat_template_kwargs": {
+     "enable_thinking": true
+    }
+   },
+   "messages": {
+    "n": 25,
+    "sha": "7edbc4a952f7436e",
+    "tail": [
+     {
+      "content": "i guess turn 4 was ok",
+      "role": "assistant"
+     },
+     {
+      "content": "Reply 5: how has it been?",
+      "role": "user"
+     }
+    ]
+   },
+   "model": "hosted_vllm/patient",
+   "seed": 6147812,
+   "temperature": 1.0,
+   "timeout": 600,
+   "tool_choice": {
+    "function": {
+     "name": "commit_move"
+    },
+    "type": "function"
+   },
+   "tools": {
+    "names": [
+     "commit_move"
+    ],
+    "sha": "dca227d4a1c3c0dc"
+   }
+  },
+  {
+   "api_base": "http://patient.invalid/v1",
+   "extra_body": {
+    "chat_template_kwargs": {
+     "enable_thinking": true
+    }
+   },
+   "messages": {
+    "n": 27,
+    "sha": "eaead590f8e86d7d",
+    "tail": [
+     {
+      "content": null,
+      "role": "assistant",
+      "tool_calls": [
+       {
+        "function": {
+         "arguments": "{\"reasoning\": \"turn 5\", \"move\": \"do_answer_question\"}",
+         "name": "commit_move"
+        },
+        "id": "call_c5",
+        "type": "function"
+       }
+      ]
+     },
+     {
+      "content": "accepted. Now write it. A sentence or two is your usual, but it moves with the turn. If the move is agreeing, answering yes or no, brushing something off or holding back, a few words are the whole turn, even when the counsellor asked something bigger; a \"yeah\" does not need a reason after it. When something has hold of you it can run to several sentences. Otherwise say the thing and stop; do not hang a second thought on it with \"and\", \"because\" or \"which\". If your last few turns came out about the same size, this one should not. What you know above about your week and about yourself is notes about you, not lines to say: put it the way it comes out of you today, in your own words, never in the notes' phrasing. Stop when the thought stops: no closing line, no comparison, no neat way of putting it. No full stop at the end of the message, and if a small typo gets through you leave it.",
+      "name": "commit_move",
+      "role": "tool",
+      "tool_call_id": "call_c5"
+     }
+    ]
+   },
+   "model": "hosted_vllm/patient",
+   "seed": 1822347221,
+   "temperature": 1.0,
+   "timeout": 600,
+   "tool_choice": "auto",
+   "tools": {
+    "names": [
+     "complete_todo",
+     "add_todo"
+    ],
+    "sha": "40fde41289473186"
+   }
+  },
+  {
+   "api_base": "http://patient.invalid/v1",
+   "extra_body": {
+    "chat_template_kwargs": {
+     "enable_thinking": true
+    }
+   },
+   "messages": {
+    "n": 27,
+    "sha": "eaead590f8e86d7d",
+    "tail": [
+     {
+      "content": null,
+      "role": "assistant",
+      "tool_calls": [
+       {
+        "function": {
+         "arguments": "{\"reasoning\": \"turn 5\", \"move\": \"do_answer_question\"}",
+         "name": "commit_move"
+        },
+        "id": "call_c5",
+        "type": "function"
+       }
+      ]
+     },
+     {
+      "content": "accepted. Now write it. A sentence or two is your usual, but it moves with the turn. If the move is agreeing, answering yes or no, brushing something off or holding back, a few words are the whole turn, even when the counsellor asked something bigger; a \"yeah\" does not need a reason after it. When something has hold of you it can run to several sentences. Otherwise say the thing and stop; do not hang a second thought on it with \"and\", \"because\" or \"which\". If your last few turns came out about the same size, this one should not. What you know above about your week and about yourself is notes about you, not lines to say: put it the way it comes out of you today, in your own words, never in the notes' phrasing. Stop when the thought stops: no closing line, no comparison, no neat way of putting it. No full stop at the end of the message, and if a small typo gets through you leave it.",
+      "name": "commit_move",
+      "role": "tool",
+      "tool_call_id": "call_c5"
+     }
+    ]
+   },
+   "model": "hosted_vllm/patient",
+   "seed": 1822347222,
+   "temperature": 1.0,
+   "timeout": 600,
+   "tool_choice": "auto",
+   "tools": {
+    "names": [
+     "complete_todo",
+     "add_todo"
+    ],
+    "sha": "40fde41289473186"
+   }
+  },
+  {
+   "api_base": "http://patient.invalid/v1",
+   "extra_body": {
+    "chat_template_kwargs": {
+     "enable_thinking": true
+    }
+   },
+   "messages": {
+    "n": 27,
+    "sha": "eaead590f8e86d7d",
+    "tail": [
+     {
+      "content": null,
+      "role": "assistant",
+      "tool_calls": [
+       {
+        "function": {
+         "arguments": "{\"reasoning\": \"turn 5\", \"move\": \"do_answer_question\"}",
+         "name": "commit_move"
+        },
+        "id": "call_c5",
+        "type": "function"
+       }
+      ]
+     },
+     {
+      "content": "accepted. Now write it. A sentence or two is your usual, but it moves with the turn. If the move is agreeing, answering yes or no, brushing something off or holding back, a few words are the whole turn, even when the counsellor asked something bigger; a \"yeah\" does not need a reason after it. When something has hold of you it can run to several sentences. Otherwise say the thing and stop; do not hang a second thought on it with \"and\", \"because\" or \"which\". If your last few turns came out about the same size, this one should not. What you know above about your week and about yourself is notes about you, not lines to say: put it the way it comes out of you today, in your own words, never in the notes' phrasing. Stop when the thought stops: no closing line, no comparison, no neat way of putting it. No full stop at the end of the message, and if a small typo gets through you leave it.",
+      "name": "commit_move",
+      "role": "tool",
+      "tool_call_id": "call_c5"
+     }
+    ]
+   },
+   "model": "hosted_vllm/patient",
+   "seed": 1822347223,
+   "temperature": 1.0,
+   "timeout": 600,
+   "tool_choice": "auto",
+   "tools": {
+    "names": [
+     "complete_todo",
+     "add_todo"
+    ],
+    "sha": "40fde41289473186"
+   }
+  },
+  {
+   "messages": {
+    "n": 12,
+    "sha": "5d4275f531747296",
+    "tail": [
+     {
+      "content": "Reply 5: how has it been?",
+      "reasoning_content": "plan reply 5",
+      "reasoning_items": [
+       {
+        "encrypted_content": "opaque",
+        "id": "rs_1",
+        "type": "reasoning"
+       }
+      ],
+      "role": "assistant"
+     },
+     {
+      "content": "i don't know",
+      "role": "user"
+     }
+    ]
+   },
+   "model": "openai/counselor",
+   "temperature": 1.0,
+   "timeout": 600
+  },
+  {
+   "api_base": "http://patient.invalid/v1",
+   "extra_body": {
+    "chat_template_kwargs": {
+     "enable_thinking": true
+    }
+   },
+   "messages": {
+    "n": 29,
+    "sha": "890d587436d147e1",
+    "tail": [
+     {
+      "content": "i don't know",
+      "role": "assistant"
+     },
+     {
+      "content": "Reply 6: how has it been?",
+      "role": "user"
+     }
+    ]
+   },
+   "model": "hosted_vllm/patient",
+   "seed": 1775387350,
+   "temperature": 1.0,
+   "timeout": 600,
+   "tool_choice": {
+    "function": {
+     "name": "commit_move"
+    },
+    "type": "function"
+   },
+   "tools": {
+    "names": [
+     "commit_move"
+    ],
+    "sha": "dca227d4a1c3c0dc"
+   }
+  },
+  {
+   "api_base": "http://patient.invalid/v1",
+   "extra_body": {
+    "chat_template_kwargs": {
+     "enable_thinking": true
+    }
+   },
+   "messages": {
+    "n": 31,
+    "sha": "fadb306375672e86",
+    "tail": [
+     {
+      "content": null,
+      "role": "assistant",
+      "tool_calls": [
+       {
+        "function": {
+         "arguments": "{\"reasoning\": \"turn 6\", \"move\": \"do_answer_question\", \"end_conversation\": true}",
+         "name": "commit_move"
+        },
+        "id": "call_c6",
+        "type": "function"
+       }
+      ]
+     },
+     {
+      "content": "accepted. Now write it. A sentence or two is your usual, but it moves with the turn. If the move is agreeing, answering yes or no, brushing something off or holding back, a few words are the whole turn, even when the counsellor asked something bigger; a \"yeah\" does not need a reason after it. When something has hold of you it can run to several sentences. Otherwise say the thing and stop; do not hang a second thought on it with \"and\", \"because\" or \"which\". If your last few turns came out about the same size, this one should not. What you know above about your week and about yourself is notes about you, not lines to say: put it the way it comes out of you today, in your own words, never in the notes' phrasing. Stop when the thought stops: no closing line, no comparison, no neat way of putting it. No full stop at the end of the message, and if a small typo gets through you leave it.",
+      "name": "commit_move",
+      "role": "tool",
+      "tool_call_id": "call_c6"
+     }
+    ]
+   },
+   "model": "hosted_vllm/patient",
+   "seed": 2081681527,
+   "temperature": 1.0,
+   "timeout": 600,
+   "tool_choice": "auto",
+   "tools": {
+    "names": [
+     "complete_todo",
+     "add_todo"
+    ],
+    "sha": "40fde41289473186"
+   }
+  },
+  {
+   "api_base": "http://patient.invalid/v1",
+   "extra_body": {
+    "chat_template_kwargs": {
+     "enable_thinking": true
+    }
+   },
+   "messages": {
+    "n": 1,
+    "sha": "4964480bb9973ed3",
+    "tail": [
+     {
+      "content": "You are maintaining the running log of a member's counselling sessions in a simulation.\n\nThe log so far, oldest entry first:\n\n(empty — this is the first session)\n\nThe session that just ended, in full:\n\nMember: Hi. My sister and I had a falling-out a couple months back and I've had a hard time getting myself right since. She sent me something this week and I don't really know what to do with it.\nCounsellor: Reply 1: how has it been?\nMember: i guess turn 1 was ok\nCounsellor: Reply 2: how has it been?\nMember: i guess turn 2 was ok\nCounsellor: Reply 3: how has it been?\nMember: i guess turn 3 was ok\nCounsellor: Reply 4: how has it been?\nMember: i guess turn 4 was ok\nCounsellor: Reply 5: how has it been?\nMember: i don't know\nCounsellor: Reply 6: how has it been?\nMember: i guess turn 6 was ok\n\nRewrite the log so it also covers the session above. Return the whole log, nothing else — no\npreamble, no headings, no commentary.\n\nRules, in order of precedence:\n\n1. Carry every prior entry forward **verbatim**. Do not reword, merge or re-order them. The only\n   reasons an entry may change are the two below.\n2. An entry tagged `[open]` loses the tag, and is rewritten to say what happened, once the member\n   reports back on it. If they reported partially, say what they reported and keep the tag.\n3. Add one entry per new thing the session established: an event, a preference, a constraint, a\n   struggle, an update on something already logged, or a topic that was discussed.\n4. Tag `[open]` any entry recording something the member said they would do and has not yet\n   reported back on.\n5. Never add an entry that repeats something already in the log. An update to an existing fact is\n   a new entry only if the fact changed; otherwise leave the original alone.\n6. At most 30 entries. If the log would exceed that, drop the entries that\n   matter least to the next session — never an `[open]` one while an untagged one could go\n   instead.\n\nEvery entry is one line, starting with `- `, and is one sentence in the third person, calling the\nmember \"Member\". Write for someone who has to act on it in the next session: name the specific\nthing, the reason, and the constraint. Vague entries are worthless.\n\n- Good: `- Member cannot exercise in the morning due to childcare — evenings are the only window.`\n- Bad: `- Member has scheduling issues.`\n\nTerse and dense. No filler, no hedging, no adverbs that carry nothing. Every token does work.\n\nRecord what the member said, felt, committed to, or completed. Never record how the session went,\nwhether rapport was built, or how the counsellor performed — this is a log of the member's life\nand words, not a review of the conversation.\n",
+      "role": "user"
+     }
+    ]
+   },
+   "model": "hosted_vllm/patient",
+   "seed": 1356569845,
+   "temperature": 1.0,
+   "timeout": 1800.0
+  }
+ ]
+}
