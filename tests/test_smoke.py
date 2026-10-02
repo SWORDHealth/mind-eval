@@ -4,10 +4,9 @@ over the run."""
 
 import json
 from pathlib import Path
-from types import SimpleNamespace
 
 import yaml
-from conftest import _clear_env, _response, interactions, judgments
+from conftest import _clear_env, _response, interactions, judgments, scripted
 
 from mindeval import llm
 
@@ -78,7 +77,7 @@ def test_two_members_two_sessions_then_the_judge(tmp_path, monkeypatch):
                         "COUNSELOR_API_KEY": "counselor-key"}.items():
         monkeypatch.setenv(f"MINDEVAL_{name}", value)
     state = {}
-    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=_fake(state)))
+    monkeypatch.setattr(llm, "_LIB", scripted(_fake(state)))
     out = tmp_path / "run"
     assert interactions(*_args(out, members=2)) == 0
 

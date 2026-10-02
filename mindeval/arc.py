@@ -12,6 +12,9 @@ passed and the drawn beat; its opening message is the member's first line next t
 so it is written under the archetype, concealment and affect that session is played with.
 
 A checkpoint after every session lets a member that died mid-run resume at the session it died in.
+
+Every session runs on NeMo UserSim's engine (`probe.Runner`), and the two calls between sessions go through the
+same models (`engine.chat`, as the patient).
 """
 
 from __future__ import annotations
@@ -23,7 +26,9 @@ import re
 import time
 from pathlib import Path
 
-from mindeval import llm
+from usersim.engine.core.llm import set_conversation_id
+
+from mindeval import engine, llm
 from mindeval.config import (
     REGISTER_KNOBS,
     SEED_FINGERPRINT,
@@ -36,7 +41,8 @@ from mindeval.config import (
 )
 from mindeval.member import _pause, session_conduct
 from mindeval.models import ArcRecord, ArcShape, EpisodeRef, Knobs, MemberRow, SessionRecord, Situation
-from mindeval.session import Counselor, input_hash, read_trace, run_session
+from mindeval.probe import Runner, SessionInput, trajectory_id
+from mindeval.session import Counselor, input_hash, read_trace
 
 STATE_FILE = "_state.json"
 #: Compaction reads a whole session and reasons before writing, and it is the one call with no smaller
@@ -212,18 +218,18 @@ def _trim_log(entries: list[str], max_entries: int) -> list[str]:
     return [e for i, e in order if i in keep]
 
 
-def compact_log(prior: list[str], session: SessionRecord, patient: CallSpec, *, max_entries: int,
-                arc_seed: int, arc_id: str, episode_id: int) -> list[str]:
-    """Fold one closed session into the log and return the whole log. Raises after three attempts."""
+async def compact_log(prior: list[str], session: SessionRecord, models: dict, *, max_entries: int,
+                      arc_seed: int, arc_id: str, episode_id: int) -> list[str]:
+    """Fold one closed session into the log and return the whole log. Raises after three attempts. `models` are
+    the session's (`engine.facades`); the patient writes the log."""
     prompt = render("compact_log", prior_log=render_log(prior),
                     transcript=_conversation(session.member_messages, "Member"), max_entries=max_entries)
     seed = provider_seed(turn_seed(arc_seed, arc_id, episode_id, "compact_log"))
     err = None
     for attempt in range(3):
         try:
-            text, meta = llm.call_messages([{"role": "user", "content": prompt}], patient.model, patient.api_base,
-                                           patient.temperature, patient.max_tokens, COMPACT_TIMEOUT,
-                                           seed=seed + attempt, params=patient.params, api_key=patient.api_key)
+            text, meta = await engine.chat(models, engine.PATIENT, [{"role": "user", "content": prompt}],
+                                           seed=seed + attempt, timeout=COMPACT_TIMEOUT)
             # A patient served without a reasoning parser returns "trace</think>log": the member calls
             # already split that off, and the log is only the part after it.
             text, _ = llm.split_inline_trace(text, meta)
@@ -234,7 +240,7 @@ def compact_log(prior: list[str], session: SessionRecord, patient: CallSpec, *, 
         except Exception as e:  # noqa: BLE001 — retry on anything, report on exhaustion
             err = e
             if attempt < 2:  # a few seconds of 503s from the shared patient server must not fail the
-                _pause(attempt + 1)  # member outright: losing a session costs far more than waiting
+                await _pause(attempt + 1)  # member outright: losing a session costs far more than waiting
     raise RuntimeError(f"log compaction failed after session {episode_id + 1}: {err}")
 
 
@@ -245,9 +251,9 @@ def _situation_block(s: Situation) -> str:
     return "\n".join(lines)
 
 
-def evolve_situation(cfg: Config, row: MemberRow, prev: Situation, last: SessionRecord, gap_hours: float,
-                     patient: CallSpec, *, arc_seed: int, arc_id: str, episode_id: int, now_line: str,
-                     beat: str, log: list[str], knobs: Knobs) -> Situation:
+async def evolve_situation(cfg: Config, row: MemberRow, prev: Situation, last: SessionRecord, gap_hours: float,
+                           models: dict, *, arc_seed: int, arc_id: str, episode_id: int, now_line: str,
+                           beat: str, log: list[str], knobs: Knobs) -> Situation:
     """The next session's situation, written by the patient model. Raises after three attempts.
 
     `log` is the running log so far, so a fact the last conversation never came back to (a name, a plan)
@@ -266,9 +272,8 @@ def evolve_situation(cfg: Config, row: MemberRow, prev: Situation, last: Session
     err = None
     for attempt in range(3):
         try:
-            raw, meta = llm.call_messages([{"role": "user", "content": prompt}], patient.model, patient.api_base,
-                                          patient.temperature, patient.max_tokens, patient.timeout,
-                                          seed=seed + attempt, params=patient.params, api_key=patient.api_key)
+            raw, meta = await engine.chat(models, engine.PATIENT, [{"role": "user", "content": prompt}],
+                                          seed=seed + attempt)
             raw, _ = llm.split_inline_trace(raw, meta)  # as in compact_log: a JSON drafted in the trace is not it
             if not raw.strip():
                 raise ValueError("empty model output")
@@ -281,7 +286,7 @@ def evolve_situation(cfg: Config, row: MemberRow, prev: Situation, last: Session
         except Exception as e:  # noqa: BLE001 — includes validation errors
             err = e
             if attempt < 2:  # same reasoning as compact_log's backoff, just above
-                _pause(attempt + 1)
+                await _pause(attempt + 1)
     raise RuntimeError(f"writing the situation for session {episode_id + 1} failed: {err}")
 
 
@@ -341,8 +346,8 @@ def set_aside_partial(arc_dir: Path) -> str | None:
 
 # -- the run ---------------------------------------------------------------------------------------
 
-def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, patient: CallSpec, sessions: int,
-            max_turns: int, arc_seed: int, out: Path) -> ArcRecord:
+async def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, runner: Runner, patient: CallSpec,
+                  sessions: int, max_turns: int, arc_seed: int, out: Path) -> ArcRecord:
     # Seeded from the pinned SEED_FINGERPRINT, not cfg.fingerprint: see config.py.
     arc_id = arc_id_of(row, arc_seed, SEED_FINGERPRINT)
     shape = draw_shape(cfg.episode, row, arc_seed, arc_id, sessions)
@@ -368,27 +373,33 @@ def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, patient: CallS
         evolve_ms = None
         if ep > 0:
             t0 = time.monotonic()
-            situation = evolve_situation(cfg, row, situation, done_sessions[-1], gap, patient, arc_seed=arc_seed,
-                                         arc_id=arc_id, episode_id=ep, now_line=f"It is now {describe_ts(shape, clock)}.",
-                                         beat=shape.beats[ep - 1], log=log, knobs=knobs)
+            set_conversation_id(f"{row.member_id} | arc {arc_id} | evolve {ep}")
+            situation = await evolve_situation(
+                cfg, row, situation, done_sessions[-1], gap, runner.models, arc_seed=arc_seed, arc_id=arc_id,
+                episode_id=ep, now_line=f"It is now {describe_ts(shape, clock)}.", beat=shape.beats[ep - 1],
+                log=log, knobs=knobs)
             evolve_ms = round((time.monotonic() - t0) * 1000, 1)
         ep_dir.mkdir(parents=True, exist_ok=True)
         (ep_dir / "situation.yaml").write_text(_situation_file(situation, ep), encoding="utf-8")
 
         ep_seed = turn_seed(arc_seed, arc_id, ep, "episode_seed")
         prev_close = episodes[-1].closed_ts if episodes else None
-        record = run_session(cfg, row, situation, knobs, counselor, patient=patient, max_turns=max_turns,
-                             seed=ep_seed, trace_path=trace_path,
-                             memory_text=member_memory(log) if ep > 0 else None,
-                             counselor_memory=counselor_memory(log if ep > 0 else []),
-                             time_context=describe_now(shape, clock, prev_close))
-        turns, _ = read_trace(trace_path)
+        session = SessionInput.of(counselor=counselor, patient=patient, member=row, situation=situation, knobs=knobs,
+                                  seed=ep_seed, max_turns=max_turns, trace_path=str(trace_path),
+                                  memory_text=member_memory(log) if ep > 0 else None,
+                                  counselor_memory=counselor_memory(log if ep > 0 else []),
+                                  time_context=describe_now(shape, clock, prev_close))
+        # A session started again after a failure is a new trajectory: count the earlier starts set aside.
+        attempt = len(list((out / "partial").glob(f"ep{ep:03d}-*"))) if (out / "partial").is_dir() else 0
+        await runner.session(session, trajectory=trajectory_id(row.member_id, arc_id, ep, attempt), episode=ep)
+        turns, record = read_trace(trace_path)
         turn_ts = [clock + i * spacing_hours for i in range(len(turns))]
         closed = turn_ts[-1] if turn_ts else clock
 
         t0 = time.monotonic()
-        log = compact_log(log, record, patient, max_entries=cfg.patient.log_max_entries, arc_seed=arc_seed,
-                          arc_id=arc_id, episode_id=ep)
+        set_conversation_id(f"{row.member_id} | arc {arc_id} | compact {ep}")
+        log = await compact_log(log, record, runner.models, max_entries=cfg.patient.log_max_entries,
+                                arc_seed=arc_seed, arc_id=arc_id, episode_id=ep)
         compact_ms = round((time.monotonic() - t0) * 1000, 1)
         rendered = render_log(log)
         (ep_dir / "log.md").write_text(rendered + "\n", encoding="utf-8")

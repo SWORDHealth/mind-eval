@@ -1,20 +1,21 @@
 """`python mindeval/scripts/generate_interactions.py`: takes every member of the profile file through
-its sessions against one counselor and writes the transcripts. Members run in parallel threads; each
-is independent, and a member that fails is recorded and left for the next invocation to resume.
+its sessions against one counselor and writes the transcripts. Every session runs on NeMo UserSim's
+engine (`mindeval/probe.py`), which also writes it as a UserSim row under `<output_dir>/usersim/`.
+Members run concurrently; each is independent, and a member that fails is recorded and left for the
+next invocation to resume.
 """
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import hashlib
 import json
 import os
 import subprocess
 import sys
-import threading
 import time
 import traceback
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from jsonargparse import CLI
@@ -25,7 +26,8 @@ from mindeval.arc import counselor_memory, member_seed, run_arc, set_aside_parti
 from mindeval.config import PACKAGE_DIR, SEED_FINGERPRINT, CallSpec, Config, load_config
 from mindeval.member import build_member
 from mindeval.models import MemberRow
-from mindeval.session import Counselor, counselor_template
+from mindeval.probe import Runner
+from mindeval.session import Counselor
 from mindeval.utils import InputError, check_params, deep_merge, hold_lock
 
 DEFAULT_PROFILES = PACKAGE_DIR.parent / "data" / "profiles.jsonl"
@@ -124,19 +126,19 @@ def check_identity(out: Path, manifest: dict) -> dict | None:
     return old
 
 
-def preflight(cfg: Config, row: MemberRow, counselor: Counselor, patient: CallSpec) -> None:
+async def preflight(cfg: Config, row: MemberRow, counselor: Counselor, patient: CallSpec, models: dict) -> None:
     """Two real calls before any member starts: a counselor reply, and one `commit_move`, which must come
     back as a tool call. Some servers reject a forced function or answer it in prose."""
     opening = row.situation.opening_message
     try:
-        text, _ = counselor.respond(counselor.prompt_with(counselor_memory([])),
-                                    [{"role": "assistant", "content": opening}])
+        text, _ = await counselor.respond(models, counselor.prompt_with(counselor_memory([])),
+                                          [{"role": "assistant", "content": opening}])
     except Exception as e:  # noqa: BLE001
         raise InputError(f"preflight: the counselor did not answer: {e}") from None
-    member = build_member(cfg, row, row.situation, row.knobs, patient)
+    member = build_member(cfg, row, row.situation, row.knobs, patient, models=models)
     member.said(opening)
     member.hears(text)
-    move, call = member.commit(seed=0)
+    move, call = await member.commit(seed=0)
     if move is None or call["via"] != "tool_call":
         choice = "a named tool_choice" if patient.force_move else "tool_choice auto"
         raise InputError(f"preflight: the patient did not return a commit_move tool call (via={call['via']}, "
@@ -185,7 +187,7 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
         sessions: sessions per member
         max_turns: counselor replies per session, at most
         seed: base seed; each member's is derived from it
-        max_workers: members run in parallel
+        max_workers: members run concurrently
         dry_run: validate and render prompts; no model calls, no writes
 
     Returns:
@@ -225,7 +227,7 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
                          timeout=counselor_timeout, max_retries=counselor_retries, params=counselor_params)
         text = counselor_system_prompt_path.read_text(encoding="utf-8")
         try:
-            counselor = Counselor(spec=cspec, template=counselor_template(text))
+            counselor = Counselor.from_text(cspec, text)
         except ValueError as e:
             raise InputError(f"{counselor_system_prompt_path}: {e}") from None
         manifest = run_manifest(counselor_system_prompt_path, profiles_path, sessions, max_turns, seed, max_workers,
@@ -250,52 +252,56 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
 
         with hold_lock(output_dir):
             old = check_identity(output_dir, manifest)  # again, under the lock
-            llm._lib()  # import litellm once, before the worker threads
-            preflight(cfg, todo[0], counselor, patient)
+            llm._lib()  # import litellm once, before anything awaits it
 
             manifest["started"] = old["started"] if old else _now()
             manifest["resumed"] = (old.get("resumed", []) + [_now()]) if old else []
             manifest["members"] = max(manifest["members"], old.get("members", 0)) if old else manifest["members"]
             manifest["finished"] = None
-            _write_json(output_dir / "run.json", manifest)
-
-            lock = threading.Lock()
+            # The run's rows, as UserSim stores a run: its id is when the run first started.
+            runner = Runner(patient, cspec, max_turns=max_turns, rows_dir=output_dir / "usersim",
+                            run_id=str(int(datetime.datetime.fromisoformat(manifest["started"]).timestamp())),
+                            provenance={"git": manifest["git"], "bank_version": {
+                                "seed_namespace": SEED_FINGERPRINT, "profiles_sha256": manifest["profiles"]["sha256"],
+                                "counselor_system_prompt_sha256": manifest["counselor"]["system_prompt_sha256"]}})
             counts = {"done": 0, "failed": 0}
 
-            def one(row: MemberRow) -> str:
-                arc_dir = arc_dirs[row.member_id]
-                moved = None
-                t0 = time.monotonic()
-                try:
-                    moved = set_aside_partial(arc_dir)
-                    arc = run_arc(cfg, row, counselor, patient=patient, sessions=sessions, max_turns=max_turns,
-                                  arc_seed=member_seed(row.member_id, seed), out=arc_dir)
-                    outcome = "done"
-                    detail = " ".join(e.termination.replace("member_terminated", "left").replace("max_turns", "cap")
-                                      for e in arc.episodes)
-                except Exception as e:  # noqa: BLE001 — recorded; the member resumes on the next invocation
-                    outcome, detail = "failed", f"{type(e).__name__}: {str(e)[:200]}"
-                    arc_dir.parent.mkdir(parents=True, exist_ok=True)
-                    with (arc_dir.parent / "error.log").open("a", encoding="utf-8") as f:
-                        f.write(f"--- {_now()}\n{traceback.format_exc()}\n")
-                with lock:
+            async def one(row: MemberRow, slots: asyncio.Semaphore) -> None:
+                async with slots:
+                    arc_dir = arc_dirs[row.member_id]
+                    moved = None
+                    t0 = time.monotonic()
+                    try:
+                        moved = set_aside_partial(arc_dir)
+                        arc = await run_arc(cfg, row, counselor, runner=runner, patient=patient, sessions=sessions,
+                                            max_turns=max_turns, arc_seed=member_seed(row.member_id, seed),
+                                            out=arc_dir)
+                        outcome = "done"
+                        detail = " ".join(e.termination.replace("member_terminated", "left")
+                                          .replace("max_turns", "cap") for e in arc.episodes)
+                    except Exception as e:  # noqa: BLE001 — recorded; the member resumes on the next invocation
+                        outcome, detail = "failed", f"{type(e).__name__}: {str(e)[:200]}"
+                        arc_dir.parent.mkdir(parents=True, exist_ok=True)
+                        with (arc_dir.parent / "error.log").open("a", encoding="utf-8") as f:
+                            f.write(f"--- {_now()}\n{traceback.format_exc()}\n")
                     counts[outcome] += 1
                     n = counts["done"] + counts["failed"]
                     note = f" (resumed; partial session moved to {moved})" if moved else ""
                     print(f"[{n}/{len(todo)}] {row.member_id} {outcome} in {time.monotonic() - t0:.0f}s: "
                           f"{detail}{note}", flush=True)
-                return outcome
 
-            pool = ThreadPoolExecutor(max_workers=max_workers)
+            async def everyone() -> None:
+                await preflight(cfg, todo[0], counselor, patient, runner.models)
+                _write_json(output_dir / "run.json", manifest)
+                slots = asyncio.Semaphore(max_workers)  # members start in file order as slots free up
+                await asyncio.gather(*(one(row, slots) for row in todo))
+
             try:
-                futures = [pool.submit(one, row) for row in todo]
-                for f in as_completed(futures):
-                    f.result()
+                asyncio.run(everyone())
             except KeyboardInterrupt:
                 print(f"\ninterrupted. Rerun the same command to resume: finished members are kept and unfinished "
                       f"sessions restart. Output: {output_dir}", flush=True)
                 os._exit(130)
-            pool.shutdown()
 
             complete = sum(1 for m in rows if (arc_dirs[m.member_id] / "arc.json").is_file())
             manifest["finished"] = _now() if complete == len(rows) else None

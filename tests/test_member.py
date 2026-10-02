@@ -1,16 +1,16 @@
 """Member/build_member: unit-level regression tests for the member-side call machinery, driven
 against a scripted litellm exactly like test_smoke.py's."""
 
+import asyncio
 import json
 import re
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
-from conftest import _response
+from conftest import _response, no_pause, scripted
 
 import mindeval.member as member_mod
-from mindeval import llm
+from mindeval import engine, llm
 from mindeval.config import CallSpec, load_config
 from mindeval.member import Member, build_member, move_tool
 from mindeval.models import MemberRow
@@ -26,8 +26,10 @@ def _spec(**over):
 
 
 def _member(**over):
-    return Member(system_prompt="be a member", spec=_spec(**over), tool=move_tool({"do_answer_question": "answer"}),
-                 vocab=frozenset({"do_answer_question"}))
+    spec = _spec(**over)
+    return Member(system_prompt="be a member", spec=spec, tool=move_tool({"do_answer_question": "answer"}),
+                  vocab=frozenset({"do_answer_question"}),
+                  models=engine.facades(spec, spec))
 
 
 # -- speak(): attempt state must not leak across retries (member.py, MAX_STRAY_COMMITS) -----------
@@ -37,7 +39,7 @@ def test_speak_does_not_confuse_a_later_clean_attempt_with_an_earlier_stray_comm
     an ordinary retryable error (raise ValueError, not break); if attempt 2 then answers cleanly, the
     clean words must be kept — not mistaken for another stray commit because `stray` (or `hygiene`)
     leaked from attempt 1's dict-reset, which used to happen once per while-iteration, not per attempt."""
-    monkeypatch.setattr(member_mod, "_pause", lambda attempt: None)
+    monkeypatch.setattr(member_mod, "_pause", no_pause)
     calls = []
 
     def completion(**kw):
@@ -48,10 +50,10 @@ def test_speak_does_not_confuse_a_later_clean_attempt_with_an_earlier_stray_comm
                              call_id=f"call_{n}")
         return _response("I'm okay today.")
 
-    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
+    monkeypatch.setattr(llm, "_LIB", scripted(completion))
     m = _member(max_retries=2)
     # two while-iterations of a stray commit, each one attempt, bring strays to MAX_STRAY_COMMITS (2)
-    said, records = m.speak(seed=0)
+    said, records = asyncio.run(m.speak(seed=0))
     assert said == "I'm okay today."
     assert len(calls) == 4  # not stuck retrying, or looping, past the clean answer
     assert not any(r["name"] == member_mod.STRAY_COMMIT for r in records[-1:])
@@ -64,10 +66,9 @@ def test_commit_content_json_path_keeps_valid_json_in_the_convo(monkeypatch):
     the synthetic commit_move call appended to the convo must carry valid JSON regardless of whether
     the prose itself parses — Anthropic's history conversion parses a tool_use's `input` as JSON, and
     a later call in the session fails before any HTTP request is made if it cannot."""
-    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(
-        completion=lambda **kw: _response("sure, let's go with do_answer_question I guess")))
+    monkeypatch.setattr(llm, "_LIB", scripted(lambda **kw: _response("sure, let's go with do_answer_question I guess")))
     m = _member()
-    move, call = m.commit(seed=0)
+    move, call = asyncio.run(m.commit(seed=0))
     assert move is None and call["via"] == "content_json"
     arguments = m.convo[-1]["tool_calls"][0]["function"]["arguments"]
     assert json.loads(arguments) == {}  # never the raw prose
@@ -75,9 +76,9 @@ def test_commit_content_json_path_keeps_valid_json_in_the_convo(monkeypatch):
 
 def test_commit_content_json_path_with_an_embedded_move_reconstructs_clean_json(monkeypatch):
     prose = 'Sure -- {"reasoning": "answering it", "move": "do_answer_question"} is my move.'
-    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=lambda **kw: _response(prose)))
+    monkeypatch.setattr(llm, "_LIB", scripted(lambda **kw: _response(prose)))
     m = _member()
-    move, call = m.commit(seed=0)
+    move, call = asyncio.run(m.commit(seed=0))
     assert move is not None and move.move == "do_answer_question" and call["via"] == "content_json"
     arguments = m.convo[-1]["tool_calls"][0]["function"]["arguments"]
     assert json.loads(arguments) == {"reasoning": "answering it", "move": "do_answer_question"}
@@ -89,10 +90,9 @@ def test_content_json_arguments_no_longer_break_anthropics_history_conversion(mo
     'Failed to parse tool call arguments' when a tool call's arguments are prose. Checked against
     litellm's actual transform_request, not a stub, so this fails if the allow-list regresses."""
     anthropic_chat = pytest.importorskip("litellm.llms.anthropic.chat.transformation")
-    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(
-        completion=lambda **kw: _response("sure, let's go with do_answer_question I guess")))
+    monkeypatch.setattr(llm, "_LIB", scripted(lambda **kw: _response("sure, let's go with do_answer_question I guess")))
     m = _member()
-    m.commit(seed=0)
+    asyncio.run(m.commit(seed=0))
     cfg = anthropic_chat.AnthropicConfig()
     out = cfg.transform_request(model="claude-sonnet-4-5", messages=m.convo, optional_params={},
                                 litellm_params={}, headers={})
@@ -112,13 +112,13 @@ def test_commit_and_speak_strip_an_inline_reasoning_trace(monkeypatch):
                              "\"move\": \"do_answer_question\"}")
         return _response("<think>planning the reply</think>i'm doing fine")
 
-    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
+    monkeypatch.setattr(llm, "_LIB", scripted(completion))
     m = _member()
-    move, call = m.commit(seed=0)
+    move, call = asyncio.run(m.commit(seed=0))
     assert move is not None and move.move == "do_answer_question"
     assert call["meta"].get("reasoning_content") == "picking a move"
     m.answer(m.accepted_text)
-    said, records = m.speak(seed=1)
+    said, records = asyncio.run(m.speak(seed=1))
     assert said == "i'm doing fine"
     assert "<think>" not in said and "picking a move" not in said
     assert records[-1]["meta"].get("reasoning_content") == "planning the reply"

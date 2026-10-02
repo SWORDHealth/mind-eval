@@ -1,4 +1,5 @@
-"""Model calls, through litellm: one request shape for both sides, plus the counselor's text retry.
+"""Model calls, through litellm: one request shape for every call, sync (the judge) or awaited (the interactions,
+through `engine`).
 
 Nothing provider-specific is decided here. Whatever a provider needs beyond the model, the messages
 and the sampling settings (vLLM's `chat_template_kwargs`, Claude's `thinking`, OpenAI's
@@ -10,7 +11,6 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from typing import Any
 
 _LIB = None
@@ -191,29 +191,3 @@ def split_inline_trace(text: str, meta: dict) -> tuple[str, dict]:
     if head and not meta.get("reasoning_content"):
         meta = {**meta, "reasoning_content": head}
     return tail, meta
-
-
-def retry_text(messages: list[dict], *, spec, seed: int | None = None, what: str = "completion") -> tuple[str, dict]:
-    """A text completion, retried with capped backoff. `spec` is a `config.CallSpec`.
-
-    An empty completion is a failure, not an answer: recording it would put a blank turn in the
-    transcript. So is a `finish_reason=length` cut-off with no closed reasoning trace and no
-    `reasoning_content` beside it: that is a trace the model never finished, not a reply.
-    """
-    last: Exception | None = None
-    for attempt in range(1, spec.max_retries + 1):
-        try:
-            raw, meta = call_messages(messages, spec.model, spec.api_base, spec.temperature, spec.max_tokens,
-                                      spec.timeout, seed=seed, params=spec.params, api_key=spec.api_key)
-            raw, meta = split_inline_trace(raw, meta)
-            if not raw.strip():
-                raise ValueError(f"empty model output (finish_reason={meta.get('finish_reason')})")
-            if (meta.get("finish_reason") == "length" and THINK_CLOSE not in raw
-                    and not meta.get("reasoning_content")):
-                raise ValueError("model output cut off (finish_reason=length) with no closed reasoning trace")
-            return raw.strip(), meta
-        except Exception as e:  # noqa: BLE001 — retry on anything, report on exhaustion
-            last = e
-            if attempt < spec.max_retries:
-                time.sleep(min(2 ** attempt, 30))
-    raise RuntimeError(f"{what} failed after {spec.max_retries} attempts: {type(last).__name__}: {last}") from last

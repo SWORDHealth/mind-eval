@@ -31,11 +31,11 @@ ROOT = TESTS.parent
 GOLDENS = TESTS / "goldens"
 sys.path[:0] = [str(ROOT), str(TESTS)]
 
-from conftest import interactions  # noqa: E402
+from conftest import interactions, no_pause  # noqa: E402
 
 import mindeval.arc as arc_mod  # noqa: E402
 import mindeval.member as member_mod  # noqa: E402
-from mindeval import llm  # noqa: E402
+from mindeval import engine, llm  # noqa: E402
 
 COUNSELOR = "openai/counselor"
 MOVE = "do_answer_question"
@@ -152,7 +152,7 @@ def _files(out: Path) -> dict:
     files = {}
     for path in sorted(p for p in out.rglob("*") if p.is_file()):
         rel = path.relative_to(out).as_posix()
-        if path.name == ".lock":
+        if path.name == ".lock" or rel.startswith("usersim/"):  # UserSim's rows: see test_usersim_rows.py
             continue
         if "/partial/" in rel:  # partial/ep001-<timestamp>/...
             head, tail = rel.split("/partial/", 1)
@@ -189,9 +189,9 @@ def _world(tmp: Path, script: Script, patient_model: str):
     with contextlib.ExitStack() as stack:
         stack.enter_context(mock.patch.dict(os.environ, env, clear=True))
         stack.enter_context(mock.patch.object(llm, "_LIB", script))
-        stack.enter_context(mock.patch.object(member_mod, "_pause", lambda attempt: None))
-        stack.enter_context(mock.patch.object(arc_mod, "_pause", lambda attempt: None))
-        stack.enter_context(mock.patch.object(llm.time, "sleep", lambda s: None))
+        stack.enter_context(mock.patch.object(member_mod, "_pause", no_pause))
+        stack.enter_context(mock.patch.object(arc_mod, "_pause", no_pause))
+        stack.enter_context(mock.patch.object(engine, "pause", no_pause))
         os.chdir(tmp)
         try:
             yield

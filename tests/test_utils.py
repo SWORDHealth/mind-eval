@@ -36,7 +36,7 @@ def test_patient_params_deep_merge_keeps_the_vllm_providers_own_extra_body(tmp_p
     monkeypatch.setenv("MINDEVAL_COUNSELOR_MODEL", "openai/counselor")
     seen = {}
 
-    def preflight(cfg, row, counselor, patient):  # the first thing to use the patient spec; no call is made
+    async def preflight(cfg, row, counselor, patient, models):  # the first to use the patient spec; no call
         seen["params"] = patient.params
         raise InputError("stop here")
 

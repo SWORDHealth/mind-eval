@@ -16,7 +16,7 @@ import re
 import time
 from dataclasses import dataclass, field
 
-from mindeval import llm
+from mindeval import engine, llm
 from mindeval.config import CallSpec, Config, provider_seed, render, turn_seed
 from mindeval.models import Knobs, MemberRow, Move, Situation, TurnRecord
 
@@ -85,8 +85,8 @@ MAX_STRAY_COMMITS = 2
 BACKOFF = (5, 15, 45, 60)
 
 
-def _pause(attempt: int) -> None:
-    time.sleep(BACKOFF[min(attempt - 1, len(BACKOFF) - 1)])
+async def _pause(attempt: int) -> None:
+    await engine.pause(BACKOFF[min(attempt - 1, len(BACKOFF) - 1)])
 
 
 # Utterance hygiene. A dirty completion is retried like a transport error, and when the retries run
@@ -177,6 +177,9 @@ class Member:
     #: The answer an accepted commit gets: "accepted" plus the writing cue.
     accepted_text: str = ACCEPTED
     convo: list[dict] = field(default_factory=list)
+    #: The models the session runs with, by UserSim role (`engine.facades`, or a hosted run's); the patient is
+    #: `engine.PATIENT`.
+    models: dict = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
         if not self.convo:
@@ -188,7 +191,7 @@ class Member:
     def said(self, text: str) -> None:
         self.convo.append({"role": "assistant", "content": text})
 
-    def commit(self, *, seed: int) -> tuple[Move | None, dict]:
+    async def commit(self, *, seed: int) -> tuple[Move | None, dict]:
         """Ask for the move. Returns (move or None, call_record).
 
         Transport failures and empty completions are retried here, with backoff; the model never saw
@@ -202,12 +205,9 @@ class Member:
         for attempt in range(1, self.spec.max_retries + 1):
             content, meta = "", {}
             try:
-                content, meta = llm.call_messages(
-                    self.convo, self.spec.model, self.spec.api_base, self.spec.temperature,
-                    self.spec.max_tokens, self.spec.timeout,
-                    seed=provider_seed(seed + attempt - 1), tools=[self.tool],
-                    tool_choice=FORCE_MOVE if self.spec.force_move else "auto", params=self.spec.params,
-                    api_key=self.spec.api_key)
+                content, meta = await engine.chat(
+                    self.models, engine.PATIENT, self.convo, seed=provider_seed(seed + attempt - 1),
+                    tools=[self.tool], tool_choice=FORCE_MOVE if self.spec.force_move else "auto")
                 content, meta = llm.split_inline_trace(content, meta)
                 if not _calls_to(meta, TOOL_NAME) and not content.strip():
                     raise EmptyCompletion(f"no tool call and no content (finish_reason={meta.get('finish_reason')})")
@@ -217,7 +217,7 @@ class Member:
                 last = e
                 failed.append(_attempt_record(attempt, type(e).__name__, meta, content))
                 if attempt < self.spec.max_retries:
-                    _pause(attempt)
+                    await _pause(attempt)
 
         def record(arguments, result, via, error) -> dict:
             rec = self._record(TOOL_NAME, seed, arguments, result, via, error, meta, t0)
@@ -269,7 +269,7 @@ class Member:
                            "name": TOOL_NAME, "content": text})
         return True
 
-    def speak(self, *, seed: int, on_todo=None) -> tuple[str, list[dict]]:
+    async def speak(self, *, seed: int, on_todo=None) -> tuple[str, list[dict]]:
         """The words, and first any agenda bookkeeping the member wants to do.
 
         With `on_todo` set, `complete_todo`/`add_todo` are offered alongside the words; a call is
@@ -299,11 +299,10 @@ class Member:
                 # later, clean attempt to be mistaken by, as commit() does inside its attempt loop.
                 text, meta, calls, hygiene, stray = "", {}, [], [], None
                 try:
-                    text, meta = llm.call_messages(
-                        self.convo, self.spec.model, self.spec.api_base, self.spec.temperature,
-                        self.spec.max_tokens, self.spec.timeout,
-                        seed=provider_seed(seed + attempt + todo_calls * 7 + strays * 13),
-                        tools=tools, tool_choice=choice, params=self.spec.params, api_key=self.spec.api_key)
+                    text, meta = await engine.chat(
+                        self.models, engine.PATIENT, self.convo,
+                        seed=provider_seed(seed + attempt + todo_calls * 7 + strays * 13), tools=tools,
+                        tool_choice=choice)
                     text, meta = llm.split_inline_trace(text, meta)
                     calls = [c for c in (meta.get("tool_calls") or [])
                              if c.get("name") in ("complete_todo", "add_todo")] if allow_todos else []
@@ -325,7 +324,7 @@ class Member:
                     if not hygiene:
                         attempts.append(_attempt_record(attempt, type(e).__name__, meta, text))
                     if attempt < self.spec.max_retries:
-                        _pause(attempt)
+                        await _pause(attempt)
             if last is not None:
                 failed = self._record("speak", seed, None, None, "completion", f"{type(last).__name__}: {last}",
                                       meta, t0)
@@ -506,9 +505,11 @@ def session_conduct(cfg: Config, row: MemberRow, knobs: Knobs) -> tuple[str | No
 
 
 def build_member(cfg: Config, row: MemberRow, situation: Situation, knobs: Knobs, spec: CallSpec, *,
-                 memory_text: str | None = None, time_context: str | None = None) -> Member:
+                 models: dict | None = None, memory_text: str | None = None,
+                 time_context: str | None = None) -> Member:
     """The member for one session. `knobs` are this session's (concealment and affect move across
-    sessions); `memory_text` is the running log as the member carries it, None in session 1."""
+    sessions); `memory_text` is the running log as the member carries it, None in session 1; `models`
+    are what it is called through (see `Member.models`)."""
     # An archetype removes moves from the repertoire wholesale: the tool enum, the parse-boundary
     # check, and every mention in the knob or style prose that would tell the member to reach for one
     # by name (knobs.yaml and style2.yaml name moves the tool enum may not offer at all).
@@ -561,6 +562,7 @@ def build_member(cfg: Config, row: MemberRow, situation: Situation, knobs: Knobs
         system_prompt=system_prompt,
         accepted_text=f"{ACCEPTED}. {write_cue}",
         spec=spec,
+        models=models or {},
     )
 
 
@@ -637,13 +639,13 @@ class Todos:
         return {"goal": self.goal, "todos": self.items} if self.active else None
 
 
-def member_turn(cfg: Config, member: Member, counselor_text: str, counselor_meta: dict, turn: int,
-                session_id: str, session_seed: int, blank_record, todos: Todos) -> TurnRecord:
+async def member_turn(cfg: Config, member: Member, counselor_text: str, counselor_meta: dict, turn: int,
+                      session_id: str, session_seed: int, blank_record, todos: Todos) -> TurnRecord:
     """One member turn: commit (asked again if the move is malformed), hear "accepted", speak."""
     rec = blank_record(turn, "commit")
     rec.counselor_utterance = counselor_text
 
-    move, call = member.commit(seed=rec.turn_seed)
+    move, call = await member.commit(seed=rec.turn_seed)
     rec.calls = [call]
 
     def answered(text: str) -> bool:
@@ -659,7 +661,7 @@ def member_turn(cfg: Config, member: Member, counselor_text: str, counselor_meta
         if not answered(f"That did not come through as a usable move — {call['error']}. Call commit_move again."):
             break
         tries += 1
-        move, call = member.commit(seed=turn_seed(session_seed, session_id, turn, f"commit.retry.{tries}"))
+        move, call = await member.commit(seed=turn_seed(session_seed, session_id, turn, f"commit.retry.{tries}"))
         rec.calls.append({**call, "schema_retry": tries})
     if move is None:
         err = MemberError(f"commit_move failed on turn {turn}: {call['error']}")
@@ -672,8 +674,8 @@ def member_turn(cfg: Config, member: Member, counselor_text: str, counselor_meta
 
     answered(member.accepted_text)
     try:
-        utterance, speak_calls = member.speak(seed=turn_seed(session_seed, session_id, turn, "speak"),
-                                              on_todo=todos.handler(turn, rec) if todos.active else None)
+        utterance, speak_calls = await member.speak(seed=turn_seed(session_seed, session_id, turn, "speak"),
+                                                    on_todo=todos.handler(turn, rec) if todos.active else None)
     except MemberError as e:
         rec.calls.extend(e.calls)
         e.turn_record = rec

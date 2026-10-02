@@ -16,6 +16,9 @@ dependencies = [
     "nemo-usersim @ git+https://github.com/NVIDIA-NeMo/UserSim@2945592c6d5b473c8b7158f432b16490a2d04aa0",
 ]
 
+[project.entry-points."usersim.probes"]
+mindeval = "mindeval.probe"  # so UserSim (usersim smoke, a hosted run) knows the probe without importing mindeval
+
 [project.optional-dependencies]
 vertex = ["google-cloud-aiplatform>=1.38"]  # litellm's vertex_ai/ provider, e.g. Claude on Vertex as the patient
 

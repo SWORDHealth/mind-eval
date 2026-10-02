@@ -11,10 +11,15 @@ back, see `session.CARRIED`), a tool result's `name`, and the `None` content of 
 (Anthropic rejects the empty text block it becomes). So `chat` keeps the conversation as it built it beside the call,
 and the facade sends that one when it is the same conversation (same length, same roles), which it always is unless
 something other than `chat` called the facade.
+
+Retries stay mindeval's: each call site has its own (a patient server under load is waited out, an empty or cut-off
+reply is asked for again), so a failed request reaches `chat` as it failed rather than being retried again inside
+`acall_llm`.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -42,12 +47,45 @@ async def chat(models: dict[str, Any], role: str, messages: list[dict], **kwargs
     call: dict = {"messages": messages}
     token = _CALL.set(call)
     try:
-        reply = await acall_llm(models, role, messages, **kwargs)
+        reply = await acall_llm(models, role, messages, **{k: v for k, v in kwargs.items() if v is not None})
     finally:
         _CALL.reset(token)
+    if "error" in call:
+        raise call["error"]
     if "meta" in call:
         return call["text"], call["meta"]
     return reply.get("content") or "", _meta_of(reply)  # answered by a facade that is not ours: a hosted run
+
+
+async def pause(seconds: float) -> None:
+    """A wait between attempts; every other member keeps going meanwhile."""
+    await asyncio.sleep(seconds)
+
+
+async def retry_text(models: dict[str, Any], role: str, messages: list[dict], *, spec: CallSpec,
+                     seed: int | None = None, what: str = "completion") -> tuple[str, dict]:
+    """A text completion, retried with capped backoff, `spec.max_retries` attempts in all.
+
+    An empty completion is a failure, not an answer: recording it would put a blank turn in the
+    transcript. So is a `finish_reason=length` cut-off with no closed reasoning trace and no
+    `reasoning_content` beside it: that is a trace the model never finished, not a reply.
+    """
+    last: Exception | None = None
+    for attempt in range(1, spec.max_retries + 1):
+        try:
+            raw, meta = await chat(models, role, messages, seed=seed)
+            raw, meta = llm.split_inline_trace(raw, meta)
+            if not raw.strip():
+                raise ValueError(f"empty model output (finish_reason={meta.get('finish_reason')})")
+            if (meta.get("finish_reason") == "length" and llm.THINK_CLOSE not in raw
+                    and not meta.get("reasoning_content")):
+                raise ValueError("model output cut off (finish_reason=length) with no closed reasoning trace")
+            return raw.strip(), meta
+        except Exception as e:  # noqa: BLE001 — retry on anything, report on exhaustion
+            last = e
+            if attempt < spec.max_retries:
+                await pause(min(2 ** attempt, 30))
+    raise RuntimeError(f"{what} failed after {spec.max_retries} attempts: {type(last).__name__}: {last}") from last
 
 
 def _meta_of(reply: dict) -> dict:
@@ -77,9 +115,15 @@ class Facade:
                         self.spec.model)
         s = self.spec
         timeout = kwargs.pop("timeout", None) or s.timeout
-        text, meta = await llm.acall_messages(sent, s.model, s.api_base, s.temperature, s.max_tokens, timeout,
-                                              params=s.params, api_key=s.api_key, **kwargs)
-        if call is not None:
+        try:
+            text, meta = await llm.acall_messages(sent, s.model, s.api_base, s.temperature, s.max_tokens, timeout,
+                                                  params=s.params, api_key=s.api_key, **kwargs)
+        except Exception as e:  # noqa: BLE001 — handed back to chat, whose caller decides whether to retry
+            if call is None:
+                raise
+            call["error"] = e
+            text, meta = "", {}
+        if call is not None and "error" not in call:
             call.update(text=text, meta=meta)
         usage = meta.get("usage") if isinstance(meta.get("usage"), dict) else {}
         message = SimpleNamespace(

@@ -1,18 +1,19 @@
 """Seeds are drawn from the pinned SEED_FINGERPRINT namespace, not cfg.fingerprint: a byte edit to
 config/*.yaml or prompts/*.j2 (a comment, a rename) must not re-draw the benchmark. See config.py."""
 
+import asyncio
 import json
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 
-from conftest import _response
+from conftest import _response, scripted
 
 from mindeval import llm
 from mindeval.arc import member_seed, run_arc
 from mindeval.config import CallSpec, load_config
 from mindeval.models import MemberRow
-from mindeval.session import Counselor, counselor_template
+from mindeval.probe import Runner
+from mindeval.session import Counselor
 
 ROOT = Path(__file__).resolve().parents[1]
 COUNSELOR_MODEL = "openai/counselor"
@@ -37,15 +38,16 @@ def _fake(**kw):
 
 
 def _run(tmp_path, monkeypatch, cfg):
-    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=_fake))
-    counselor = Counselor(spec=CallSpec(model=COUNSELOR_MODEL, api_base=None, temperature=1.0, max_tokens=None,
-                                        timeout=60, max_retries=1),
-                          template=counselor_template((ROOT / "examples/counselor_system.j2").read_text()))
+    monkeypatch.setattr(llm, "_LIB", scripted(_fake))
+    counselor = Counselor.from_text(CallSpec(model=COUNSELOR_MODEL, api_base=None, temperature=1.0, max_tokens=None,
+                                             timeout=60, max_retries=1),
+                                    (ROOT / "examples/counselor_system.j2").read_text())
     patient = CallSpec(model="hosted_vllm/patient", api_base=None, temperature=1.0, max_tokens=None,
                        timeout=60, max_retries=1,
                        params={"extra_body": {"chat_template_kwargs": {"enable_thinking": True}}})
-    return run_arc(cfg, ROW, counselor, patient=patient, sessions=2, max_turns=1,
-                   arc_seed=member_seed(ROW.member_id, 0), out=tmp_path)
+    return asyncio.run(run_arc(cfg, ROW, counselor, runner=Runner(patient, counselor.spec, max_turns=1),
+                               patient=patient, sessions=2, max_turns=1, arc_seed=member_seed(ROW.member_id, 0),
+                               out=tmp_path))
 
 
 def test_arc_id_and_run_id_ignore_cfg_fingerprint(tmp_path, monkeypatch):

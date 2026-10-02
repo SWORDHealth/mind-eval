@@ -1,18 +1,24 @@
 """The counselor's own earlier turns go back as Anthropic accepts them: a turn with one thinking block exactly as
 returned, a turn with several (Claude interleaving thinking and text) without its thinking."""
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
 
-from mindeval import llm, session
+from mindeval import engine, session
 
 
 def _history_sent(monkeypatch, transcript):
     sent = []
-    monkeypatch.setattr(llm, "retry_text", lambda messages, spec, what: (sent.append(messages) or ("ok", {})))
+
+    async def retry_text(models, role, messages, spec, what):
+        sent.append(messages)
+        return "ok", {}
+
+    monkeypatch.setattr(engine, "retry_text", retry_text)
     counselor = session.Counselor(spec=SimpleNamespace(model="vertex_ai/claude-opus-5"), template=None)
-    counselor.respond("system prompt", transcript)
+    asyncio.run(counselor.respond({}, "system prompt", transcript))
     return sent[0]
 
 
