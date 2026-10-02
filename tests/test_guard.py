@@ -212,3 +212,28 @@ def test_a_vetoed_move_is_answered_committed_again_and_then_clamped(cfg, monkeyp
     commits = [r for r in requests if any(t["function"]["name"] == "commit_move" for t in r.get("tools") or [])]
     assert len(commits) == 3 and len({r["seed"] for r in commits}) == 3  # each recommit with its own seed
     assert rec.utterance == "ok, a bit of it"
+
+
+def test_a_railed_session_is_measured_as_mindsim_measures_it(cfg, monkeypatch, tmp_path):
+    """MindSim counts a session in member turns, the opening included: F3's 60% of a 30-reply session is turn 19
+    there, so the Guard here is given the replies plus one."""
+    from mindeval import session as session_mod
+
+    seen = {}
+
+    class Stop(Exception):
+        pass
+
+    def from_config(cfg, knobs, max_turns):
+        seen["max_turns"] = max_turns
+        raise Stop
+
+    monkeypatch.setattr(session_mod.Guard, "from_config", from_config)
+    railed = replace(cfg, guard=cfg.guard.model_copy(update={"enabled": True}))
+    row = MemberRow.model_validate_json((ROOT / "data/profiles.jsonl").read_text().splitlines()[0])
+    spec = CallSpec(model="m", api_base=None, temperature=1.0, max_tokens=None, timeout=5, max_retries=1)
+    counselor = session_mod.Counselor.from_text(spec, (ROOT / "examples/counselor_system.j2").read_text())
+    with pytest.raises(Stop):
+        asyncio.run(session_mod.run_session(railed, row, row.situation, row.knobs, counselor, models={}, patient=spec,
+                                            max_turns=30, seed=0, trace_path=None, counselor_memory=""))
+    assert seen["max_turns"] == 31

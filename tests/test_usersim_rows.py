@@ -22,15 +22,17 @@ def test_every_session_is_a_usersim_row_and_the_trace_is_its_conversation():
         root = out / "usersim"
         run_id = resolve_run(root, None)  # as `usersim evaluate --trajectories <root>` resolves it
         assert run_id is not None and is_partitioned_directory(run_subroot(root, run_id))
-        rows = pd.read_parquet(materialize_to_temp_file(run_subroot(root, run_id))).sort_values(
-            ["episode", "conversation_status"])
+        rows = pd.read_parquet(materialize_to_temp_file(run_subroot(root, run_id))).sort_values("episode")
 
-        # session 1; session 2 as it died; session 2 again, a trajectory of its own
-        assert list(zip(rows.episode, rows.conversation_status)) == [(0, True), (1, False), (1, True)]
-        assert rows.trajectory_id.is_unique and set(rows.probe_family) == {"mindeval"}
-        assert set(rows.locale) == {"en_US"} and rows.persona_uuid.nunique() == 1
-        died = json.loads(rows.iloc[1].simulation_outcome)
-        assert died["status"] == "failed" and died["failure_detail"].startswith("MemberError: speaking failed")
+        # each session once: session 2 as it ran again; the attempt that died is set aside, a trajectory of its own
+        assert list(zip(rows.episode, rows.conversation_status)) == [(0, True), (1, True)]
+        assert set(rows.probe_family) == {"mindeval"} and set(rows.locale) == {"en_US"}
+        assert rows.persona_uuid.nunique() == 1
+        (died,) = pd.read_parquet(root / "superseded" / f"run={run_id}").itertuples()
+        assert died.episode == 1 and not died.conversation_status and died.trajectory_id not in set(rows.trajectory_id)
+        outcome = json.loads(died.simulation_outcome)
+        assert outcome["status"] == "failed" and outcome["failure_attribution"] == "user_model"
+        assert outcome["failure_detail"].startswith("MemberError: speaking failed")
 
         arc = out / "members" / "m000119" / "arc"
         for (_, row), ep in zip(rows[rows.conversation_status].iterrows(), ("ep000", "ep001")):
@@ -46,7 +48,9 @@ def test_every_session_is_a_usersim_row_and_the_trace_is_its_conversation():
             assert all(m.get("reasoning_content") for m in messages if m["role"] == "assistant")
             meta = json.loads(row.conversation_metadata)
             assert meta["session_id"] == session["session_id"] and meta["termination"] == session["termination"]
-            assert json.loads(row.mindeval_session)["trace_path"].endswith(f"{ep}/trace.jsonl")
+            # the row names its trace, but run again it writes none: replaying it cannot append to this run's trace
+            assert row.mindeval_trace.endswith(f"{ep}/trace.jsonl")
+            assert json.loads(row.mindeval_session)["trace_path"] is None
 
 
 def test_usersim_finds_the_probe_through_its_entry_point():

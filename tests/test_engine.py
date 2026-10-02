@@ -82,6 +82,22 @@ def test_meta_is_llm_response_meta_and_usersim_counts_the_call(monkeypatch):
     assert usersim_llm.get_call_stats()[engine.PATIENT]["calls"] == before + 1
 
 
+def test_a_failed_call_goes_back_to_mindeval_once_and_is_not_counted(monkeypatch):
+    """mindeval's own loops retry a failed request; UserSim neither retries it again nor counts it as a call."""
+    attempts = []
+
+    async def acompletion(**kw):
+        attempts.append(kw)
+        raise ConnectionError("patient server down")
+
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(acompletion=acompletion))
+    before = dict(usersim_llm.get_call_stats().get(engine.PATIENT, {}))
+    with pytest.raises(ConnectionError, match="patient server down"):
+        asyncio.run(engine.chat(engine.facades(PATIENT, COUNSELOR), engine.PATIENT, [{"role": "user", "content": "x"}]))
+    assert len(attempts) == 1
+    assert usersim_llm.get_call_stats().get(engine.PATIENT, {}) == before
+
+
 def test_a_reply_from_a_facade_that_is_not_ours_still_reads_as_meta():
     """A hosted run answers through its own facade: content, reasoning and tool calls come from acall_llm's reply."""
     class Host:
