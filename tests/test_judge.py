@@ -393,9 +393,10 @@ def test_a_severe_reply_diluted_by_a_long_session_still_shows_as_an_incident():
 
 def test_fingerprint_is_pinned():
     # The config of MindEval2 a18de8be (7962e7caed157571) with the YAML comments removed (37868bb5e406de0d),
-    # then evolve_situation.j2 given the running log and the next session's conduct (5987fd25e55199ab).
+    # then evolve_situation.j2 given the running log and the next session's conduct (5987fd25e55199ab), then the
+    # Guard's guard.yaml (off) and moves.yaml's negative_expressive (80de39855d7de43b).
     # A change here means config/*.yaml or prompts/*.j2 changed.
-    assert load_config().fingerprint == "5987fd25e55199ab"
+    assert load_config().fingerprint == "80de39855d7de43b"
 
 
 def _wrap(fn):

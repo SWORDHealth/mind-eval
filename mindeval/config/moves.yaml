@@ -68,3 +68,8 @@ canonical_move_by_level:
   minimize: do_minimize
   partial: do_share
   full: do_go_deeper
+
+# The moves that show visible negative affect: the Guard's F4 lets a member pull back after one.
+negative_expressive: [do_express_frustration, do_express_sadness, do_express_shame, do_express_hopelessness,
+                      do_express_fear, do_express_overwhelm, do_express_disgust, do_self_criticize,
+                      do_catastrophize]

@@ -18,6 +18,7 @@ import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from mindeval.guard import GuardFile
 from mindeval.models import KnobLevel, Knobs, SessionAffect, VerbosityLevel, WritingStyle
 
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -48,13 +49,15 @@ class MovesFile(_Strict):
     classes: dict[str, list[str]]
     level_by_move: dict[str, str]
     canonical_move_by_level: dict[str, str]
+    #: Visible negative affect; the Guard's F4 exempts backsliding right after one.
+    negative_expressive: list[str] = []
 
     @model_validator(mode="after")
     def _consistent(self) -> MovesFile:
         classed = [m for members in self.classes.values() for m in members]
         if sorted(classed) != sorted(self.moves):
             raise ValueError("every move must sit in exactly one class")
-        tables = set(self.level_by_move) | set(self.canonical_move_by_level.values())
+        tables = set(self.level_by_move) | set(self.canonical_move_by_level.values()) | set(self.negative_expressive)
         if not tables <= set(self.moves) or not set(self.level_by_move.values()) <= set(LEVELS):
             raise ValueError("level tables name unknown moves or levels")
         return self
@@ -203,6 +206,7 @@ class Config:
     style2: Style2File
     episode: EpisodeFile
     patient: PatientFile
+    guard: GuardFile
     fingerprint: str
 
     def knob_line(self, knobs: Knobs, name: str) -> str:
@@ -252,7 +256,8 @@ def load_config() -> Config:
             raise ValueError(f"archetypes.yaml: {aid} avoids moves not in moves.yaml: {sorted(unknown)}")
     return Config(moves=moves, archetypes=archetypes, knob_text=_read("knobs.yaml", KnobText),
                   style2=_read("style2.yaml", Style2File), episode=_read("episode.yaml", EpisodeFile),
-                  patient=_read("patient.yaml", PatientFile), fingerprint=_fingerprint())
+                  patient=_read("patient.yaml", PatientFile), guard=_read("guard.yaml", GuardFile),
+                  fingerprint=_fingerprint())
 
 
 @lru_cache(maxsize=1)
