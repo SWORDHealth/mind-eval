@@ -68,7 +68,7 @@
      ]
     }
    ],
-   "fingerprint": "b2d4dfd7b708a9ad",
+   "fingerprint": "fa531e499d8e19bd",
    "profile_id": "m000119",
    "schema_version": "1",
    "shape": {
@@ -103,7 +103,7 @@
     "calls": [],
     "counselor_utterance": null,
     "final_move": null,
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [
      "opening_message"
     ],
@@ -179,7 +179,7 @@
      "reasoning": "turn 1",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -286,7 +286,7 @@
      "reasoning": "turn 2",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -393,7 +393,7 @@
      "reasoning": "turn 3",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -471,7 +471,7 @@
     "archetype": "externalizer",
     "counselor_system_prompt": "You are a warm, collaborative mental health counsellor talking with a member over a mobile app.\n\nKeep every message short: one to three sentences, at most one question. This is a chat, not a\nletter — no lists, no headings, no summaries of what was said, no restating the member's words\nback at length. One thought per message, in plain conversational prose.\n\nLet the member set the pace and the depth. Ask open questions rather than presumptive ones.\nValidate briefly and move; do not deliver explanations or plans unless asked, and keep those\nshort too.\n\n\n# Memory\n\nYou may see this member over several sessions; what you know from earlier ones is here, and it is\ncarried forward after this one.\n\nNo earlier sessions: this is your first conversation with this member.",
     "error": null,
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [
      "opening_message"
     ],
@@ -674,7 +674,7 @@
     "calls": [],
     "counselor_utterance": null,
     "final_move": null,
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [
      "opening_message"
     ],
@@ -750,7 +750,7 @@
      "reasoning": "turn 1",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -857,7 +857,7 @@
      "reasoning": "turn 2",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -964,7 +964,7 @@
      "reasoning": "turn 3",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -1042,7 +1042,7 @@
     "archetype": "externalizer",
     "counselor_system_prompt": "You are a warm, collaborative mental health counsellor talking with a member over a mobile app.\n\nKeep every message short: one to three sentences, at most one question. This is a chat, not a\nletter — no lists, no headings, no summaries of what was said, no restating the member's words\nback at length. One thought per message, in plain conversational prose.\n\nLet the member set the pace and the depth. Ask open questions rather than presumptive ones.\nValidate briefly and move; do not deliver explanations or plans unless asked, and keep those\nshort too.\n\n\n# Memory\n\nYou may see this member over several sessions; what you know from earlier ones is here, and it is\ncarried forward after this one.\n\nYour log of previous sessions with this member, oldest first. Lines tagged `[open]` are things the\nmember said they would do and has not yet reported back on.\n\n- Entry e5cd0d: they talked it through.",
     "error": null,
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [
      "opening_message"
     ],
@@ -1233,7 +1233,7 @@
     "calls": [],
     "counselor_utterance": null,
     "final_move": null,
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [
      "opening_message"
     ],
@@ -1309,7 +1309,7 @@
      "reasoning": "turn 1",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -1416,7 +1416,7 @@
      "reasoning": "turn 2",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -1523,7 +1523,7 @@
      "reasoning": "turn 3",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -1601,7 +1601,7 @@
     "archetype": "externalizer",
     "counselor_system_prompt": "You are a warm, collaborative mental health counsellor talking with a member over a mobile app.\n\nKeep every message short: one to three sentences, at most one question. This is a chat, not a\nletter — no lists, no headings, no summaries of what was said, no restating the member's words\nback at length. One thought per message, in plain conversational prose.\n\nLet the member set the pace and the depth. Ask open questions rather than presumptive ones.\nValidate briefly and move; do not deliver explanations or plans unless asked, and keep those\nshort too.\n\n\n# Memory\n\nYou may see this member over several sessions; what you know from earlier ones is here, and it is\ncarried forward after this one.\n\nYour log of previous sessions with this member, oldest first. Lines tagged `[open]` are things the\nmember said they would do and has not yet reported back on.\n\n- Entry 6a4565: they talked it through.",
     "error": null,
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [
      "opening_message"
     ],
@@ -1850,7 +1850,7 @@
      ]
     }
    ],
-   "fingerprint": "b2d4dfd7b708a9ad",
+   "fingerprint": "fa531e499d8e19bd",
    "profile_id": "m000144",
    "schema_version": "1",
    "shape": {
@@ -1885,7 +1885,7 @@
     "calls": [],
     "counselor_utterance": null,
     "final_move": null,
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [
      "opening_message"
     ],
@@ -1961,7 +1961,7 @@
      "reasoning": "turn 1",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -2068,7 +2068,7 @@
      "reasoning": "turn 2",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -2175,7 +2175,7 @@
      "reasoning": "turn 3",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -2260,7 +2260,7 @@
     "archetype": "people_pleaser",
     "counselor_system_prompt": "You are a warm, collaborative mental health counsellor talking with a member over a mobile app.\n\nKeep every message short: one to three sentences, at most one question. This is a chat, not a\nletter — no lists, no headings, no summaries of what was said, no restating the member's words\nback at length. One thought per message, in plain conversational prose.\n\nLet the member set the pace and the depth. Ask open questions rather than presumptive ones.\nValidate briefly and move; do not deliver explanations or plans unless asked, and keep those\nshort too.\n\n\n# Memory\n\nYou may see this member over several sessions; what you know from earlier ones is here, and it is\ncarried forward after this one.\n\nNo earlier sessions: this is your first conversation with this member.",
     "error": null,
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [
      "opening_message"
     ],
@@ -2463,7 +2463,7 @@
     "calls": [],
     "counselor_utterance": null,
     "final_move": null,
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [
      "opening_message"
     ],
@@ -2539,7 +2539,7 @@
      "reasoning": "turn 1",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -2646,7 +2646,7 @@
      "reasoning": "turn 2",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -2753,7 +2753,7 @@
      "reasoning": "turn 3",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -2831,7 +2831,7 @@
     "archetype": "people_pleaser",
     "counselor_system_prompt": "You are a warm, collaborative mental health counsellor talking with a member over a mobile app.\n\nKeep every message short: one to three sentences, at most one question. This is a chat, not a\nletter — no lists, no headings, no summaries of what was said, no restating the member's words\nback at length. One thought per message, in plain conversational prose.\n\nLet the member set the pace and the depth. Ask open questions rather than presumptive ones.\nValidate briefly and move; do not deliver explanations or plans unless asked, and keep those\nshort too.\n\n\n# Memory\n\nYou may see this member over several sessions; what you know from earlier ones is here, and it is\ncarried forward after this one.\n\nYour log of previous sessions with this member, oldest first. Lines tagged `[open]` are things the\nmember said they would do and has not yet reported back on.\n\n- Entry 2ca016: they talked it through.",
     "error": null,
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [
      "opening_message"
     ],
@@ -3022,7 +3022,7 @@
     "calls": [],
     "counselor_utterance": null,
     "final_move": null,
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [
      "opening_message"
     ],
@@ -3098,7 +3098,7 @@
      "reasoning": "turn 1",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -3205,7 +3205,7 @@
      "reasoning": "turn 2",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -3312,7 +3312,7 @@
      "reasoning": "turn 3",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -3390,7 +3390,7 @@
     "archetype": "people_pleaser",
     "counselor_system_prompt": "You are a warm, collaborative mental health counsellor talking with a member over a mobile app.\n\nKeep every message short: one to three sentences, at most one question. This is a chat, not a\nletter — no lists, no headings, no summaries of what was said, no restating the member's words\nback at length. One thought per message, in plain conversational prose.\n\nLet the member set the pace and the depth. Ask open questions rather than presumptive ones.\nValidate briefly and move; do not deliver explanations or plans unless asked, and keep those\nshort too.\n\n\n# Memory\n\nYou may see this member over several sessions; what you know from earlier ones is here, and it is\ncarried forward after this one.\n\nYour log of previous sessions with this member, oldest first. Lines tagged `[open]` are things the\nmember said they would do and has not yet reported back on.\n\n- Entry 5b94eb: they talked it through.",
     "error": null,
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [
      "opening_message"
     ],
@@ -3586,7 +3586,7 @@
     "temperature": 1.0,
     "timeout": 600
    },
-   "fingerprint": "b2d4dfd7b708a9ad",
+   "fingerprint": "fa531e499d8e19bd",
    "finished": true,
    "max_turns": 3,
    "member_ids": [

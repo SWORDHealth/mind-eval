@@ -395,9 +395,10 @@ def test_fingerprint_is_pinned():
     # The config of MindEval2 a18de8be (7962e7caed157571) with the YAML comments removed (37868bb5e406de0d),
     # then evolve_situation.j2 given the running log and the next session's conduct (5987fd25e55199ab),
     # then style2.yaml's three move descriptions folded into moves.yaml and member_system.j2's dead
-    # `agenda_plain` branch dropped, both leaving every rendered prompt as it was (b2d4dfd7b708a9ad).
+    # `agenda_plain` branch dropped, both leaving every rendered prompt as it was (b2d4dfd7b708a9ad),
+    # then the Guard's guard.yaml (off) and moves.yaml's negative_expressive (fa531e499d8e19bd).
     # A change here means config/*.yaml or prompts/*.j2 changed.
-    assert load_config().fingerprint == "b2d4dfd7b708a9ad"
+    assert load_config().fingerprint == "fa531e499d8e19bd"
 
 
 def _wrap(fn):

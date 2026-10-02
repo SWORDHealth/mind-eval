@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 
 from mindeval import engine, llm
 from mindeval.config import CallSpec, Config, provider_seed, render, turn_seed
+from mindeval.guard import Guard, Ledger
 from mindeval.models import Knobs, MemberRow, Move, Situation, TurnRecord
 
 TOOL_NAME = "commit_move"
@@ -640,8 +641,11 @@ class Todos:
 
 
 async def member_turn(cfg: Config, member: Member, counselor_text: str, counselor_meta: dict, turn: int,
-                      session_id: str, session_seed: int, blank_record, todos: Todos) -> TurnRecord:
-    """One member turn: commit (asked again if the move is malformed), hear "accepted", speak."""
+                      session_id: str, session_seed: int, blank_record, todos: Todos, *,
+                      guard: Guard | None = None, ledger: Ledger | None = None) -> TurnRecord:
+    """One member turn: commit (asked again if the move is malformed), hear "accepted", speak. With a `guard`, a
+    vetoed move is answered with its feedback and committed again, then clamped (guard.py); `ledger` is the
+    session so far, which the Guard rules over."""
     rec = blank_record(turn, "commit")
     rec.counselor_utterance = counselor_text
 
@@ -668,6 +672,25 @@ async def member_turn(cfg: Config, member: Member, counselor_text: str, counselo
         err.turn_record = rec
         raise err
 
+    raw, verdicts, retries, fallback = move, [], 0, False
+    if guard is not None:
+        verdict = guard.check(move, ledger, turn)
+        verdicts.append(verdict)
+        # Resampling under a veto is rejection sampling: every attempt's verdict is kept.
+        while verdict.vetoed and retries < cfg.guard.max_retries:
+            retries += 1
+            answered(verdict.feedback)
+            resampled, call = await member.commit(seed=turn_seed(session_seed, session_id, turn,
+                                                                 f"commit.veto.{retries}"))
+            rec.calls.append({**call, "guard_retry": retries})
+            if resampled is None:
+                break  # a malformed resample: the last good move stands, and the clamp settles it
+            move = resampled
+            verdict = guard.check(move, ledger, turn)
+            verdicts.append(verdict)
+        if verdict.vetoed:
+            move, fallback = guard.clamp(move, verdict), True
+
     rec.final_move = move
     rec.inferred_level = cfg.moves.level_of(move.move, move.secondary_move)
     rec.move_class = cfg.moves.class_of(move.move)
@@ -689,6 +712,11 @@ async def member_turn(cfg: Config, member: Member, counselor_text: str, counselo
     rec.meta = {"commit": commit_calls[-1]["meta"] if commit_calls else {},
                 "speak": speak_call["meta"], "counselor": counselor_meta}
     rec.flags = _flags(rec)
+    if guard is not None:
+        rec.meta["guard"] = {"raw_move": raw.model_dump(), "raw_inferred_level": guard.level_of(raw),
+                             "verdicts": [v.model_dump() for v in verdicts], "retries": retries, "fallback": fallback}
+        rec.flags += [flag for flag, on in (("guard_fallback", fallback), ("guard_conflict", verdicts[-1].conflict),
+                                            ("guard_veto", retries > 0)) if on]
     return rec
 
 

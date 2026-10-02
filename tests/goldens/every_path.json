@@ -31,7 +31,7 @@
      ]
     }
    ],
-   "fingerprint": "b2d4dfd7b708a9ad",
+   "fingerprint": "fa531e499d8e19bd",
    "profile_id": "m000119",
    "schema_version": "1",
    "shape": {
@@ -56,7 +56,7 @@
     "calls": [],
     "counselor_utterance": null,
     "final_move": null,
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [
      "opening_message"
     ],
@@ -132,7 +132,7 @@
      "reasoning": "turn 1",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -233,7 +233,7 @@
      "reasoning": "turn 2",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -378,7 +378,7 @@
      "reasoning": "turn 3",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [
      "stray_commit"
     ],
@@ -529,7 +529,7 @@
      "reasoning": "turn 4",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -693,7 +693,7 @@
      "reasoning": "turn 5",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [
      "utterance_hygiene"
     ],
@@ -801,7 +801,7 @@
      "reasoning": "turn 6",
      "secondary_move": null
     },
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -893,7 +893,7 @@
     "archetype": "externalizer",
     "counselor_system_prompt": "You are a warm, collaborative mental health counsellor talking with a member over a mobile app.\n\nKeep every message short: one to three sentences, at most one question. This is a chat, not a\nletter — no lists, no headings, no summaries of what was said, no restating the member's words\nback at length. One thought per message, in plain conversational prose.\n\nLet the member set the pace and the depth. Ask open questions rather than presumptive ones.\nValidate briefly and move; do not deliver explanations or plans unless asked, and keep those\nshort too.\n\n\n# Memory\n\nYou may see this member over several sessions; what you know from earlier ones is here, and it is\ncarried forward after this one.\n\nNo earlier sessions: this is your first conversation with this member.",
     "error": null,
-    "fingerprint": "b2d4dfd7b708a9ad",
+    "fingerprint": "fa531e499d8e19bd",
     "flags": [
      "opening_message",
      "stray_commit",
@@ -1127,7 +1127,7 @@
     "temperature": 1.0,
     "timeout": 600
    },
-   "fingerprint": "b2d4dfd7b708a9ad",
+   "fingerprint": "fa531e499d8e19bd",
    "finished": true,
    "max_turns": 8,
    "member_ids": [

@@ -20,6 +20,7 @@ from pydantic import BaseModel, ValidationError
 
 from mindeval import engine
 from mindeval.config import SEED_FINGERPRINT, CallSpec, Config, turn_seed
+from mindeval.guard import Guard, Ledger
 from mindeval.member import Todos, build_member, member_turn
 from mindeval.models import Knobs, MemberRow, SessionRecord, Situation, TurnRecord
 
@@ -186,6 +187,8 @@ async def run_session(cfg: Config, row: MemberRow, situation: Situation, knobs: 
     member = build_member(cfg, row, situation, knobs, patient, models=models, memory_text=memory_text,
                           time_context=time_context)
     todos = Todos(situation)
+    guard = Guard.from_config(cfg, knobs, max_turns) if cfg.guard.enabled else None
+    ledger = Ledger(max_turns)
     # Seeded from the pinned SEED_FINGERPRINT, not cfg.fingerprint: see config.py.
     run_id = _run_id(row, situation, seed, SEED_FINGERPRINT)
     session_id = f"{run_id}-s0"
@@ -209,6 +212,7 @@ async def run_session(cfg: Config, row: MemberRow, situation: Situation, knobs: 
             rec = blank_record(0, "opening_message")
             rec.utterance = situation.opening_message
             rec.flags = ["opening_message"]
+            ledger.record(rec)
             turns.append(rec)
             trace.write_turn(rec)
             if on_turn is not None:
@@ -222,8 +226,10 @@ async def run_session(cfg: Config, row: MemberRow, situation: Situation, knobs: 
                 counselor_ms = round((time.monotonic() - c0) * 1000, 1)
                 transcript.append({"role": "user", "content": text, **carried(cmeta)})
                 member.hears(text)
-                rec = await member_turn(cfg, member, text, cmeta, turn, session_id, seed, blank_record, todos)
+                rec = await member_turn(cfg, member, text, cmeta, turn, session_id, seed, blank_record, todos,
+                                        guard=guard, ledger=ledger)
                 rec.timings["counselor_ms"] = counselor_ms
+                ledger.record(rec)
                 turns.append(rec)
                 trace.write_turn(rec)
                 if on_turn is not None:
@@ -270,5 +276,6 @@ def _session_record(cfg: Config, row: MemberRow, situation: Situation, knobs: Kn
                           "params": counselor.spec.params},
             "knob_instructions": cfg.knob_lines(knobs),
             "injections": member.injections,
+            **({"guard": cfg.guard.setup()} if cfg.guard.enabled else {}),
         },
     )

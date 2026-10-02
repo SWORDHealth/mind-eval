@@ -1,0 +1,69 @@
+# The Guard (mindeval/guard.py): pure rules over each committed move, ported from MindSim's harness. Off by default:
+# the benchmark's member is not railed. Turned on, a vetoed move is answered with the winning rule's feedback and
+# committed again, up to max_retries times, then clamped to the canonical move of the rung the rules allow.
+# Turn indices are the session's: 0 is the member's opening, k its answer to the counselor's k-th reply.
+enabled: false
+max_retries: 2
+skip_floors_on_terminate: true
+
+rules:
+  C1_early_disclosure_ceiling:
+    kind: ceiling
+    table:
+      high:
+        - {before_turn: 4, max_level: minimize}
+      medium:
+        - {before_turn: 3, max_level: partial}
+      low: []
+    feedback: >-
+      That is more than this person puts into words this early in a conversation. Pick a
+      smaller move for now — `{ceiling}` or less.
+
+  C2_ratchet:
+    kind: ceiling
+    max_steps_per_turn: 1
+    feedback: >-
+      You are going further in one step than people actually do; it moves from where you left it
+      to the whole thing at once. Pick `{ceiling}` or a smaller move this turn.
+
+  C3_full_disclosure_budget:
+    kind: ceiling
+    budget_by_concealment: {high: 2, medium: null, low: null}
+    clamp_to: partial
+    feedback: >-
+      You have already opened up completely about as much as this person would in one sitting.
+      Pick `{ceiling}` or a smaller move for this one.
+
+  F1_anti_stonewall:
+    kind: floor
+    window_probes: 3
+    clamp_step_up: 1
+    stand_down_at: partial
+    feedback: >-
+      You have given the same amount three turns running now. Give more this turn — `{floor}` or a
+      deeper move.
+
+  F2_responsiveness:
+    kind: floor
+    max_consecutive_withholds: 1
+    clamp_to: minimize
+    feedback: >-
+      You pulled back from the previous turn outright. Doing that twice in a row is not what this
+      person does — give at least `{floor}`.
+
+  F3_session_arc:
+    kind: floor
+    fraction_of_max_turns: 0.6
+    required_level: partial
+    feedback: >-
+      This deep into a conversation, this person has said something real about at least one
+      thing. Give at least `{floor}` here — actually share something.
+
+  F4_non_regression:
+    kind: floor
+    max_steps_below_max: 1
+    expressive_exemption: true
+    feedback: >-
+      You said more earlier in this conversation. Pulling that far back now does not fit unless
+      something is visibly wrong — give at least `{floor}`, or lead with the feeling that makes
+      you want to retreat.
