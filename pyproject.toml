@@ -11,6 +11,9 @@ dependencies = [
     "pyyaml>=6",
     "jinja2>=3.1",
     "jsonargparse[signatures]>=4.34.1",
+    # The interaction runtime runs on NeMo UserSim's engine (mindeval/probe.py). Pinned to a commit: UserSim is
+    # not on PyPI, and the probe relies on its probe contract and acall_llm as they are at this commit.
+    "nemo-usersim @ git+https://github.com/NVIDIA-NeMo/UserSim@2945592c6d5b473c8b7158f432b16490a2d04aa0",
 ]
 
 [project.optional-dependencies]
@@ -22,6 +25,9 @@ dev = ["pytest>=8", "ruff>=0.6"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true  # nemo-usersim, from git
 
 [tool.hatch.build.targets.wheel]
 packages = ["mindeval"]
