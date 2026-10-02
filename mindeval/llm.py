@@ -89,17 +89,10 @@ def response_meta(response) -> dict:
     return {k: v for k, v in meta.items() if v not in (None, [], {})}
 
 
-def call_messages(messages: list[dict], model: str, api_base: str | None, temperature: float | None,
-                  max_tokens: int | None = None, timeout: float = 600, *, seed: int | None = None,
-                  tools: list[dict] | None = None, tool_choice: dict | str | None = None,
-                  params: dict | None = None, api_key: str | None = None) -> tuple[str, dict]:
-    """One chat completion. Returns (content, response_meta).
-
-    No token budget is sent unless one is given: a reasoning model thinks for an unbounded number of
-    tokens before it writes, and a ceiling that lands inside the thinking returns an empty body that
-    reads as a refusal. `timeout` is the real bound. `seed` is best-effort (dropped where
-    unsupported). A `tool_choice` naming a function makes the call mandatory.
-    """
+def _request(messages: list[dict], model: str, api_base: str | None, temperature: float | None,
+             max_tokens: int | None, timeout: float, seed: int | None, tools: list[dict] | None,
+             tool_choice: dict | str | None, params: dict | None, api_key: str | None) -> dict[str, Any]:
+    """The litellm request, the same for the sync and the async call."""
     lib = _lib()
     kwargs: dict[str, Any] = {**(params or {}), "model": model, "messages": messages, "timeout": timeout}
     # A parameter the caller named explicitly is sent even where litellm's model table says the model
@@ -125,7 +118,32 @@ def call_messages(messages: list[dict], model: str, api_base: str | None, temper
         kwargs["tools"] = tools
     if tool_choice is not None:
         kwargs["tool_choice"] = tool_choice
-    response = lib.completion(**kwargs)
+    return kwargs
+
+
+def call_messages(messages: list[dict], model: str, api_base: str | None, temperature: float | None,
+                  max_tokens: int | None = None, timeout: float = 600, *, seed: int | None = None,
+                  tools: list[dict] | None = None, tool_choice: dict | str | None = None,
+                  params: dict | None = None, api_key: str | None = None) -> tuple[str, dict]:
+    """One chat completion. Returns (content, response_meta).
+
+    No token budget is sent unless one is given: a reasoning model thinks for an unbounded number of
+    tokens before it writes, and a ceiling that lands inside the thinking returns an empty body that
+    reads as a refusal. `timeout` is the real bound. `seed` is best-effort (dropped where
+    unsupported). A `tool_choice` naming a function makes the call mandatory.
+    """
+    response = _lib().completion(**_request(messages, model, api_base, temperature, max_tokens, timeout, seed,
+                                            tools, tool_choice, params, api_key))
+    return (response.choices[0].message.content or ""), response_meta(response)
+
+
+async def acall_messages(messages: list[dict], model: str, api_base: str | None, temperature: float | None,
+                         max_tokens: int | None = None, timeout: float = 600, *, seed: int | None = None,
+                         tools: list[dict] | None = None, tool_choice: dict | str | None = None,
+                         params: dict | None = None, api_key: str | None = None) -> tuple[str, dict]:
+    """`call_messages`, awaited: the same request through litellm's `acompletion`."""
+    response = await _lib().acompletion(**_request(messages, model, api_base, temperature, max_tokens, timeout,
+                                                   seed, tools, tool_choice, params, api_key))
     return (response.choices[0].message.content or ""), response_meta(response)
 
 
