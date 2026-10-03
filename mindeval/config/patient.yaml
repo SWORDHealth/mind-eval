@@ -1,0 +1,23 @@
+temperature: 1.0
+
+max_retries: 3
+
+log_max_entries: 30
+
+providers:
+  - match: "^hosted_vllm/"
+    params:
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: true
+    force_move: true
+
+  - match: "claude"
+    params:
+      thinking:
+        type: adaptive
+      cache_control_injection_points:
+        - {location: message, role: system}
+        - {location: message, index: -1}
+    max_tokens: 16000
+    force_move: false

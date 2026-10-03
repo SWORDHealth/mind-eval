@@ -1,0 +1,16 @@
+{% if reader == "member" %}
+This is the log of your earlier conversations with the AI counsellor, oldest first. It says
+"Member"; that is you. It is what you carry in with you — not a transcript, and not something you
+announce. Lines tagged `[open]` are things you said you would do and have not come back to yet.
+{% else %}
+{% if log %}
+Your log of previous sessions with this member, oldest first. Lines tagged `[open]` are things the
+member said they would do and has not yet reported back on.
+{% else %}
+No earlier sessions: this is your first conversation with this member.
+{% endif %}
+{% endif %}
+{% if log %}
+
+{{ log }}
+{% endif %}

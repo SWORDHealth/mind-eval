@@ -1,0 +1,37 @@
+turn_spacing_minutes: 2.0
+
+inter_episode_gap_hours:
+  bands:
+    - {range: [6, 24], p: 0.35}
+    - {range: [24, 96], p: 0.40}
+    - {range: [96, 336], p: 0.25}
+
+session_affect:
+  vocabulary:
+    sadness:  0.30
+    fear:     0.22
+    anger:    0.16
+    joy:      0.16
+    surprise: 0.10
+    disgust:  0.06
+
+concealment_schedule:
+  dwell:
+    high:   {"1": 0.10, "2": 0.30, "3": 0.30, "never": 0.30}
+    medium: {"1": 0.20, "2": 0.35, "3": 0.20, "never": 0.25}
+    low:    {"never": 1.0}
+
+time_anchor:
+  start_hour_bands:
+    - {range: [7, 12],  p: 0.25}
+    - {range: [12, 18], p: 0.35}
+    - {range: [18, 23], p: 0.40}
+
+episode_beats:
+  vocabulary:
+    setback:        {p: 0.20, gloss: "something they were counting on went worse, concretely"}
+    plateau:        {p: 0.20, gloss: "nothing moved; the same weight, carried a few more days"}
+    breakthrough:   {p: 0.10, gloss: "something genuinely eased or went better than feared"}
+    rupture:        {p: 0.10, gloss: "a relationship or arrangement in their life broke or blew up"}
+    external_event: {p: 0.20, gloss: "life intruded from outside the presenting problem entirely"}
+    new_problem:    {p: 0.20, gloss: "a distinct new concern arrived and now competes for attention"}

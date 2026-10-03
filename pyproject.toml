@@ -1,25 +1,36 @@
-[tool.poetry]
+[project]
 name = "mindeval"
-version = "0.1.0"
-description = "MindEval"
-authors = [
-    "José Pombal <j.pombal@swordhealth.com>"
-    ]
-maintainers = [
-    "José Pombal <j.pombal@swordhealth.com>"
-    ]
+version = "2.0.0"
+description = "MindEval: a multi-session benchmark for AI mental-health counselors, played against a simulated patient."
+requires-python = ">=3.12"
 readme = "README.md"
+license = "Apache-2.0"
+dependencies = [
+    "litellm>=1.98.1",
+    "pydantic>=2",
+    "pyyaml>=6",
+    "jinja2>=3.1",
+    "jsonargparse[signatures]>=4.34.1",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.9.0,<3.13"
-jupyter = "^1.1.1"
-jsonargparse = "^4.34.1"
-tenacity = "^9.0.0"
-litellm = "^1.59.8"
-pandas = "^2.3.1"
-datasets = "^4.1.0"
-google-cloud-aiplatform = "^1.124.0"
+[project.optional-dependencies]
+vertex = ["google-cloud-aiplatform>=1.38"]  # litellm's vertex_ai/ provider, e.g. Claude on Vertex as the patient
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.6"]
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["mindeval"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E9", "F", "I"]
