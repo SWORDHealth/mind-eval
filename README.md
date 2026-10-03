@@ -151,7 +151,7 @@ MindEval 2:
 ```bibtex
 @misc{mendonca2026mindeval2,
       title={MindEval2: Benchmarking Language Models on Multi-Session Mental Health Support},
-      author={John Mendonça and Daniel Tschernutter and José Pombal and Areti Vassilopoulos and Catarina Botelho and Ignacio Sarasua and Maya D'Eon and Nuno Guerreiro and Ricardo Rei},
+      author={John Mendonça and Daniel Tschernutter and José Pombal and Areti Vassilopoulos and Catarina Botelho and Maya D'Eon and Nuno Guerreiro and Ricardo Rei},
       year={2026},
       note={Preprint},
       url={https://github.com/SWORDHealth/mind-eval},
