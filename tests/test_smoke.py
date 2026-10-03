@@ -14,7 +14,7 @@ from mindeval import llm
 ROOT = Path(__file__).resolve().parents[1]
 ROWS = [json.loads(line) for line in (ROOT / "data/profiles.jsonl").read_text().splitlines()[:2]]
 COUNSELOR, JUDGE = "openai/counselor", "openai/judge"
-REPLY = "How has your week been?"  # a line separator must not break the trace
+REPLY = "How has your week been?"  # a line separator must not break the trace
 ITEM = {"type": "reasoning", "id": "rs_1", "encrypted_content": "opaque"}  # a Responses API reasoning item
 LOG_LINE = "Member talked about the week."
 NEXT = {"event": "The week went on.", "automatic_thoughts": ["same as before"], "behaviors": ["stayed in"],
