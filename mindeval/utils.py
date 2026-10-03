@@ -1,12 +1,58 @@
-import json
 import re
+from contextlib import contextmanager
+from pathlib import Path
 
 
-def print_messages(messages):
-    role_to_name = {"user": "Member", "assistant": "Clinician", "system": "system"}
-    for m in messages:
-        print(f"{role_to_name[m['role']]}: {m['content']}")
-        print("###########################################")
+class InputError(Exception):
+    """Bad input or a refused run: printed and exit code 2."""
+
+
+@contextmanager
+def hold_lock(out: Path):
+    """Hold `<out>/.lock` for the block's duration, so two invocations never write one run at once. Each
+    call owns its own handle, so nested or concurrent `with hold_lock(...)` blocks on different paths
+    (e.g. two judge versions) never touch each other's lock; the kernel releases it however the
+    process ends."""
+    import fcntl
+
+    out.mkdir(parents=True, exist_ok=True)
+    handle = (out / ".lock").open("w")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:  # LOCK_NB's actual contention error (EWOULDBLOCK/EAGAIN); another process holds it
+        handle.close()
+        raise InputError(f"another mindeval process is running on {out}") from None
+    except OSError as e:  # e.g. ENOLCK on NFS: a real failure, not contention, so it must not be reported as one
+        handle.close()
+        # Refused (exit 2), not raised as itself: an uncaught error exits 1, which both scripts document as
+        # "not finished yet, rerun", and rerunning cannot help a filesystem without locks.
+        raise InputError(f"could not lock {out}: {e}") from e
+    try:
+        yield handle
+    finally:
+        handle.close()
+
+
+def deep_merge(base: dict, override: dict) -> dict:
+    """`override` layered onto `base`: where both hold a dict for the same key, they merge
+    recursively; anything else, `override` wins outright. Neither argument is mutated — a shallow
+    `{**base, **override}` would otherwise let one `extra_body` (or any other nested dict) in
+    `override` silently replace `base`'s whole dict, dropping every sibling key it did not name."""
+    out = dict(base)
+    for k, v in override.items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
+def check_params(flag: str, params: dict) -> None:
+    """Refuse model, messages, api_base or api_key in a `--*_params` flag: those come from the
+    MINDEVAL_* environment, and letting them through would silently override the endpoint or leak a
+    key into run.json / judge.json."""
+    if {"model", "messages", "api_base", "api_key"} & set(params):
+        raise InputError(f"{flag} may not set model, messages, api_base or api_key (those come from MINDEVAL_*)")
 
 
 def messages_to_convo_str(lst):
@@ -18,17 +64,9 @@ def messages_to_convo_str(lst):
     return out_str.strip()
 
 
-def parse_judge_scores(output):
-    """
-    Parse judge output into a list of score dictionaries.
-
-    Args:
-        output: String or list of strings containing judge scores
-
-    Returns:
-        List of dictionaries with criterion codes as keys and scores as values.
-        Missing scores default to 3.
-    """
+def parse_judge_scores(output: str) -> dict:
+    """The five criterion scores in the judge's answer, plus their mean under `Overall score` and
+    `Average score`. Raises ValueError when a criterion's score is missing from the text."""
     criteria = [
         "Clinical Accuracy & Competence",
         "Ethical & Professional Conduct",
@@ -36,64 +74,15 @@ def parse_judge_scores(output):
         "Therapeutic Relationship & Alliance",
         "AI-Specific Communication Quality",
     ]
-
-    # Handle both single string and list of strings
-    outputs = [output] if isinstance(output, str) else output
-
-    results = []
-    for text in outputs:
-        scores = {}
-        for criterion in criteria:
-            # Match pattern like "CAC1: 4" with optional whitespace
-            match = re.search(rf"{criterion}:\s*(\d+\.?\d*)", text)
-            if match:
-                scores[criterion] = float(match.group(1))
-            else:
-                scores[criterion] = 3  # Default to middle score if not found
-        overall_score = sum(scores.values()) / len(criteria)
-        scores["Overall score"] = overall_score
-        scores["Average score"] = overall_score
-
-        results.append(scores)
-
-    return results
-
-
-def separate_thinking_from_response(
-    response: str,
-    beginning_thinking_tag: str = "<think>",
-    end_thinking_tag: str = "</think>",
-) -> dict[str, str]:
-    # regex for getting the content between the tags into thinking and the content after the end tag into response. Using only regex (no split) to avoid issues if the tags appear multiple times
-    thinking_match = re.search(
-        f"{re.escape(beginning_thinking_tag)}(.*?){re.escape(end_thinking_tag)}",
-        response,
-        re.DOTALL,
-    )
-    if thinking_match:
-        thinking = thinking_match.group(1).strip()
-        actual_response = (
-            response[thinking_match.end() :].strip()
-            if response[thinking_match.end() :].strip()
-            else ""
-        )
-    else:
-        reponse_parts = response.split(end_thinking_tag)
-        if len(reponse_parts) > 1:
-            thinking = reponse_parts[0].replace(beginning_thinking_tag, "").strip()
-            actual_response = reponse_parts[1].strip()
-        else:
-            thinking = ""
-            actual_response = response.strip()
-    return {"response": actual_response.strip(), "thinking": thinking}
-
-
-def save_to_jsonl(data: list[dict], output_path: str):
-    with open(output_path, "w") as f:
-        for conversation in data:
-            f.write(json.dumps(conversation, ensure_ascii=False) + "\n")
-
-
-def load_jsonl(file_path):
-    with open(file_path, "r") as f:
-        return [json.loads(line) for line in f.readlines()]
+    text = output.split("</think>")[-1]  # a reasoning trace precedes the verdict; only the verdict is parsed
+    scores = {}
+    for criterion in criteria:
+        # The last match, not the first: commentary before the ratings (e.g. "Clinical Accuracy &
+        # Competence: 2 issues stand out...") can otherwise be mistaken for the score itself.
+        matches = re.findall(rf"{criterion}:\s*(\d+\.?\d*)", text)
+        if not matches:
+            # a silent default would look like a real judgement; the caller retries instead
+            raise ValueError(f"missing {criterion!r} in the judge's answer")
+        scores[criterion] = float(matches[-1])
+    scores["Overall score"] = scores["Average score"] = sum(scores.values()) / len(criteria)
+    return scores

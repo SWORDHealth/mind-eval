@@ -1,7 +1,9 @@
-venv*
-__pycache__*
-dev*
-ducttape_outputs*
-artifacts*
-dawn_ducttape_outputs*
-mind-eval
+__pycache__/
+.venv/
+.ruff_cache/
+.pytest_cache/
+dist/
+*.egg-info/
+# benchmark outputs, local endpoints and keys
+/runs/
+.env

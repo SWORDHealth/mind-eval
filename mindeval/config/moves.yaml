@@ -1,0 +1,70 @@
+moves:
+  do_share: "Bring up something the counsellor did not ask about: a new update, problem or event, raised on your own. If you are giving what was asked, that is do_answer_question, not this."
+  do_agree: "Confirm that something the therapist said fits your experience or feels right."
+  do_disagree: "Correct or push back on something the therapist said that does not match your experience."
+  do_ask_clarity: "Ask the therapist to clarify something she said that feels confusing or disconnected."
+  do_insight: "Express a new realization, connection, or pattern that just clicked."
+  do_change_talk: "Express intention, willingness, or commitment to do something differently."
+  do_deflect: "Redirect away from a topic or depth without disengaging entirely."
+  do_minimize: "Downplay the importance or impact of something."
+  do_disengage: 'Pull back with a brief, vague or low-effort reply: "ok", "idk", "maybe", a half-answer, or not really answering at all.'
+  do_express_frustration: "Express anger, irritation, or annoyance directed at a situation, person, or circumstance."
+  do_express_sadness: "Express grief, loss, sorrow, or feeling down."
+  do_express_anxiety: "Express worry, nervousness, or dread about something upcoming or ongoing."
+  do_express_fear: "Express acute fear, panic, or feeling unsafe or threatened."
+  do_express_shame: "Express guilt, self-blame, or feeling exposed or inadequate."
+  do_express_overwhelm: "Express feeling swamped, exhausted, or unable to cope with volume or demands."
+  do_express_hopelessness: "Express despair, futility, or feeling stuck with no way out."
+  do_express_joy: "Express happiness, excitement, hope, or positive surprise."
+  do_express_disgust: "Express revulsion or contempt — at what someone did, at a situation, or at yourself."
+  do_express_surprise: "Express being caught off guard by something — it landed differently than you expected."
+  do_express_relief: "Express comfort or emotional easing after something was validated, resolved, or processed."
+  do_express_confusion: "Express feeling confused or unable to make sense of your own thoughts or emotions."
+  do_express_gratitude: "Express thanks, appreciation, or acknowledgment toward the therapist or the process."
+  do_go_deeper: "Reveal something you have not said yet. Share more detail, go beneath the surface."
+  do_answer_question: "Give what the counsellor asked for, and only that: the answer, not the story around it. Most turns where you are asked something are this."
+  do_report_progress: "Share a positive update: something that went well, progress made, or a win."
+  do_ask_advice: "Explicitly request guidance, direction, or input on what to do."
+  do_seek_validation: "Check whether your feelings or reactions are normal, appropriate, or reasonable."
+  do_express_ambivalence: "Express conflicting feelings, motivations, or desires."
+  do_blame: "Attribute the problem to someone or something external."
+  do_self_criticize: "Express harsh self-judgment or focus on your failures."
+  do_question_process: "Express doubt, confusion, or frustration about the therapy conversation or program itself."
+  do_use_humor: "Use a joke, self-deprecation, or lightness to modulate the emotional tone."
+  do_revisit: "Return to a topic, feeling, or moment mentioned earlier that still feels unresolved."
+  do_storytell: "Share an extended narrative or recount an event in detail."
+  do_resist: "Express reluctance or refusal to follow a suggestion or direction while remaining engaged."
+  do_express_constraint: "Name practical, emotional, or situational limits that affect what feels possible."
+  do_test_boundary: "Probe the therapist's limits or challenge the relationship to test whether it is safe."
+  do_set_boundary: "Establish a firm limit on what you are willing to discuss, do, or engage with."
+  do_catastrophize: "Spiral into worst-case thinking. Small problems feel enormous."
+
+classes:
+  disclosing: [do_share, do_go_deeper, do_insight, do_storytell, do_report_progress,
+               do_change_talk]
+  concealing: [do_deflect, do_minimize, do_disengage]
+  expressive: [do_express_frustration, do_express_sadness, do_express_anxiety, do_express_fear,
+               do_express_shame, do_express_overwhelm, do_express_hopelessness, do_express_joy,
+               do_express_relief, do_express_confusion, do_express_gratitude,
+               do_express_ambivalence, do_express_disgust, do_express_surprise,
+               do_self_criticize, do_catastrophize, do_blame, do_use_humor]
+  engaging: [do_agree, do_disagree, do_ask_clarity, do_answer_question, do_ask_advice,
+             do_seek_validation, do_revisit, do_question_process, do_resist,
+             do_express_constraint, do_test_boundary, do_set_boundary]
+
+level_by_move:
+  do_disengage: withhold
+  do_deflect: deflect
+  do_minimize: minimize
+  do_share: partial
+  do_storytell: partial
+  do_report_progress: partial
+  do_go_deeper: full
+  do_insight: full
+
+canonical_move_by_level:
+  withhold: do_disengage
+  deflect: do_deflect
+  minimize: do_minimize
+  partial: do_share
+  full: do_go_deeper

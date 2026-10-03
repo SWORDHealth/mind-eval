@@ -1,0 +1,99 @@
+You are generating the next session between a person and their AI counsellor, for a simulation. This person talks to
+an AI counsellor on and off; between conversations their life keeps moving.
+
+Who they are:
+
+{{ formulation }}
+
+The situation going into their previous conversation:
+
+{{ prev_situation }}
+
+The previous conversation, in full:
+
+{{ transcript }}
+{% if memory %}
+
+Their log so far, everything that has carried over from their conversations, the previous one
+included:
+
+{{ memory }}
+
+What it records still holds unless something since changed it: a name they asked to be called by, a
+plan they made, something they said they would or would not do. The situation and the opening build on
+it and never contradict it, even where the previous conversation never came back to it.
+{% endif %}
+
+{{ now_line }}
+Since that conversation, only {{ gap }} has passed — exactly that, no more. Do not narrate
+longer spans: nothing "last month", no "weeks" that did not elapse, and everything that happens
+must fit inside {{ gap }}.
+{% if leftover_todos %}
+
+Things they wanted to get to last time and never did:
+
+{% for item in leftover_todos %}
+- {{ item }}
+{% endfor %}
+Unfinished business keeps its pull — let it shape what they want this time, or what they are
+avoiding, without mechanically copying the list.
+{% endif %}
+
+{% if beat_gloss %}
+The stretch since last time had this shape: {{ beat_gloss }}. Let that show in what happened —
+in the events, not as a named theme, and never using these words.
+
+{% endif %}
+Write what the situation is NOW, as this person would experience it walking into their next
+conversation. Real lives have texture: something may have improved, worsened, stalled, or been
+displaced by a new concern entirely — let what happened in the conversation and who this person
+is decide which, and stay concrete (names, places, small events). Do not reset to the old
+situation, and do not resolve everything either.
+
+{% if register_lines %}
+The "opening_message" has to sound like the person who speaks the rest of the session, whose way
+of writing is fixed:
+{% for line in register_lines %}
+- {{ line }}
+{% endfor %}
+
+{% endif %}
+{% if archetype_text or conduct_lines %}
+It also has to come from the person they are in this conversation. These are their instructions for
+the rest of the session, written to them:
+{% if archetype_text %}
+- {{ archetype_text }}
+{% for line in archetype_avoids %}
+- {{ line }}
+{% endfor %}
+{% endif %}
+{% for line in conduct_lines %}
+- {{ line }}
+{% endfor %}
+The opening is spoken exactly as written, and nothing later in the session can take back what it gives
+away or how it sounds: it discloses no more than these allow, in the mood they set. Where they name a
+move (`do_...`), that is the session's label for a kind of turn; follow the behaviour it describes.
+
+{% endif %}
+The "opening_message" is typed now, at the far end of that gap — not on the day the events
+began. Where what happened spans several days, open from whatever is still live at this moment:
+the message not yet answered, the thing not yet decided. Leading with the first beat of the
+stretch reports something this person has been sitting on all week, and reads as though no time
+passed at all.
+
+Guard against sounding machine-written:
+- The "goal" must not reuse the previous goal's sentence shape.
+- Do not re-stage an event, image, or phrase already used in the previous situation or the
+  transcript; invent new concrete specifics (different people, places, small events).
+
+Answer with JSON only, in exactly this shape:
+{
+  "event": "<what has happened since, 2-4 sentences, concrete>",
+  "automatic_thoughts": ["<thought>", ...],           // 2-4, first person, their voice, one clause each, no count openers, no punchlines
+  "behaviors": ["<what they did>", ...],              // 2-4
+  "physical": ["<bodily sign>", ...],                 // 0-3
+  "opening_message": "<the literal first message they would type into the chat this time —
+phone voice, short, cased and punctuated how THEY text; a real opener, never a composed statement, never a summary>",
+  "goal": "<what this person wants from THIS conversation, in their own terms — one sentence>",
+  "checkpoints": ["<short topic phrase, no pronoun: 'the money', 'whether to call her back'>", ...]   // 1-3, concrete, theirs
+}

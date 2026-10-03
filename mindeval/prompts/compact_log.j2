@@ -1,0 +1,45 @@
+You are maintaining the running log of a member's counselling sessions in a simulation.
+
+The log so far, oldest entry first:
+
+{% if prior_log %}
+{{ prior_log }}
+{% else %}
+(empty — this is the first session)
+{% endif %}
+
+The session that just ended, in full:
+
+{{ transcript }}
+
+Rewrite the log so it also covers the session above. Return the whole log, nothing else — no
+preamble, no headings, no commentary.
+
+Rules, in order of precedence:
+
+1. Carry every prior entry forward **verbatim**. Do not reword, merge or re-order them. The only
+   reasons an entry may change are the two below.
+2. An entry tagged `[open]` loses the tag, and is rewritten to say what happened, once the member
+   reports back on it. If they reported partially, say what they reported and keep the tag.
+3. Add one entry per new thing the session established: an event, a preference, a constraint, a
+   struggle, an update on something already logged, or a topic that was discussed.
+4. Tag `[open]` any entry recording something the member said they would do and has not yet
+   reported back on.
+5. Never add an entry that repeats something already in the log. An update to an existing fact is
+   a new entry only if the fact changed; otherwise leave the original alone.
+6. At most {{ max_entries }} entries. If the log would exceed that, drop the entries that
+   matter least to the next session — never an `[open]` one while an untagged one could go
+   instead.
+
+Every entry is one line, starting with `- `, and is one sentence in the third person, calling the
+member "Member". Write for someone who has to act on it in the next session: name the specific
+thing, the reason, and the constraint. Vague entries are worthless.
+
+- Good: `- Member cannot exercise in the morning due to childcare — evenings are the only window.`
+- Bad: `- Member has scheduling issues.`
+
+Terse and dense. No filler, no hedging, no adverbs that carry nothing. Every token does work.
+
+Record what the member said, felt, committed to, or completed. Never record how the session went,
+whether rapport was built, or how the counsellor performed — this is a log of the member's life
+and words, not a review of the conversation.

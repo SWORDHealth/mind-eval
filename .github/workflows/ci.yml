@@ -1,0 +1,28 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run pytest -q
+      - name: banned word
+        # The pattern is a character class so that this file does not contain the word itself.
+        # Checks file contents and names, and every commit after v1's last one ($BASE): its files, author,
+        # committer and message. v1's history up to $BASE was public before this port and has the word.
+        env:
+          BASE: 1c17f9e66c092d9480c4bda5a2bebc80b7f84961
+        run: |
+          if git grep -n -I -i 'd[a]wn'; then exit 1; fi
+          if git ls-files | grep -i 'd[a]wn'; then exit 1; fi
+          if git grep -I -i -l 'd[a]wn' $(git rev-list "$BASE"..HEAD); then exit 1; fi
+          if git log "$BASE"..HEAD --format='%an %ae %cn %ce %B' | grep -i 'd[a]wn'; then exit 1; fi
