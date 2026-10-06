@@ -249,3 +249,10 @@ def test_an_arc_carries_each_sessions_summary_into_every_later_situation(tmp_pat
     assert summaries[0] in evolve_prompts[1] and summaries[1] in evolve_prompts[1]  # session 3 sees session 1's
     assert summaries[0] in evolve_prompts[0] and summaries[1] not in evolve_prompts[0]
     assert json.loads((tmp_path / "arc.json").read_text())["episodes"][0]["summary"] == summaries[0]
+    # and the memory both sides walk into session 3 with: both earlier summaries, in order, then the log
+    third = json.loads((tmp_path / "ep002" / "trace.jsonl").read_text().splitlines()[-1])
+    log = (tmp_path / "ep001" / "log.md").read_text().strip()
+    for side in ("counselor_system_prompt", "member_system_prompt"):
+        text = third[side]
+        assert f"Session 1: {summaries[0]}" in text and f"Session 2: {summaries[1]}" in text
+        assert text.index(summaries[0]) < text.index(summaries[1]) < text.index(log.splitlines()[0])

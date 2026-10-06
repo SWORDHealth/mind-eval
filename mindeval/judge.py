@@ -118,19 +118,23 @@ def read_session(trace: Path) -> dict:
 
 def counselor_memory_for(trace: Path) -> str:
     """The text the counselor received in `{{ memory }}` for this session, recomputed the way
-    `arc.run_arc` produced it: the previous episode's compacted log (`ep{n-1}/log.md`), the same file
-    `arc.compact_log` wrote it to, framed as the counselor's notes. Session 1 has none, so this is
-    `arc.counselor_memory([])`, the same "no earlier sessions" text every counselor sees first."""
+    `arc.run_arc` produced it: every earlier episode's summary (`ep{k}/summary.md`) and the previous
+    episode's compacted log (`ep{n-1}/log.md`), the files `arc.compact_log`'s results were written to,
+    framed as the counselor's notes. Session 1 has none, so this is `arc.counselor_memory([])`, the same
+    "no earlier sessions" text every counselor sees first."""
     index = int(trace.parent.name.removeprefix("ep"))
     if index == 0:
         return counselor_memory([])
-    log = trace.parents[1] / f"ep{index - 1:03d}" / "log.md"
+    arc = trace.parents[1]
+    log = arc / f"ep{index - 1:03d}" / "log.md"
     try:
         entries = parse_log(log.read_text(encoding="utf-8"))
     except (FileNotFoundError, ValueError) as e:
         raise JudgeError(f"{trace}: mindeval1 needs the counselor's memory for this session, but its "
                          f"previous episode's log ({log}) could not be read: {e}") from None
-    return counselor_memory(entries)
+    summaries = [p.read_text(encoding="utf-8").strip() for p in
+                 (arc / f"ep{k:03d}" / "summary.md" for k in range(index)) if p.is_file()]
+    return counselor_memory(entries, summaries)
 
 
 def _sha(*parts: str | None) -> str:

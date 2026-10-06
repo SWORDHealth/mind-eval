@@ -103,6 +103,8 @@ def test_two_members_two_sessions_then_the_judge(tmp_path, monkeypatch):
     second = json.loads((arc / "ep001" / "trace.jsonl").read_text().splitlines()[-1])
     assert "# Memory" in second["counselor_system_prompt"] and LOG_LINE in second["counselor_system_prompt"]
     assert "# What you remember" in second["member_system_prompt"]
+    for side in ("counselor_system_prompt", "member_system_prompt"):  # memory: the summary, then the log
+        assert f"Session 1: {SUMMARY}" in second[side] and second[side].index(SUMMARY) < second[side].index(LOG_LINE)
     # the counselor's own earlier turns come back with the reasoning it returned
     later = [m for msgs in state["counselor_calls"] for m in msgs if m["role"] == "assistant" and m["content"] == REPLY]
     assert later and all(m.get("reasoning_content") == "plan the reply" and m.get("reasoning_items") == [ITEM]

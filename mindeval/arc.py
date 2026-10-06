@@ -5,8 +5,9 @@ anchor, the beat of each stretch in between, and the concealment and affect per 
 are seeded by the member and the seed alone, so every counselor meets the same schedule.
 
 Between sessions the patient model makes two calls. Compaction folds the session into one running
-log, which is the whole of memory: the member carries it into the next session and the counselor
-walks in with the same log under `# Memory`. It also summarises the session in about 100 words.
+log and summarises the session in about 100 words. Memory is every earlier session's summary, then the
+log: the member carries it into the next session and the counselor walks in with the same under
+`# Memory`.
 Evolution writes the next session's situation from the member's formulation, the last situation, the
 last conversation, the running log, every earlier session's summary (so a session long gone from the
 log can still shape this one), the time that has passed and the drawn beat; its opening message is the
@@ -194,15 +195,17 @@ def parse_log(text: str) -> list[str]:
     return entries
 
 
-def member_memory(log: list[str]) -> str | None:
-    """The log as the member carries it; nothing before the first compaction."""
-    return render("memory_log", reader="member", log=render_log(log)).rstrip() if log else None
+def member_memory(log: list[str], summaries: list[str] = ()) -> str | None:
+    """What the member carries in: every earlier session's summary, then the log; nothing before the first
+    compaction."""
+    return (render("memory_log", reader="member", log=render_log(log), summaries=list(summaries)).rstrip()
+            if log else None)
 
 
-def counselor_memory(log: list[str]) -> str:
-    """The same log framed as the counselor's notes. Never empty: the first session says there are no
+def counselor_memory(log: list[str], summaries: list[str] = ()) -> str:
+    """The same memory framed as the counselor's notes. Never empty: the first session says there are no
     earlier ones, so the counselor knows from the start that sessions continue."""
-    return render("memory_log", reader="counsellor", log=render_log(log)).rstrip()
+    return render("memory_log", reader="counsellor", log=render_log(log), summaries=list(summaries)).rstrip()
 
 
 def _conversation(messages: list[dict], member_label: str) -> str:
@@ -417,10 +420,11 @@ async def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, runner: 
 
         ep_seed = turn_seed(arc_seed, arc_id, ep, "episode_seed")
         prev_close = episodes[-1].closed_ts if episodes else None
+        summaries = [e.summary for e in episodes if e.summary]
         session = SessionInput.of(counselor=counselor, patient=patient, member=row, situation=situation, knobs=knobs,
                                   seed=ep_seed, max_turns=max_turns, trace_path=str(trace_path),
-                                  memory_text=member_memory(log) if ep > 0 else None,
-                                  counselor_memory=counselor_memory(log if ep > 0 else []),
+                                  memory_text=member_memory(log, summaries) if ep > 0 else None,
+                                  counselor_memory=counselor_memory(log, summaries) if ep > 0 else counselor_memory([]),
                                   time_context=describe_now(anchor, clock, prev_close))
         # A session started again after a failure is a new trajectory: count the earlier starts set aside.
         attempt = len(list((out / "partial").glob(f"ep{ep:03d}-*"))) if (out / "partial").is_dir() else 0

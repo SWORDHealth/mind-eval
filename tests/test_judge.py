@@ -48,11 +48,11 @@ def _session_line(member_id, episode, *, formulation, counselor_system_prompt, t
 
 
 def _write_session(out, member_id, episode, *, opening, replies, formulation, counselor_system_prompt=None,
-                   termination="max_turns", log_entries=None):
+                   termination="max_turns", log_entries=None, summary=None):
     """A trace.jsonl matching models.py's TurnRecord/SessionRecord shape: turn 0 is the member's
-    opening, turn k>=1 is `replies[k-1]` (the counselor) and a filler member reply. `log_entries`, if
-    given, writes this episode's log.md too (the memory the *next* episode's counselor receives),
-    matching what `arc.compact_log` leaves behind."""
+    opening, turn k>=1 is `replies[k-1]` (the counselor) and a filler member reply. `log_entries` and
+    `summary`, if given, write this episode's log.md and summary.md too (the memory later episodes'
+    counselors receive), matching what `arc.compact_log` leaves behind."""
     lines = [_turn(0, opening)]
     for i, reply in enumerate(replies, start=1):
         lines.append(_turn(i, f"member reply {i}", counselor_utterance=reply))
@@ -63,6 +63,8 @@ def _write_session(out, member_id, episode, *, opening, replies, formulation, co
     path.write_text("\n".join(json.dumps(x) for x in lines) + "\n")
     if log_entries is not None:
         (path.parent / "log.md").write_text("\n".join(f"- {e}" for e in log_entries) + "\n")
+    if summary is not None:
+        (path.parent / "summary.md").write_text(summary + "\n")
     return path
 
 
@@ -89,12 +91,15 @@ def test_mindeval1_happy_path(tmp_path, monkeypatch):
     # every session opens differently, so each prompt below can be traced back to its member and session
     openings = {("m_alpha", "ep000"): "Alpha here, feeling low.", ("m_alpha", "ep001"): "Alpha again, a bit better.",
                 ("m_beta", "ep000"): "Beta checking in.", ("m_beta", "ep001"): "Beta back after a week."}
-    # session 1 has no memory yet; session 2's memory is session 1's compacted log (its log.md)
+    # session 1 has no memory yet; session 2's memory is session 1's summary and compacted log (its summary.md
+    # and log.md)
     logs = {"m_alpha": ["Alpha talked about feeling low."], "m_beta": ["Beta checked in about work."]}
+    summaries = {"m_alpha": "Alpha came in low and talked it through.", "m_beta": "Beta talked about a long week."}
     for (member, episode), opening in openings.items():
         _write_session(out, member, episode, opening=opening, replies=["How are you?", "Tell me more."],
                       formulation=f"{member} is 30, works retail, alone.",
-                      log_entries=logs[member] if episode == "ep000" else None)
+                      log_entries=logs[member] if episode == "ep000" else None,
+                      summary=summaries[member] if episode == "ep000" else None)
 
     prompts = []
 
@@ -125,8 +130,10 @@ def test_mindeval1_happy_path(tmp_path, monkeypatch):
 
     # the counselor's memory for each session, exactly what it received in {{ memory }}: the "no earlier
     # sessions" text in session 1, that member's own session-1 log in session 2
-    expected = {(member, episode): counselor_memory(logs[member] if episode == "ep001" else [])
+    expected = {(member, episode): (counselor_memory(logs[member], [summaries[member]]) if episode == "ep001"
+                                    else counselor_memory([]))
                 for member, episode in openings}
+    assert all(summaries[m] in expected[(m, "ep001")] for m in summaries)
     assert len(set(expected.values())) == 3  # all distinct, so the checks below are meaningful
 
     seen = set()
@@ -395,9 +402,10 @@ def test_fingerprint_is_pinned():
     # The config of MindEval2 a18de8be (7962e7caed157571) with the YAML comments removed (37868bb5e406de0d),
     # then evolve_situation.j2 given the running log and the next session's conduct (5987fd25e55199ab), then the
     # Guard's guard.yaml (off) and moves.yaml's negative_expressive (80de39855d7de43b), then compaction writing a
-    # session summary that every later situation is written from, with log_max_entries doubled (625005e87f5e20f4).
+    # session summary that every later situation is written from, with log_max_entries doubled (625005e87f5e20f4),
+    # then memory as every earlier session's summary followed by the log (6ad3eec22e10ca41).
     # A change here means config/*.yaml or prompts/*.j2 changed.
-    assert load_config().fingerprint == "625005e87f5e20f4"
+    assert load_config().fingerprint == "6ad3eec22e10ca41"
 
 
 def _wrap(fn):
