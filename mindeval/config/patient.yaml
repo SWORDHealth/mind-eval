@@ -2,7 +2,7 @@ temperature: 1.0
 
 max_retries: 3
 
-log_max_entries: 30
+log_max_entries: 60
 
 providers:
   - match: "^hosted_vllm/"

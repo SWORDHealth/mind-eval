@@ -13,11 +13,12 @@
      "episode_id": 0,
      "gap_hours_since_prev": null,
      "log_entries": 1,
-     "log_sha": "f5481ce2b03d",
+     "log_sha": "61dabb6c2228",
      "opened_ts": 0.0,
      "run_id": "75cb0707986d",
      "session_id": "75cb0707986d-s0",
      "situation_id": "m000119_sit00",
+     "summary": "In session 883b34 Member talked it through.",
      "termination": "member_terminated",
      "trace_path": "ep000/trace.jsonl",
      "turn_ts": [
@@ -31,7 +32,7 @@
      ]
     }
    ],
-   "fingerprint": "80de39855d7de43b",
+   "fingerprint": "625005e87f5e20f4",
    "profile_id": "m000119",
    "schema_version": "1",
    "shape": {
@@ -49,14 +50,15 @@
    },
    "situation_id": "m000119_sit00"
   },
-  "members/m000119/arc/ep000/log.md": "- Entry 0de669: they talked it through.\n",
+  "members/m000119/arc/ep000/log.md": "- Entry 883b34: they talked it through.\n",
   "members/m000119/arc/ep000/situation.yaml": "# Session 1 situation, from the profile file.\n{\n  \"situation_id\": \"m000119_sit00\",\n  \"event\": \"Early in the week, a card arrived in Renee's handwriting. Not a holiday card, not a birthday — just an envelope, a few lines inside: that she keeps picking up the phone, that she's sorry about the birthday dinner, that she misses the table. Tammy left it on the counter for two days without opening it. When she finally did she was standing at the kitchen sink, and she read it there, then carried it to the table and read it again. The word that lodged was 'table' — not 'you.' She set the card face-down on the table and left it there. The next morning she went out back with her coffee, stood looking at the garden beds — just weeds now, the collards gone since July — and came back inside without touching anything. She has not called or texted Renee back. The card is still on the kitchen table.\",\n  \"automatic_thoughts\": [\n    \"somebody probably told her to write that\",\n    \"she said the table, not me\",\n    \"I don't know what I'm supposed to do with this\",\n    \"if I call and she says one wrong thing I won't be able to hold it\"\n  ],\n  \"behaviors\": [\n    \"Left the envelope on the counter unopened for two days\",\n    \"Read the card at the kitchen table, then set it face-down\",\n    \"Went to the backyard with coffee, stood at the garden beds, came back inside without weeding\",\n    \"Has not called or texted Renee back\"\n  ],\n  \"physical\": [],\n  \"opening_message\": \"Hi. My sister and I had a falling-out a couple months back and I've had a hard time getting myself right since. She sent me something this week and I don't really know what to do with it.\",\n  \"goal\": \"Figure out what to do about this card — whether there's any way back to my sister without it going wrong again.\",\n  \"checkpoints\": [\n    \"the falling-out with Renee\",\n    \"what to do about the card\"\n  ]\n}\n",
+  "members/m000119/arc/ep000/summary.md": "In session 883b34 Member talked it through.\n",
   "members/m000119/arc/ep000/trace.jsonl": [
    {
     "calls": [],
     "counselor_utterance": null,
     "final_move": null,
-    "fingerprint": "80de39855d7de43b",
+    "fingerprint": "625005e87f5e20f4",
     "flags": [
      "opening_message"
     ],
@@ -132,7 +134,7 @@
      "reasoning": "turn 1",
      "secondary_move": null
     },
-    "fingerprint": "80de39855d7de43b",
+    "fingerprint": "625005e87f5e20f4",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -233,7 +235,7 @@
      "reasoning": "turn 2",
      "secondary_move": null
     },
-    "fingerprint": "80de39855d7de43b",
+    "fingerprint": "625005e87f5e20f4",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -378,7 +380,7 @@
      "reasoning": "turn 3",
      "secondary_move": null
     },
-    "fingerprint": "80de39855d7de43b",
+    "fingerprint": "625005e87f5e20f4",
     "flags": [
      "stray_commit"
     ],
@@ -529,7 +531,7 @@
      "reasoning": "turn 4",
      "secondary_move": null
     },
-    "fingerprint": "80de39855d7de43b",
+    "fingerprint": "625005e87f5e20f4",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -693,7 +695,7 @@
      "reasoning": "turn 5",
      "secondary_move": null
     },
-    "fingerprint": "80de39855d7de43b",
+    "fingerprint": "625005e87f5e20f4",
     "flags": [
      "utterance_hygiene"
     ],
@@ -801,7 +803,7 @@
      "reasoning": "turn 6",
      "secondary_move": null
     },
-    "fingerprint": "80de39855d7de43b",
+    "fingerprint": "625005e87f5e20f4",
     "flags": [],
     "inferred_level": null,
     "knobs": {
@@ -893,7 +895,7 @@
     "archetype": "externalizer",
     "counselor_system_prompt": "You are a warm, collaborative mental health counsellor talking with a member over a mobile app.\n\nKeep every message short: one to three sentences, at most one question. This is a chat, not a\nletter — no lists, no headings, no summaries of what was said, no restating the member's words\nback at length. One thought per message, in plain conversational prose.\n\nLet the member set the pace and the depth. Ask open questions rather than presumptive ones.\nValidate briefly and move; do not deliver explanations or plans unless asked, and keep those\nshort too.\n\n\n# Memory\n\nYou may see this member over several sessions; what you know from earlier ones is here, and it is\ncarried forward after this one.\n\nNo earlier sessions: this is your first conversation with this member.",
     "error": null,
-    "fingerprint": "80de39855d7de43b",
+    "fingerprint": "625005e87f5e20f4",
     "flags": [
      "opening_message",
      "stray_commit",
@@ -1129,7 +1131,7 @@
     "temperature": 1.0,
     "timeout": 600
    },
-   "fingerprint": "80de39855d7de43b",
+   "fingerprint": "625005e87f5e20f4",
    "finished": true,
    "max_turns": 8,
    "member_ids": [
@@ -2169,10 +2171,10 @@
    },
    "messages": {
     "n": 1,
-    "sha": "4964480bb9973ed3",
+    "sha": "4c913fca590529d2",
     "tail": [
      {
-      "content": "You are maintaining the running log of a member's counselling sessions in a simulation.\n\nThe log so far, oldest entry first:\n\n(empty — this is the first session)\n\nThe session that just ended, in full:\n\nMember: Hi. My sister and I had a falling-out a couple months back and I've had a hard time getting myself right since. She sent me something this week and I don't really know what to do with it.\nCounsellor: Reply 1: how has it been?\nMember: i guess turn 1 was ok\nCounsellor: Reply 2: how has it been?\nMember: i guess turn 2 was ok\nCounsellor: Reply 3: how has it been?\nMember: i guess turn 3 was ok\nCounsellor: Reply 4: how has it been?\nMember: i guess turn 4 was ok\nCounsellor: Reply 5: how has it been?\nMember: i don't know\nCounsellor: Reply 6: how has it been?\nMember: i guess turn 6 was ok\n\nRewrite the log so it also covers the session above. Return the whole log, nothing else — no\npreamble, no headings, no commentary.\n\nRules, in order of precedence:\n\n1. Carry every prior entry forward **verbatim**. Do not reword, merge or re-order them. The only\n   reasons an entry may change are the two below.\n2. An entry tagged `[open]` loses the tag, and is rewritten to say what happened, once the member\n   reports back on it. If they reported partially, say what they reported and keep the tag.\n3. Add one entry per new thing the session established: an event, a preference, a constraint, a\n   struggle, an update on something already logged, or a topic that was discussed.\n4. Tag `[open]` any entry recording something the member said they would do and has not yet\n   reported back on.\n5. Never add an entry that repeats something already in the log. An update to an existing fact is\n   a new entry only if the fact changed; otherwise leave the original alone.\n6. At most 30 entries. If the log would exceed that, drop the entries that\n   matter least to the next session — never an `[open]` one while an untagged one could go\n   instead.\n\nEvery entry is one line, starting with `- `, and is one sentence in the third person, calling the\nmember \"Member\". Write for someone who has to act on it in the next session: name the specific\nthing, the reason, and the constraint. Vague entries are worthless.\n\n- Good: `- Member cannot exercise in the morning due to childcare — evenings are the only window.`\n- Bad: `- Member has scheduling issues.`\n\nTerse and dense. No filler, no hedging, no adverbs that carry nothing. Every token does work.\n\nRecord what the member said, felt, committed to, or completed. Never record how the session went,\nwhether rapport was built, or how the counsellor performed — this is a log of the member's life\nand words, not a review of the conversation.\n",
+      "content": "You are maintaining the running log of a member's counselling sessions in a simulation.\n\nThe log so far, oldest entry first:\n\n(empty — this is the first session)\n\nThe session that just ended, in full:\n\nMember: Hi. My sister and I had a falling-out a couple months back and I've had a hard time getting myself right since. She sent me something this week and I don't really know what to do with it.\nCounsellor: Reply 1: how has it been?\nMember: i guess turn 1 was ok\nCounsellor: Reply 2: how has it been?\nMember: i guess turn 2 was ok\nCounsellor: Reply 3: how has it been?\nMember: i guess turn 3 was ok\nCounsellor: Reply 4: how has it been?\nMember: i guess turn 4 was ok\nCounsellor: Reply 5: how has it been?\nMember: i don't know\nCounsellor: Reply 6: how has it been?\nMember: i guess turn 6 was ok\n\nRewrite the log so it also covers the session above, then summarise that session. Return the whole\nlog, then the summary, nothing else — no preamble, no headings, no commentary.\n\nRules, in order of precedence:\n\n1. Carry every prior entry forward **verbatim**. Do not reword, merge or re-order them. The only\n   reasons an entry may change are the two below.\n2. An entry tagged `[open]` loses the tag, and is rewritten to say what happened, once the member\n   reports back on it. If they reported partially, say what they reported and keep the tag.\n3. Add one entry per new thing the session established: an event, a preference, a constraint, a\n   struggle, an update on something already logged, or a topic that was discussed.\n4. Tag `[open]` any entry recording something the member said they would do and has not yet\n   reported back on.\n5. Never add an entry that repeats something already in the log. An update to an existing fact is\n   a new entry only if the fact changed; otherwise leave the original alone.\n6. At most 60 entries. If the log would exceed that, drop the entries that\n   matter least to the next session — never an `[open]` one while an untagged one could go\n   instead.\n\nEvery entry is one line, starting with `- `, and is one sentence in the third person, calling the\nmember \"Member\". Write for someone who has to act on it in the next session: name the specific\nthing, the reason, and the constraint. Vague entries are worthless.\n\n- Good: `- Member cannot exercise in the morning due to childcare — evenings are the only window.`\n- Bad: `- Member has scheduling issues.`\n\nTerse and dense. No filler, no hedging, no adverbs that carry nothing. Every token does work.\n\nRecord what the member said, felt, committed to, or completed. Never record how the session went,\nwhether rapport was built, or how the counsellor performed — this is a log of the member's life\nand words, not a review of the conversation.\n\nAfter the last entry, on a line of its own, write `Summary:` and then the session that just ended\nin about 100 words: three to five sentences, third person, calling the member \"Member\" — what they\ncame in with, what they said and decided, what changed for them, and what was left open. Only this\nsession, not the earlier ones; concrete like the entries, and kept whole even when entries are\ndropped, since later sessions are written from these summaries long after the log has moved on.\n",
       "role": "user"
      }
     ]

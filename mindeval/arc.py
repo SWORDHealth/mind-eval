@@ -6,10 +6,12 @@ are seeded by the member and the seed alone, so every counselor meets the same s
 
 Between sessions the patient model makes two calls. Compaction folds the session into one running
 log, which is the whole of memory: the member carries it into the next session and the counselor
-walks in with the same log under `# Memory`. Evolution writes the next session's situation from the
-member's formulation, the last situation, the last conversation, the running log, the time that has
-passed and the drawn beat; its opening message is the member's first line next time, spoken verbatim,
-so it is written under the archetype, concealment and affect that session is played with.
+walks in with the same log under `# Memory`. It also summarises the session in about 100 words.
+Evolution writes the next session's situation from the member's formulation, the last situation, the
+last conversation, the running log, every earlier session's summary (so a session long gone from the
+log can still shape this one), the time that has passed and the drawn beat; its opening message is the
+member's first line next time, spoken verbatim, so it is written under the archetype, concealment and
+affect that session is played with.
 
 A checkpoint after every session lets a member that died mid-run resume at the session it died in.
 
@@ -225,10 +227,26 @@ def _trim_log(entries: list[str], max_entries: int) -> list[str]:
     return [e for i, e in order if i in keep]
 
 
+_SUMMARY = re.compile(r"^[#*_\s]*summary[*_\s]*:[*_\s]*(.*)$", re.I | re.M)
+
+
+def split_summary(text: str) -> tuple[str, str]:
+    """The log and the session summary, from compaction's answer: the summary is what follows the last `Summary:`
+    line. A missing or empty summary is not an answer."""
+    found = list(_SUMMARY.finditer(text))
+    if not found:
+        raise ValueError("no session summary")
+    last = found[-1]
+    summary = " ".join((last.group(1) + text[last.end():]).split())
+    if not summary:
+        raise ValueError("empty session summary")
+    return text[:last.start()], summary
+
+
 async def compact_log(prior: list[str], session: SessionRecord, models: dict, *, max_entries: int,
-                      arc_seed: int, arc_id: str, episode_id: int) -> list[str]:
-    """Fold one closed session into the log and return the whole log. Raises after three attempts. `models` are
-    the session's (`engine.facades`); the patient writes the log."""
+                      arc_seed: int, arc_id: str, episode_id: int) -> tuple[list[str], str]:
+    """Fold one closed session into the log; return the whole log and the session's summary. Raises after three
+    attempts. `models` are the session's (`engine.facades`); the patient writes both."""
     prompt = render("compact_log", prior_log=render_log(prior),
                     transcript=_conversation(session.member_messages, "Member"), max_entries=max_entries)
     seed = provider_seed(turn_seed(arc_seed, arc_id, episode_id, "compact_log"))
@@ -240,10 +258,11 @@ async def compact_log(prior: list[str], session: SessionRecord, models: dict, *,
             # A patient served without a reasoning parser returns "trace</think>log": the member calls
             # already split that off, and the log is only the part after it.
             text, _ = llm.split_inline_trace(text, meta)
+            text, summary = split_summary(text)
             entries = _trim_log(parse_log(text), max_entries)
             if not entries:
                 raise ValueError("empty log")
-            return entries
+            return entries, summary
         except Exception as e:  # noqa: BLE001 — retry on anything, report on exhaustion
             err = e
             if attempt < 2:  # a few seconds of 503s from the shared patient server must not fail the
@@ -260,12 +279,15 @@ def _situation_block(s: Situation) -> str:
 
 async def evolve_situation(cfg: Config, row: MemberRow, prev: Situation, last: SessionRecord, gap_hours: float,
                            models: dict, *, arc_seed: int, arc_id: str, episode_id: int, now_line: str,
-                           beat: str, log: list[str], knobs: Knobs) -> Situation:
+                           beat: str, log: list[str], knobs: Knobs,
+                           summaries: list[tuple[str, str]] = ()) -> Situation:
     """The next session's situation, written by the patient model. Raises after three attempts.
 
     `log` is the running log so far, so a fact the last conversation never came back to (a name, a plan)
-    still holds; `knobs` are the next session's, so its opening message, spoken verbatim, already keeps to
-    the archetype, concealment and affect the rest of that session is played with."""
+    still holds; `summaries` are every earlier session's, oldest first, as (how long ago, summary), so a
+    session the log no longer holds can still come back; `knobs` are the next session's, so its opening
+    message, spoken verbatim, already keeps to the archetype, concealment and affect the rest of that session
+    is played with."""
     leftover = [i["text"] for i in (last.agenda or {}).get("todos", []) if i["status"] == "open"]
     archetype_text, archetype_avoids, conduct_lines = session_conduct(cfg, row, knobs)
     prompt = render("evolve_situation", formulation=row.formulation, prev_situation=_situation_block(prev),
@@ -274,7 +296,8 @@ async def evolve_situation(cfg: Config, row: MemberRow, prev: Situation, last: S
                     beat_gloss=cfg.episode.episode_beats.vocabulary[beat].gloss,
                     register_lines=[cfg.knob_line(row.knobs, k) for k in REGISTER_KNOBS],
                     memory=render_log(log) if log else None, archetype_text=archetype_text,
-                    archetype_avoids=archetype_avoids, conduct_lines=conduct_lines)
+                    archetype_avoids=archetype_avoids, conduct_lines=conduct_lines,
+                    summaries=[{"n": i + 1, "ago": ago, "text": text} for i, (ago, text) in enumerate(summaries)])
     seed = provider_seed(turn_seed(arc_seed, arc_id, episode_id, "evolve_situation"))
     err = None
     for attempt in range(3):
@@ -385,7 +408,8 @@ async def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, runner: 
             situation = await evolve_situation(
                 cfg, row, situation, done_sessions[-1], gap, runner.models, arc_seed=arc_seed, arc_id=arc_id,
                 episode_id=ep, now_line=f"It is now {describe_ts(anchor, clock)}.", beat=shape.beats[ep - 1],
-                log=log, knobs=knobs)
+                log=log, knobs=knobs,
+                summaries=[(describe_gap(clock - e.opened_ts), e.summary) for e in episodes if e.summary])
             flush_debug_log()
             evolve_ms = round((time.monotonic() - t0) * 1000, 1)
         ep_dir.mkdir(parents=True, exist_ok=True)
@@ -409,18 +433,19 @@ async def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, runner: 
 
         t0 = time.monotonic()
         set_conversation_id(f"{row.member_id} | arc {arc_id} | compact {ep}")
-        log = await compact_log(log, record, runner.models, max_entries=cfg.patient.log_max_entries,
-                                arc_seed=arc_seed, arc_id=arc_id, episode_id=ep)
+        log, summary = await compact_log(log, record, runner.models, max_entries=cfg.patient.log_max_entries,
+                                         arc_seed=arc_seed, arc_id=arc_id, episode_id=ep)
         flush_debug_log()
         compact_ms = round((time.monotonic() - t0) * 1000, 1)
         rendered = render_log(log)
         (ep_dir / "log.md").write_text(rendered + "\n", encoding="utf-8")
+        (ep_dir / "summary.md").write_text(summary + "\n", encoding="utf-8")
         episodes.append(EpisodeRef(
             episode_id=ep, run_id=record.run_id, session_id=record.session_id, situation_id=situation.situation_id,
             trace_path=str(trace_path.relative_to(out)), ep_seed=ep_seed, opened_ts=clock, closed_ts=closed,
             turn_ts=turn_ts, gap_hours_since_prev=gap, termination=record.termination, evolve_ms=evolve_ms,
             compact_ms=compact_ms, log_sha=hashlib.sha256(rendered.encode()).hexdigest()[:12],
-            log_entries=len(log)))
+            log_entries=len(log), summary=summary))
         done_sessions.append(record)
         if ep < sessions - 1:
             clock = closed + shape.gaps_hours[ep]

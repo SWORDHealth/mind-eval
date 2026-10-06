@@ -148,7 +148,8 @@ bash run_benchmark.sh runs/<counselor> [mindeval2|mindeval1]
 ```
 runs/<counselor>/
   run.json                  what ran: models, endpoints, prompt and profile hashes, settings
-  members/<id>/arc/ep00N/   per session: trace.jsonl (every turn), situation.yaml, log.md (the memory after it)
+  members/<id>/arc/ep00N/   per session: trace.jsonl (every turn), situation.yaml, log.md (the memory after it),
+                            summary.md (the session in about 100 words; every later situation is written from these)
   usersim/run=<id>/locale=en_US/probe_family=mindeval/
                             per session: its NeMo UserSim row (conversation, outcome, call accounting), as
                             `usersim simulate` stores one

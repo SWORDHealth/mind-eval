@@ -23,6 +23,20 @@ What it records still holds unless something since changed it: a name they asked
 plan they made, something they said they would or would not do. The situation and the opening build on
 it and never contradict it, even where the previous conversation never came back to it.
 {% endif %}
+{% if summaries %}
+
+Every conversation they have had so far, oldest first, each in brief:
+
+{% for s in summaries %}
+- Conversation {{ s.n }}, {{ s.ago }} ago: {{ s.text }}
+{% endfor %}
+{% if summaries | length > 1 %}
+
+Their life is all of these, not only the last one. Let something from an earlier conversation than the
+previous one still be live now — a thread left hanging, a plan made then, a person they mentioned, a
+thing that happened since because of it — and let it shape what happens or what they bring this time.
+{% endif %}
+{% endif %}
 
 {{ now_line }}
 Since that conversation, only {{ gap }} has passed — exactly that, no more. Do not narrate

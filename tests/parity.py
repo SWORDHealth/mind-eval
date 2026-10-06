@@ -89,7 +89,8 @@ class Script:
         if "running log" in first:
             if "compact" in self.down:
                 raise RuntimeError("compaction server down")
-            return _response(f"- Entry {_sha(first)[:6]}: they talked it through.")
+            return _response(f"- Entry {_sha(first)[:6]}: they talked it through.\n\n"
+                             f"Summary: In session {_sha(first)[:6]} Member talked it through.")
         if "Answer with JSON only" in first:
             name = first.split("Who they are:\n\n", 1)[1].split(" is ", 1)[0]
             return _response(json.dumps({**NEXT, "opening_message": f"hey, {name} again"}))

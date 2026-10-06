@@ -176,6 +176,8 @@ class EpisodeRef(_Strict):
     compact_ms: float | None = None
     log_sha: str | None = None
     log_entries: int | None = None
+    #: The session in about 100 words, written with the log; every later session's situation is written from them.
+    summary: str | None = None
 
 
 class ArcRecord(_Strict):

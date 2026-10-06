@@ -17,6 +17,7 @@ COUNSELOR, JUDGE = "openai/counselor", "openai/judge"
 REPLY = "How has your week been?"  # a line separator must not break the trace
 ITEM = {"type": "reasoning", "id": "rs_1", "encrypted_content": "opaque"}  # a Responses API reasoning item
 LOG_LINE = "Member talked about the week."
+SUMMARY = "Member came in tired, talked about the week and the money, and left the call to their sister open."
 NEXT = {"event": "The week went on.", "automatic_thoughts": ["same as before"], "behaviors": ["stayed in"],
         "physical": [], "goal": "talk it through", "checkpoints": ["the money"]}
 TEMPLATE = "Judge this reply.\n{conversation}\n\n{candidate}\n"
@@ -57,7 +58,7 @@ def _fake(state):
         if "running log" in first:
             if state.get("fail_compaction"):
                 raise RuntimeError("compaction server down")
-            return _response(f"- {LOG_LINE}")
+            return _response(f"- {LOG_LINE}\n\n**Summary:** {SUMMARY}")
         if "Answer with JSON only" in first:
             name = first.split("Who they are:\n\n", 1)[1].split(" is ", 1)[0]
             return _response(json.dumps({**NEXT, "opening_message": _opening(name)}))
@@ -97,6 +98,7 @@ def test_two_members_two_sessions_then_the_judge(tmp_path, monkeypatch):
         assert all(t["final_move"]["move"] == "do_answer_question" for t in turns[1:])
         assert session["type"] == "session" and session["termination"] == "max_turns"
         assert (arc / ep / "log.md").read_text().startswith(f"- {LOG_LINE}")
+        assert (arc / ep / "summary.md").read_text() == SUMMARY + "\n"  # not in the log, beside it
         assert yaml.safe_load((arc / ep / "situation.yaml").read_text())["opening_message"]
     second = json.loads((arc / "ep001" / "trace.jsonl").read_text().splitlines()[-1])
     assert "# Memory" in second["counselor_system_prompt"] and LOG_LINE in second["counselor_system_prompt"]

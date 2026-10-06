@@ -61,23 +61,23 @@ def test_compact_log_retries_with_backoff(monkeypatch):
         calls["n"] += 1
         if calls["n"] < 3:
             raise RuntimeError("compaction server down")
-        return _response("- ok")
+        return _response("- ok\nSummary: They said hi.")
 
     monkeypatch.setattr(llm, "_LIB", scripted(completion))
     session = SimpleNamespace(member_messages=[{"role": "assistant", "content": "hi"}])
-    entries = _compact([], session, MODELS, max_entries=5, arc_seed=0, arc_id="a", episode_id=0)
-    assert entries == ["ok"]
+    entries, summary = _compact([], session, MODELS, max_entries=5, arc_seed=0, arc_id="a", episode_id=0)
+    assert entries == ["ok"] and summary == "They said hi."
     assert pauses == [1, 2]  # backoff before the 2nd and 3rd attempts, none after the last one
 
 
 def test_compact_log_keeps_the_newest_entries_of_an_overshooting_log(monkeypatch):
     """compact_log itself, not just _trim_log: a model that returns more entries than max_entries must
     not lose the session that just ended (the newest entries)."""
-    log = "\n".join(f"- entry {i}" for i in range(5))
+    log = "\n".join(f"- entry {i}" for i in range(5)) + "\n\nSummary: Five things happened."
     monkeypatch.setattr(llm, "_LIB", scripted(lambda **kw: _response(log)))
     session = SimpleNamespace(member_messages=[{"role": "assistant", "content": "hi"}])
-    entries = _compact([], session, MODELS, max_entries=3, arc_seed=0, arc_id="a", episode_id=0)
-    assert entries == ["entry 2", "entry 3", "entry 4"]
+    entries, summary = _compact([], session, MODELS, max_entries=3, arc_seed=0, arc_id="a", episode_id=0)
+    assert entries == ["entry 2", "entry 3", "entry 4"] and summary == "Five things happened."
 
 
 def test_patient_calls_between_sessions_strip_an_inline_reasoning_trace(monkeypatch):
@@ -86,10 +86,10 @@ def test_patient_calls_between_sessions_strip_an_inline_reasoning_trace(monkeypa
     must not take a JSON object drafted inside the trace for the answer."""
     monkeypatch.setattr(arc_mod, "_pause", no_pause)
     monkeypatch.setattr(llm, "_LIB", scripted(lambda **kw: _response(
-        "Okay, the member said hi.\nI should log that.\n</think>\n- Member said hi.")))
+        "Okay, the member said hi.\nSummary: a draft one.\n</think>\n- Member said hi.\nSummary: Member said hi.")))
     session = SimpleNamespace(member_messages=[{"role": "assistant", "content": "hi"}])
     assert _compact([], session, MODELS, max_entries=5, arc_seed=0, arc_id="a",
-                               episode_id=0) == ["Member said hi."]
+                    episode_id=0) == (["Member said hi."], "Member said hi.")
 
     fields = {"automatic_thoughts": ["t"], "behaviors": ["b"], "physical": [], "goal": None, "checkpoints": [],
               "opening_message": "hi again"}
@@ -166,3 +166,86 @@ def test_evolve_situation_sees_the_log_and_the_next_sessions_conduct(monkeypatch
                              2.0, MODELS, arc_seed=0, arc_id="a", episode_id=1, now_line="now", beat=beat,
                              log=[], knobs=guarded)
     assert "Their log so far" not in prompts[-1]  # no log yet: no empty section
+
+
+# -- session summaries: written with the log, and every earlier one feeds the next situation ----------------------
+
+def test_the_summary_is_what_follows_the_last_summary_line():
+    log, summary = arc_mod.split_summary("- a thing\n- another\n\n## Summary:\nThey came in.\nThey left calmer.\n")
+    assert arc_mod.parse_log(log) == ["a thing", "another"] and summary == "They came in. They left calmer."
+    for bad in ("- a thing\n", "- a thing\nSummary:   \n"):
+        try:
+            arc_mod.split_summary(bad)
+            raise AssertionError(f"accepted {bad!r}")
+        except ValueError:
+            pass
+
+
+def test_evolve_situation_sees_every_earlier_session_summary(monkeypatch):
+    """Session k's situation is written from every earlier session's summary, the ones long gone from the log
+    (j < k - 2) included, each with how long ago it was; with more than the previous one, it is asked to keep a
+    thread from an earlier one alive."""
+    prompts = []
+    next_situation = {"event": "e", "automatic_thoughts": ["t"], "behaviors": ["b"], "physical": [],
+                      "goal": None, "checkpoints": [], "opening_message": "hi again"}
+
+    def completion(**kw):
+        prompts.append(kw["messages"][0]["content"])
+        return _response(json.dumps(next_situation))
+
+    monkeypatch.setattr(llm, "_LIB", scripted(completion))
+    cfg = load_config()
+    row = next(MemberRow.model_validate_json(line) for line in
+              (ROOT / "data/profiles.jsonl").read_text().splitlines() if '"m000119"' in line)
+    beat = next(iter(cfg.episode.episode_beats.vocabulary))
+    summaries = [("about 3 weeks", "Member decided to call the landlord about the leak."),
+                 ("about 2 weeks", "Member talked about their sister's visit."),
+                 ("about 4 days", "Member was tired and kept it short.")]
+    for given in (summaries, summaries[-1:], []):
+        _evolve(cfg, row, row.situation, SimpleNamespace(agenda=None, member_messages=[]), 2.0, MODELS,
+                arc_seed=0, arc_id="a", episode_id=len(given), now_line="now", beat=beat, log=[], knobs=row.knobs,
+                summaries=given)
+    every, only_previous, none = prompts
+    assert "- Conversation 1, about 3 weeks ago: Member decided to call the landlord about the leak." in every
+    assert all(text in every for _, text in summaries) and "an earlier conversation than the" in every
+    assert "Conversation 1, about 4 days ago" in only_previous and "an earlier conversation than the" not in only_previous
+    assert "Every conversation they have had" not in none
+
+
+def test_an_arc_carries_each_sessions_summary_into_every_later_situation(tmp_path, monkeypatch):
+    """Three sessions: the third session's situation is written from the first session's summary as well as the
+    second's; every summary is kept beside its session, on arc.json, and through a resume."""
+    from mindeval.probe import Runner
+    from mindeval.session import Counselor
+
+    evolve_prompts = []
+
+    def completion(**kw):
+        first = kw["messages"][0]["content"]
+        if any(t["function"]["name"] == "commit_move" for t in kw.get("tools") or []):
+            return _response(tool_call=json.dumps({"reasoning": "ok", "move": "do_answer_question"}))
+        if kw["model"] == "openai/counselor":
+            return _response("How has it been?")
+        if "running log" in first:
+            n = first.count("- Member talked")  # the prior log grows by one entry a session: each summary its own
+            log = "\n".join(f"- Member talked ({i})." for i in range(n + 1))
+            return _response(f"{log}\nSummary: Session {n + 1}, about the landlord.")
+        if "Answer with JSON only" in first:
+            evolve_prompts.append(first)
+            return _response(json.dumps({"event": "e", "automatic_thoughts": ["t"], "behaviors": ["b"],
+                                         "physical": [], "goal": "g", "checkpoints": ["c"], "opening_message": "hi"}))
+        return _response("fine")
+
+    monkeypatch.setattr(llm, "_LIB", scripted(completion))
+    row = next(MemberRow.model_validate_json(line) for line in
+              (ROOT / "data/profiles.jsonl").read_text().splitlines() if '"m000119"' in line)
+    spec = CallSpec(model="openai/counselor", api_base=None, temperature=1.0, max_tokens=None, timeout=5, max_retries=1)
+    counselor = Counselor.from_text(spec, (ROOT / "examples/counselor_system.j2").read_text())
+    arc = asyncio.run(arc_mod.run_arc(load_config(), row, counselor, runner=Runner(PATIENT, spec, max_turns=2),
+                                      patient=PATIENT, sessions=3, max_turns=2, arc_seed=1, out=tmp_path))
+    summaries = [e.summary for e in arc.episodes]
+    assert all(summaries) and len(set(summaries)) == 3
+    assert [(tmp_path / f"ep{i:03d}" / "summary.md").read_text().strip() for i in range(3)] == summaries
+    assert summaries[0] in evolve_prompts[1] and summaries[1] in evolve_prompts[1]  # session 3 sees session 1's
+    assert summaries[0] in evolve_prompts[0] and summaries[1] not in evolve_prompts[0]
+    assert json.loads((tmp_path / "arc.json").read_text())["episodes"][0]["summary"] == summaries[0]

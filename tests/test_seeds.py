@@ -28,7 +28,7 @@ def _fake(**kw):
     if kw["model"] == COUNSELOR_MODEL:
         return _response("How has your week been?")
     if "running log" in first:
-        return _response("- Member talked about the week.")
+        return _response("- Member talked about the week.\nSummary: Member talked about the week.")
     if "Answer with JSON only" in first:
         next_situation = {"event": "The week went on.", "automatic_thoughts": ["same as before"],
                           "behaviors": ["stayed in"], "physical": [], "goal": "talk it through",
