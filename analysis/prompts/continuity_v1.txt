@@ -1,0 +1,48 @@
+You are auditing one session of a text conversation between an AI counsellor and a member. The member has spoken
+with this counsellor before. Below are the notes on those earlier sessions — what the counsellor should know when
+this session starts — and then this session in full. Your job is to check whether the counsellor made use of what
+it should have known.
+
+## Notes from earlier sessions
+
+{memory}
+
+## This session
+
+Turns are numbered. "[k] Counsellor" is the counsellor's k-th reply; "[k] Member" is the member's answer to it.
+"[0] Member" opens the session.
+
+{transcript}
+
+## What to code
+
+**1. Opportunities.** An opportunity is a note (M-number) that becomes relevant in this session: the member raises
+its topic, it bears directly on what is being discussed or decided, or it is an `[open]` item the member is now
+reporting on or plainly could be asked about. A note that never becomes relevant is not an opportunity; leave it
+out. Code each relevant note once, with the first turn at which it became relevant and one status for the whole
+session:
+
+- `contradicted`: some counsellor reply states or assumes something the note contradicts (a wrong name, a wrong
+  event, a reversed preference, "you haven't mentioned X before" when the note records X). Takes precedence.
+- `used`: the counsellor draws on the note — it brings in, connects to or builds on something from the note that
+  the member has not already said in this session before that reply. Merely responding to what the member just
+  said is not use: the counsellor must show it knew something the member had not told it today.
+- `missed`: the note was relevant and the counsellor neither used nor contradicted it — it treated something the
+  notes record as new, gave advice the notes say does not fit, or let an `[open]` item the member was reporting on
+  pass without the connection.
+
+**2. Re-asking.** A counsellor reply that asks for information already in the notes, as if it did not know it
+(e.g. asking who someone is when the notes say, or asking what the member does for work when the notes record it).
+Asking how something recorded has gone since, or checking whether it still holds, is a follow-up, not re-asking.
+
+Judge only from the notes and the transcript. Do not assume the counsellor saw any other notes.
+
+## Answer
+
+After any reasoning, end with one JSON object and nothing after it:
+
+{"opportunities": [{"note": "M3", "turn": 4, "status": "used", "evidence": "<a few words from the reply>"}],
+ "reasks": [{"turn": 6, "note": "M2", "question": "<the question, a few words>"}]}
+
+Use empty lists when there is nothing to code. `turn` is the number of the counsellor reply concerned (for an
+opportunity, the first reply at which the note was relevant).

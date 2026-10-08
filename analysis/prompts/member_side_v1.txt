@@ -1,0 +1,40 @@
+You are auditing one session of a text conversation between an AI counsellor and a member. The member has spoken
+with this counsellor before. Below are notes on those earlier sessions — what was established before this session
+starts — and then this session in full. Your job is to code what the member had to do because of what the
+counsellor did or did not remember.
+
+## Notes from earlier sessions
+
+{memory}
+
+## This session
+
+Turns are numbered. "[k] Counsellor" is the counsellor's k-th reply; "[k] Member" is the member's answer to it.
+"[0] Member" opens the session.
+
+{transcript}
+
+## What to code
+
+Code member turns only.
+
+**1. Corrections.** A member turn that corrects the counsellor about something from earlier sessions, or pushes back
+on the counsellor not knowing it: "no, that was my sister", "I told you last time", "we talked about this",
+"you don't remember?", or plainly restating a recorded fact against a wrong assumption the counsellor just made.
+Disagreeing with the counsellor's opinion or advice is not a correction; it must be about what was already
+established.
+
+**2. Repeats.** A member turn that re-tells something the notes already record from earlier sessions, because the
+counsellor asked for it or showed it did not know it. Say which note (M-number). Reporting what has happened
+since (an update) is not a repeat; neither is the member choosing on their own to bring an old topic back up. It
+counts only when the counsellor's reply just before it asked for, or assumed ignorance of, the recorded thing.
+
+## Answer
+
+After any reasoning, end with one JSON object and nothing after it:
+
+{"corrections": [{"turn": 5, "note": "M2", "quote": "<a few words from the member>"}],
+ "repeats": [{"turn": 3, "note": "M4", "quote": "<a few words from the member>"}]}
+
+Use empty lists when there is nothing to code. `turn` is the number of the member turn; `note` may be null for a
+correction about something the notes do not record.

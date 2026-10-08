@@ -12,7 +12,8 @@ the judge was shown rather than from what the counselor did. Two views separate 
 
     python analysis/judge_views.py <run dir> <view root>      -> <view root>/{as_sent,reference}/
 
-For a compacted run the two views are the same text, which is checked, and only as_sent is written.
+For a compacted run the two views are the same text, which is checked, and only as_sent is written. Session 1 is
+left out of the reference view: its prompt is the same in both.
 """
 
 from __future__ import annotations
@@ -63,6 +64,8 @@ def build(run_dir: Path, root: Path) -> list[Path]:
         if last.get("type") != "session":
             continue  # unfinished: the judge skips it anyway
         ep = int(trace.parent.name[2:])
+        if ep == 0 and mode != "compacted":
+            continue  # session 1 is the same in every view (and every mode); as_sent judges it once
         arc = trace.parents[1]
         log = parse_log((arc / f"ep{ep - 1:03d}" / "log.md").read_text()) if ep > 0 else []
         prompt = template.render(memory=counselor_memory_for("compacted", log, [], ep))
