@@ -1,0 +1,24 @@
+# Session 1 situation, from the profile file.
+{
+  "situation_id": "m000119_sit00",
+  "event": "Early in the week, a card arrived in Renee's handwriting. Not a holiday card, not a birthday — just an envelope, a few lines inside: that she keeps picking up the phone, that she's sorry about the birthday dinner, that she misses the table. Tammy left it on the counter for two days without opening it. When she finally did she was standing at the kitchen sink, and she read it there, then carried it to the table and read it again. The word that lodged was 'table' — not 'you.' She set the card face-down on the table and left it there. The next morning she went out back with her coffee, stood looking at the garden beds — just weeds now, the collards gone since July — and came back inside without touching anything. She has not called or texted Renee back. The card is still on the kitchen table.",
+  "automatic_thoughts": [
+    "somebody probably told her to write that",
+    "she said the table, not me",
+    "I don't know what I'm supposed to do with this",
+    "if I call and she says one wrong thing I won't be able to hold it"
+  ],
+  "behaviors": [
+    "Left the envelope on the counter unopened for two days",
+    "Read the card at the kitchen table, then set it face-down",
+    "Went to the backyard with coffee, stood at the garden beds, came back inside without weeding",
+    "Has not called or texted Renee back"
+  ],
+  "physical": [],
+  "opening_message": "Hi. My sister and I had a falling-out a couple months back and I've had a hard time getting myself right since. She sent me something this week and I don't really know what to do with it.",
+  "goal": "Figure out what to do about this card — whether there's any way back to my sister without it going wrong again.",
+  "checkpoints": [
+    "the falling-out with Renee",
+    "what to do about the card"
+  ]
+}

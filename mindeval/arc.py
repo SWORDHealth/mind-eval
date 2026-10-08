@@ -6,7 +6,12 @@ are seeded by the member and the seed alone, so every counselor meets the same s
 
 Between sessions the patient model makes two calls. Compaction folds the session into one running
 log, which is the whole of memory: the member carries it into the next session and the counselor
-walks in with the same log under `# Memory`. Evolution writes the next session's situation from the
+walks in with the same log under `# Memory`. `counselor_memory_mode` changes what the counselor
+receives there, and nothing else: `compacted` (the default) is the log; `none` is the session-1 text
+in every session, as if nothing had been kept; `full` is every earlier session verbatim, the transcript
+compaction reads, oldest first, the oldest dropped first past `FULL_MEMORY_MAX_CHARS`. The member's
+side never changes, and the mode is a counselor setting outside the fingerprint, so every mode meets
+the same schedule. Evolution writes the next session's situation from the
 member's formulation, the last situation, the last conversation, the time that has passed and the
 drawn beat; its opening message is the member's first line next time.
 
@@ -186,6 +191,41 @@ def counselor_memory(log: list[str]) -> str:
     return render("memory_log", reader="counsellor", log=render_log(log)).rstrip()
 
 
+#: What the counselor's memory can be. Only the counselor's `# Memory` text differs between them.
+COUNSELOR_MEMORY_MODES = ("compacted", "none", "full")
+#: The cap on `full` memory, about 30k tokens: whole sessions are kept newest first while they fit.
+FULL_MEMORY_MAX_CHARS = 120_000
+_FULL_INTRO = ("Transcripts of your previous sessions with this member, oldest first. \"Counsellor\" is you; "
+               "\"Member\" is the member.")
+
+
+def counselor_full_memory(sessions: list, max_chars: int = FULL_MEMORY_MAX_CHARS) -> str:
+    """Every earlier session verbatim, as compaction reads it, oldest first. Past `max_chars` the oldest
+    sessions are left out whole, and the text says how many."""
+    blocks = [f"Session {i + 1}:\n{_conversation(s.member_messages, 'Member')}" for i, s in enumerate(sessions)]
+    kept, size = [], len(_FULL_INTRO)
+    for block in reversed(blocks):
+        if kept and size + len(block) + 2 > max_chars:
+            break
+        kept.insert(0, block)
+        size += len(block) + 2
+    dropped = len(blocks) - len(kept)
+    note = ([f"({dropped} earlier session{'s are' if dropped > 1 else ' is'} not included: the transcripts are "
+             "too long to carry.)"] if dropped else [])
+    return "\n\n".join([_FULL_INTRO, *note, *kept])
+
+
+def counselor_memory_for(mode: str, log: list[str], sessions: list, ep: int) -> str:
+    """The counselor's `# Memory` text for session `ep` (0-based) under `mode`."""
+    if mode == "compacted":
+        return counselor_memory(log if ep > 0 else [])
+    if mode == "none" or ep == 0:
+        return counselor_memory([])
+    if mode == "full":
+        return counselor_full_memory(sessions[:ep])
+    raise ValueError(f"unknown counselor memory mode {mode!r}; choose one of {COUNSELOR_MEMORY_MODES}")
+
+
 def _conversation(messages: list[dict], member_label: str) -> str:
     return "\n".join(f'{"Counsellor" if m["role"] == "user" else member_label}: {m["content"]}'
                      for m in messages if m.get("content"))
@@ -306,7 +346,10 @@ def set_aside_partial(arc_dir: Path) -> str | None:
 # -- the run ---------------------------------------------------------------------------------------
 
 def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, patient: CallSpec, sessions: int,
-            max_turns: int, arc_seed: int, out: Path) -> ArcRecord:
+            max_turns: int, arc_seed: int, out: Path, counselor_memory_mode: str = "compacted") -> ArcRecord:
+    if counselor_memory_mode not in COUNSELOR_MEMORY_MODES:
+        raise ValueError(f"unknown counselor memory mode {counselor_memory_mode!r}; choose one of "
+                         f"{COUNSELOR_MEMORY_MODES}")
     arc_id = arc_id_of(row, arc_seed, cfg.fingerprint)
     shape = draw_shape(cfg.episode, row, arc_seed, arc_id, sessions)
     anchor = Anchor(shape.anchor_weekday, shape.anchor_hour)
@@ -344,7 +387,7 @@ def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, patient: CallS
         record = run_session(cfg, row, situation, knobs, counselor, patient=patient, max_turns=max_turns,
                              seed=ep_seed, trace_path=trace_path,
                              memory_text=member_memory(log) if ep > 0 else None,
-                             counselor_memory=counselor_memory(log if ep > 0 else []),
+                             counselor_memory=counselor_memory_for(counselor_memory_mode, log, done_sessions, ep),
                              time_context=describe_now(anchor, clock, prev_close))
         turns, _ = read_trace(trace_path)
         turn_ts = [clock + i * spacing_hours for i in range(len(turns))]

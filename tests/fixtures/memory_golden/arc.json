@@ -1,0 +1,99 @@
+{
+  "arc_id": "ee02be63feb3",
+  "arc_seed": 1853518132,
+  "episodes": [
+    {
+      "closed_ts": 0.1,
+      "compact_ms": 1.0,
+      "ep_seed": 17015355196215536531,
+      "episode_id": 0,
+      "evolve_ms": null,
+      "gap_hours_since_prev": null,
+      "log_entries": 2,
+      "log_sha": "7e33881560f2",
+      "opened_ts": 0.0,
+      "run_id": "75cb0707986d",
+      "session_id": "75cb0707986d-s0",
+      "situation_id": "m000119_sit00",
+      "termination": "max_turns",
+      "trace_path": "ep000/trace.jsonl",
+      "turn_ts": [
+        0.0,
+        0.03333333333333333,
+        0.06666666666666667,
+        0.1
+      ]
+    },
+    {
+      "closed_ts": 8.948854344668783,
+      "compact_ms": 1.0,
+      "ep_seed": 15966162943665151841,
+      "episode_id": 1,
+      "evolve_ms": 1.0,
+      "gap_hours_since_prev": 8.748854344668784,
+      "log_entries": 2,
+      "log_sha": "b890e5e3dba4",
+      "opened_ts": 8.848854344668784,
+      "run_id": "6865676dd6dd",
+      "session_id": "6865676dd6dd-s0",
+      "situation_id": "m000119_sit00-ep1",
+      "termination": "max_turns",
+      "trace_path": "ep001/trace.jsonl",
+      "turn_ts": [
+        8.848854344668784,
+        8.882187678002117,
+        8.91552101133545,
+        8.948854344668783
+      ]
+    },
+    {
+      "closed_ts": 57.1039316542094,
+      "compact_ms": 1.0,
+      "ep_seed": 1572409662805212750,
+      "episode_id": 2,
+      "evolve_ms": 1.0,
+      "gap_hours_since_prev": 48.055077309540614,
+      "log_entries": 2,
+      "log_sha": "4aaa022e28e0",
+      "opened_ts": 57.003931654209396,
+      "run_id": "db4e7ad285dc",
+      "session_id": "db4e7ad285dc-s0",
+      "situation_id": "m000119_sit00-ep2",
+      "termination": "max_turns",
+      "trace_path": "ep002/trace.jsonl",
+      "turn_ts": [
+        57.003931654209396,
+        57.03726498754273,
+        57.070598320876066,
+        57.1039316542094
+      ]
+    }
+  ],
+  "fingerprint": "7962e7caed157571",
+  "profile_id": "m000119",
+  "schema_version": "1",
+  "shape": {
+    "affect": [
+      "surprise",
+      "fear",
+      "joy"
+    ],
+    "anchor_hour": 20.254629527198947,
+    "anchor_weekday": 4,
+    "beats": [
+      "rupture",
+      "new_problem"
+    ],
+    "concealment": [
+      "high",
+      "high",
+      "high"
+    ],
+    "gaps_hours": [
+      8.748854344668784,
+      48.055077309540614
+    ],
+    "n_episodes": 3
+  },
+  "situation_id": "m000119_sit00"
+}

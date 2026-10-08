@@ -1,0 +1,17 @@
+# Session 3 situation, from the patient model, from the last session and the time since.
+{
+  "situation_id": "m000119_sit00-ep2",
+  "event": "event 4900044276",
+  "automatic_thoughts": [
+    "same"
+  ],
+  "behaviors": [
+    "stayed in"
+  ],
+  "physical": [],
+  "opening_message": "hi again 4900044276",
+  "goal": "talk",
+  "checkpoints": [
+    "the money"
+  ]
+}

@@ -21,7 +21,7 @@ from jsonargparse import CLI
 from pydantic import ValidationError
 
 from mindeval import __version__, env, llm
-from mindeval.arc import counselor_memory, member_seed, run_arc, set_aside_partial
+from mindeval.arc import COUNSELOR_MEMORY_MODES, counselor_memory, member_seed, run_arc, set_aside_partial
 from mindeval.config import PACKAGE_DIR, CallSpec, Config, load_config
 from mindeval.member import build_member
 from mindeval.models import MemberRow
@@ -34,8 +34,10 @@ DEFAULT_COUNSELOR = PACKAGE_DIR.parent / "examples" / "counselor_system.j2"
 #: retries and the worker count may change between invocations; these may not.
 IDENTITY = ("mindeval_version", "fingerprint", "patient.model", "counselor.model",
             "counselor.system_prompt_sha256", "counselor.temperature", "counselor.max_tokens",
-            "counselor.params", "patient.params", "patient.max_tokens", "patient.force_move",
-            "profiles.sha256", "sessions", "max_turns", "seed")
+            "counselor.params", "counselor.memory_mode", "patient.params", "patient.max_tokens",
+            "patient.force_move", "profiles.sha256", "sessions", "max_turns", "seed")
+#: Identity fields added after runs were made with them implicit: a run.json without one had this value.
+IDENTITY_DEFAULTS = {"counselor.memory_mode": "compacted"}
 
 
 def _missing(names: list[str]) -> InputError:
@@ -85,7 +87,7 @@ def _get(d: dict, dotted: str):
 
 def run_manifest(counselor_system_prompt_path: Path, profiles_path: Path, sessions: int, max_turns: int, seed: int,
                  max_workers: int, cfg: Config, patient: CallSpec, counselor: CallSpec,
-                 rows: list[MemberRow]) -> dict:
+                 rows: list[MemberRow], counselor_memory_mode: str = "compacted") -> dict:
     return {
         "mindeval_version": __version__, "git": _git_describe(), "fingerprint": cfg.fingerprint,
         "patient": {"model": patient.model, "api_base": patient.api_base, "temperature": patient.temperature,
@@ -95,7 +97,8 @@ def run_manifest(counselor_system_prompt_path: Path, profiles_path: Path, sessio
                       "system_prompt": str(counselor_system_prompt_path),
                       "system_prompt_sha256": _sha(counselor_system_prompt_path.read_bytes()),
                       "temperature": counselor.temperature, "max_tokens": counselor.max_tokens,
-                      "params": counselor.params, "timeout": counselor.timeout, "max_retries": counselor.max_retries},
+                      "params": counselor.params, "timeout": counselor.timeout, "max_retries": counselor.max_retries,
+                      "memory_mode": counselor_memory_mode},
         "profiles": {"path": str(profiles_path), "sha256": _sha(profiles_path.read_bytes()),
                      "rows": sum(1 for line in profiles_path.read_text().splitlines() if line.strip())},
         "members": len(rows), "member_ids": [m.member_id for m in rows], "sessions": sessions,
@@ -111,7 +114,11 @@ def check_identity(out: Path, manifest: dict) -> dict | None:
             raise InputError(f"{out} holds member output but no run.json; use a fresh --output_dir")
         return None
     old = json.loads(path.read_text())
-    diffs = [f"  {k}: {_get(old, k)!r} -> {_get(manifest, k)!r}" for k in IDENTITY if _get(old, k) != _get(manifest, k)]
+    def was(k):
+        value = _get(old, k)
+        return IDENTITY_DEFAULTS.get(k) if value is None else value
+
+    diffs = [f"  {k}: {was(k)!r} -> {_get(manifest, k)!r}" for k in IDENTITY if was(k) != _get(manifest, k)]
     if diffs:
         raise InputError(f"{out} is a different run; resuming it would mix two benchmarks:\n" + "\n".join(diffs)
                          + "\nUse a fresh --output_dir.")
@@ -155,7 +162,7 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
          counselor_params: dict | None = None, counselor_timeout: float = 600, counselor_retries: int = 5,
          patient_timeout: float = 600, patient_params: dict | None = None, profiles_path: Path = DEFAULT_PROFILES,
          members: int = 50, sessions: int = 3, max_turns: int = 30, seed: int = 0, max_workers: int = 16,
-         dry_run: bool = False) -> int:
+         counselor_memory_mode: str = "compacted", dry_run: bool = False) -> int:
     """Runs every member of the profile file through its sessions against one counselor.
 
     The transcripts are written under output_dir. Rerun with the same output_dir to resume: finished
@@ -183,6 +190,9 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
         max_turns: counselor replies per session, at most
         seed: base seed; each member's is derived from it
         max_workers: members run in parallel
+        counselor_memory_mode: what the counselor receives under # Memory, and nothing else changes:
+            compacted (the running log, the benchmark), none (the session-1 text in every session) or
+            full (every earlier session verbatim, the oldest dropped first past about 30k tokens)
         dry_run: validate and render prompts; no model calls, no writes
 
     Returns:
@@ -204,6 +214,8 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
                             ("--counselor_retries", counselor_retries)):
             if value < 1:
                 raise InputError(f"{flag} must be at least 1")
+        if counselor_memory_mode not in COUNSELOR_MEMORY_MODES:
+            raise InputError(f"--counselor_memory_mode must be one of {', '.join(COUNSELOR_MEMORY_MODES)}")
         for flag, value in (("--patient_timeout", patient_timeout), ("--counselor_timeout", counselor_timeout)):
             if value <= 0:
                 raise InputError(f"{flag} must be positive")
@@ -226,7 +238,7 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
         except ValueError as e:
             raise InputError(f"{counselor_system_prompt_path}: {e}") from None
         manifest = run_manifest(counselor_system_prompt_path, profiles_path, sessions, max_turns, seed, max_workers,
-                                cfg, patient, cspec, rows)
+                                cfg, patient, cspec, rows, counselor_memory_mode)
         old = check_identity(output_dir, manifest)
 
         arc_dirs = {m.member_id: output_dir / "members" / m.member_id / "arc" for m in rows}
@@ -266,7 +278,8 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
             try:
                 moved = set_aside_partial(arc_dir)
                 arc = run_arc(cfg, row, counselor, patient=patient, sessions=sessions, max_turns=max_turns,
-                              arc_seed=member_seed(row.member_id, seed), out=arc_dir)
+                              arc_seed=member_seed(row.member_id, seed), out=arc_dir,
+                              counselor_memory_mode=counselor_memory_mode)
                 outcome = "done"
                 detail = " ".join(e.termination.replace("member_terminated", "left").replace("max_turns", "cap")
                                   for e in arc.episodes)
