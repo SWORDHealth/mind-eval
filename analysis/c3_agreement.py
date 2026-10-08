@@ -124,11 +124,11 @@ def compare(lab: dict[str, dict], ref: dict[str, dict]) -> dict:
     }
 
 
-def compare_member_side(lab: dict[str, dict], ref: dict[str, dict]) -> dict:
-    """Member-side codes: corrections and repeats per session, and the same turns."""
+def compare_lists(lab: dict[str, dict], ref: dict[str, dict], kinds: tuple[str, ...]) -> dict:
+    """Coded turns per session for each kind, and the same turns."""
     ids = sorted(set(lab) & set(ref))
     out = {"sessions": len(ids)}
-    for k in ("corrections", "repeats"):
+    for k in kinds:
         a, b = [len(lab[i][k]) for i in ids], [len(ref[i][k]) for i in ids]
         tl = {(i, x["turn"]) for i in ids for x in lab[i][k]}
         tr = {(i, x["turn"]) for i in ids for x in ref[i][k]}
@@ -139,13 +139,13 @@ def compare_member_side(lab: dict[str, dict], ref: dict[str, dict]) -> dict:
     return out
 
 
-def load_member_ref(paths: list[Path]) -> dict[str, dict]:
+def load_list_ref(paths: list[Path], kinds: tuple[str, ...]) -> dict[str, dict]:
     out = {}
     for p in paths:
         for line in p.read_text().splitlines():
             if line.strip():
                 x = json.loads(line)
-                out[x["id"]] = {"corrections": x.get("corrections", []), "repeats": x.get("repeats", [])}
+                out[x["id"]] = {k: x.get(k, []) for k in kinds}
     return out
 
 
@@ -155,10 +155,14 @@ def main() -> None:
     ap.add_argument("--ref", nargs="+", required=True, type=Path)
     ap.add_argument("--retest", type=Path)
     ap.add_argument("--out", required=True, type=Path)
-    ap.add_argument("--kind", choices=("continuity", "member_side"), default="continuity")
+    ap.add_argument("--kind", choices=("continuity", "member_side", "reask_contradict"), default="continuity")
     args = ap.parse_args()
-    if args.kind == "member_side":
-        result = {"labeler_vs_reference": compare_member_side(load_labels(args.labels), load_member_ref(args.ref))}
+    if args.kind != "continuity":
+        kinds = ("corrections", "repeats") if args.kind == "member_side" else ("reasks", "contradictions")
+        result = {"labeler_vs_reference": compare_lists(load_labels(args.labels), load_list_ref(args.ref, kinds),
+                                                        kinds)}
+        if args.retest:
+            result["labeler_test_retest"] = compare_lists(load_labels(args.labels), load_labels(args.retest), kinds)
         args.out.write_text(json.dumps(result, indent=2) + "\n")
         print(json.dumps(result, indent=2))
         return

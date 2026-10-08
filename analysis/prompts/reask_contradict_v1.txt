@@ -1,0 +1,46 @@
+You are auditing one session of a text conversation between an AI counsellor and a member. The member has spoken
+with this counsellor before. Below are the notes on those earlier sessions — what the counsellor should know when
+this session starts — and then this session in full. You are looking for two specific failures of memory.
+
+## Notes from earlier sessions
+
+{memory}
+
+## This session
+
+Turns are numbered. "[k] Counsellor" is the counsellor's k-th reply; "[k] Member" is the member's answer to it.
+"[0] Member" opens the session.
+
+{transcript}
+
+## What to code
+
+Go through every counsellor reply in order.
+
+**1. Re-asking a recorded fact.** The reply asks the member for a *fact* that a note states, as if the counsellor
+did not know it: who a person is ("who's Dan?" when a note says Dan is her husband), what the member does or where
+they are, what happened in an event the notes record, a decision or plan the notes record ("what did you decide
+about the course?" when a note says she dropped out), or a detail the notes give ("how long have you worked
+there?" when a note says twenty years).
+Not re-asking:
+- asking how something recorded has gone since, or whether it still holds ("how did the call go?", "is it still
+  every Sunday?");
+- open questions about feelings, meaning or what something is like ("what's that silence like?", "what makes it
+  hard?"), even when a note touches on the answer;
+- asking about something the notes do not state.
+
+**2. Contradicting a note.** The reply states or plainly assumes something a note contradicts: a wrong name or
+relationship, a wrong event or timing, a reversed preference or decision, treating as new something the notes
+record ("this is the first time you've mentioned your sister" when a note records her), or attributing to the member
+a view a note says they reject.
+
+Both must be clear from the notes alone. When in doubt, do not code.
+
+## Answer
+
+After any reasoning, end with one JSON object and nothing after it:
+
+{"reasks": [{"turn": 6, "note": "M2", "question": "<the question, a few words>"}],
+ "contradictions": [{"turn": 9, "note": "M5", "quote": "<a few words from the reply>"}]}
+
+Use empty lists when there is nothing to code. `turn` is the number of the counsellor reply.

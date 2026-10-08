@@ -1,5 +1,6 @@
 """C3 labelers: code sessions 2 onward with a frozen prompt from `prompts/`:
-`continuity_v1` (the counselor: continuity use per opportunity, and re-asking) or `member_side_v1` (the member:
+`continuity_v1` (the counselor: continuity use per opportunity, and re-asking), `reask_contradict_v1` (the counselor:
+re-asking a recorded fact, contradicting a note; a tighter, focused definition) or `member_side_v1` (the member:
 corrections of the counselor, and repeats of what was already told).
 
     python analysis/c3_label.py --out <dir> [--prompt continuity_v1] [--model ... --api_base <url>] name=<run dir> ...
@@ -71,6 +72,26 @@ def _answer(text: str, first_key: str) -> dict:
     return obj
 
 
+def parse_reask_contradict(text: str, inp: dict) -> dict:
+    obj = _answer(text, "reasks")
+    if "reasks" not in obj or "contradictions" not in obj:
+        raise ValueError("no answer object")
+    notes = {f"M{i + 1}" for i in range(inp["n_notes"])}
+
+    def clean(items, field):
+        out, seen = [], set()
+        for x in items:
+            turn = x.get("turn")
+            if turn not in inp["counselor_turns"] or turn in seen:
+                continue
+            seen.add(turn)
+            note = x.get("note")
+            out.append({"turn": turn, "note": note if note in notes else None, field: str(x.get(field, ""))[:300]})
+        return out
+
+    return {"reasks": clean(obj["reasks"], "question"), "contradictions": clean(obj["contradictions"], "quote")}
+
+
 def parse_member_side(text: str, inp: dict) -> dict:
     obj = _answer(text, "corrections")
     if "corrections" not in obj or "repeats" not in obj:
@@ -114,11 +135,15 @@ def parse(text: str, n_notes: int, turns: list[int]) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", required=True, type=Path)
-    ap.add_argument("--prompt", default="continuity_v1", choices=("continuity_v1", "member_side_v1"))
+    ap.add_argument("--prompt", default="continuity_v1",
+                    choices=("continuity_v1", "reask_contradict_v1", "member_side_v1"))
     ap.add_argument("--model", default="hosted_vllm/nemotron-3.5-super-ea")
     ap.add_argument("--api_base", default="http://worker-11:8067/v1")
     ap.add_argument("--temperature", type=float, default=0.6)
     ap.add_argument("--workers", type=int, default=32)
+    ap.add_argument("--max_tokens", type=int, default=64000,
+                    help="cut a runaway reasoning loop (successful labels use about 28k, at most 46k); retried")
+    ap.add_argument("--timeout", type=float, default=1500)
     ap.add_argument("--limit", type=int, default=0, help="label at most this many new sessions (0 = all)")
     ap.add_argument("--members", type=int, default=0, help="only the first N members of each run (0 = all)")
     ap.add_argument("--ids", type=Path, help="only these session ids (one per line), e.g. a validation sample")
@@ -177,8 +202,12 @@ def main() -> None:
         for attempt in range(3):
             try:
                 text, meta = llm.call_messages([{"role": "user", "content": prompt}], args.model, args.api_base,
-                                               args.temperature, None, 1800, params={}, api_key="EMPTY")
+                                               args.temperature, args.max_tokens, args.timeout, params={},
+                                               api_key="EMPTY")
+                if meta.get("finish_reason") == "length":
+                    raise ValueError(f"cut at {args.max_tokens} tokens")
                 parsed = (parse(text, inp["n_notes"], inp["counselor_turns"]) if args.prompt == "continuity_v1"
+                          else parse_reask_contradict(text, inp) if args.prompt == "reask_contradict_v1"
                           else parse_member_side(text, inp))
                 row.update({"raw": text[-6000:], "parsed": parsed, "prompt": args.prompt, "n_notes": inp["n_notes"],
                             "usage": meta.get("usage")})
@@ -186,6 +215,7 @@ def main() -> None:
                 break
             except Exception as e:  # noqa: BLE001 — retried, then recorded
                 last = f"{type(e).__name__}: {e}"[:500]
+                row.setdefault("failed_attempts", []).append(last)
         if last:
             row["error"] = last
         with lock:
