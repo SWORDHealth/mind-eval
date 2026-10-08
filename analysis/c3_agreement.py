@@ -124,13 +124,44 @@ def compare(lab: dict[str, dict], ref: dict[str, dict]) -> dict:
     }
 
 
+def compare_member_side(lab: dict[str, dict], ref: dict[str, dict]) -> dict:
+    """Member-side codes: corrections and repeats per session, and the same turns."""
+    ids = sorted(set(lab) & set(ref))
+    out = {"sessions": len(ids)}
+    for k in ("corrections", "repeats"):
+        a, b = [len(lab[i][k]) for i in ids], [len(ref[i][k]) for i in ids]
+        tl = {(i, x["turn"]) for i in ids for x in lab[i][k]}
+        tr = {(i, x["turn"]) for i in ids for x in ref[i][k]}
+        out[k] = {"spearman": spearman(a, b), "labeler_total": sum(a), "reference_total": sum(b),
+                  "any_kappa": kappa([(x > 0, y > 0) for x, y in zip(a, b)]),
+                  "same_turn": len(tl & tr), "turn_recall": len(tl & tr) / len(tr) if tr else float("nan"),
+                  "turn_precision": len(tl & tr) / len(tl) if tl else float("nan")}
+    return out
+
+
+def load_member_ref(paths: list[Path]) -> dict[str, dict]:
+    out = {}
+    for p in paths:
+        for line in p.read_text().splitlines():
+            if line.strip():
+                x = json.loads(line)
+                out[x["id"]] = {"corrections": x.get("corrections", []), "repeats": x.get("repeats", [])}
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--labels", required=True, type=Path)
     ap.add_argument("--ref", nargs="+", required=True, type=Path)
     ap.add_argument("--retest", type=Path)
     ap.add_argument("--out", required=True, type=Path)
+    ap.add_argument("--kind", choices=("continuity", "member_side"), default="continuity")
     args = ap.parse_args()
+    if args.kind == "member_side":
+        result = {"labeler_vs_reference": compare_member_side(load_labels(args.labels), load_member_ref(args.ref))}
+        args.out.write_text(json.dumps(result, indent=2) + "\n")
+        print(json.dumps(result, indent=2))
+        return
     lab, ref = load_labels(args.labels), load_ref(args.ref)
     result = {"labeler_vs_reference": compare(lab, ref)}
     if args.retest:

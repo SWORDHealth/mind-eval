@@ -7,8 +7,8 @@ session's members, so every session counts once as in MQM. Two views:
 Changes from session 1 are within member, with 95% intervals from resampling members.
 
 A category is called "later-only" when it is rare in session 1 (pooled rate below --rare, 2% of replies by default)
-and its pooled rate in sessions 2-3 is at least --rise (1.5x) the session-1 rate, with the change's interval
-excluding 0. Every category is reported, flagged or not.
+and its pooled rate in sessions 2-3 is at least --rise (1.5x) the session-1 rate and at least --min_rise (0.2
+points) above it, with the change's interval excluding 0. Every category is reported, flagged or not.
 
     python analysis/c2_issues.py --runs_root <dir> --out <dir>/c2
 """
@@ -44,7 +44,7 @@ def session_rate(s: dict, cat: str) -> float:
 
 
 def analyse(root: Path, runs: list[dict], judges: dict, judge: str, members: list[str], rare: float,
-            rise: float) -> dict:
+            rise: float, min_rise: float) -> dict:
     loaded = load_judge(root, runs, judge, judges)
     keys = [r["key"] for r in runs if r["key"] in loaded["sessions"]
             and all((m, ep) in loaded["sessions"][r["key"]] for m in members for ep in EPISODES)]
@@ -81,7 +81,8 @@ def analyse(root: Path, runs: list[dict], judges: dict, judge: str, members: lis
             lo, hi = ci([b[w] - b["s1"] for b in boot])
             row.update({f"change_{w}": pt[w] - pt["s1"], f"change_{w}_lo": lo, f"change_{w}_hi": hi})
         row["ratio_later"] = pt["later"] / pt["s1"] if pt["s1"] else float("inf")
-        row["later_only"] = (pt["s1"] < rare and row["ratio_later"] >= rise and row["change_later_lo"] > 0)
+        row["later_only"] = (pt["s1"] < rare and row["ratio_later"] >= rise and row["change_later"] >= min_rise
+                             and row["change_later_lo"] > 0)
         # Counselors whose own later rate rises with an interval excluding 0.
         rising = []
         for c in keys:
@@ -119,7 +120,7 @@ def pct(x: float) -> str:
 def report(results: dict, labels: dict, rare: float, rise: float) -> str:
     lines = ["# C2: issue categories by session", "",
              f"Rates are % of replies (session-weighted). Later-only = pooled s1 rate < {100 * rare:.0f}%, "
-             f"later/s1 >= {rise}, and the change's 95% CI > 0.", ""]
+             f"later/s1 >= {rise}, a rise of at least 0.2 points, and the change's 95% CI > 0.", ""]
     for judge, res in results.items():
         lines += [f"## Judge: {judge} ({len(res['keys'])} counselors x 50 members)", ""]
         if res["problems"] or res["dropped"]:
@@ -155,6 +156,7 @@ def main() -> None:
     ap.add_argument("--subset", choices=("all", "shared"), default="all")
     ap.add_argument("--rare", type=float, default=0.02)
     ap.add_argument("--rise", type=float, default=1.5)
+    ap.add_argument("--min_rise", type=float, default=0.002)
     args = ap.parse_args()
     root = runs_root(args.runs_root)
     runs, judges = registry(root)
@@ -166,13 +168,14 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     results = {}
     for judge in args.judges.split(","):
-        results[judge] = analyse(root, runs, judges, judge, members, args.rare, args.rise)
+        results[judge] = analyse(root, runs, judges, judge, members, args.rare, args.rise, args.min_rise)
         print(f"{judge}: {len(results[judge]['keys'])} counselors", flush=True)
     write_csv(out / "pooled.csv", [r for res in results.values() for r in res["pooled"]])
     write_csv(out / "per_counselor.csv", [r for res in results.values() for r in res["per"]])
     (out / "report.md").write_text(report(results, labels, args.rare, args.rise))
     write_manifest(out, "analysis/c2_issues.py", runs, {j: judge_identity(root, runs, j, judges) for j in results},
-                   {"subset": args.subset, "bootstrap": BOOT, "rare": args.rare, "rise": args.rise})
+                   {"subset": args.subset, "bootstrap": BOOT, "rare": args.rare, "rise": args.rise,
+                    "min_rise": args.min_rise})
     print(f"wrote {out}")
 
 
