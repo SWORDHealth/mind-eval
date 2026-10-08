@@ -1,10 +1,11 @@
 """C3: continuity failures in sessions 2 onward, and whether the MQM judge sees them.
 
-    python analysis/c3_continuity.py --runs_root <dir> --labels <continuity_v1 labels> [--failures <reask_contradict_v1
-        labels>] --agreement <json> [--failures_agreement <json>] --out <dir>
+    python analysis/c3_continuity.py --runs_root <dir> --labels <continuity_v1 labels> [--member_side <member_side_v1
+        labels>] --agreement <json> [--member_side_agreement <json>] --out <dir>
 
-With --failures, re-asks and contradictions come from the focused labeler (a tighter definition, validated
-separately) and continuity use from continuity_v1.
+With --member_side, the cross-tab's failures are the counselor replies the member answered with a repeat of something
+the notes record (member_side_v1, validated on its own); continuity_v1's re-asks and contradictions are reported but
+did not validate. reask_contradict_v1, a focused re-ask/contradiction labeler, did not validate either and is unused.
 
 Per counselor (sessions with no opportunity are left out of the per-opportunity rates):
   used, missed and contradicted per opportunity (pooled over the counselor's opportunities; intervals resample
@@ -70,8 +71,8 @@ def main() -> None:
     ap.add_argument("--runs_root")
     ap.add_argument("--labels", required=True, type=Path)
     ap.add_argument("--agreement", type=Path)
-    ap.add_argument("--failures", type=Path, help="reask_contradict_v1 labels: re-asks and contradictions from here")
-    ap.add_argument("--failures_agreement", type=Path)
+    ap.add_argument("--member_side", type=Path, help="member_side_v1 labels: the failure signal for the cross-tab")
+    ap.add_argument("--member_side_agreement", type=Path)
     ap.add_argument("--judges", default="gpt61_sol,own,deepseek_v4,hy4")
     ap.add_argument("--out", required=True, type=Path)
     args = ap.parse_args()
@@ -81,18 +82,12 @@ def main() -> None:
     labels_by_run = defaultdict(dict)
     for (name, m, ep), p in labels.items():
         labels_by_run[name][m, ep] = p
-    if args.failures:
-        # Re-asks and contradictions from the focused labeler replace continuity_v1's, on sessions both coded.
-        for (name, m, ep), f in load_labels(args.failures).items():
-            if (m, ep) in labels_by_run.get(name, {}):
-                p = labels_by_run[name][m, ep]
-                p["reasks"] = f["reasks"]
-                p["opportunities"] = [o for o in p["opportunities"] if o["status"] != "contradicted"] + [
-                    {"note": c["note"], "status": "contradicted", "turn": c["turn"], "evidence": c["quote"]}
-                    for c in f["contradictions"]]
-                p["_failures"] = True
-        for name in list(labels_by_run):
-            labels_by_run[name] = {k: p for k, p in labels_by_run[name].items() if p.get("_failures")}
+    side = {}
+    if args.member_side:
+        # The failure signal: the member re-tells something the notes record because the counselor asked for it or
+        # showed it did not know (a repeat at member turn k answers counselor reply k), or corrects the counselor.
+        for (name, m, ep), f in load_labels(args.member_side).items():
+            side[name, m, ep] = f
     lines = ["# C3: continuity failures and whether the judge sees them", ""]
     if args.agreement and args.agreement.is_file():
         a = json.loads(args.agreement.read_text())
@@ -105,17 +100,18 @@ def main() -> None:
                   + ", ".join(f"{k} {x['spearman']:.2f}" for k, x in v["session_level"].items())
                   + (f". Test-retest: status kappa {t['note_level']['status_kappa']:.2f}, recall "
                      f"{t['note_level']['recall']:.2f}." if t else "."), ""]
-    if args.failures_agreement and args.failures_agreement.is_file():
-        a = json.loads(args.failures_agreement.read_text())
-        for who, v in a.items():
-            lines.append(f"Failures labeler, {who.replace('_', ' ')} ({v['sessions']} sessions): " + "; ".join(
-                f"{k} {v[k]['labeler_total']} vs {v[k]['reference_total']}, same turn {v[k]['same_turn']} "
-                f"(precision {v[k]['turn_precision']:.2f}, recall {v[k]['turn_recall']:.2f}), any kappa "
-                f"{v[k]['any_kappa']:.2f}" for k in ("reasks", "contradictions")))
-        lines.append("")
+    if args.member_side_agreement and args.member_side_agreement.is_file():
+        v = json.loads(args.member_side_agreement.read_text())["labeler_vs_reference"]
+        r = v["repeats"]
+        lines += [f"Member-side labeler against reference codes ({v['sessions']} sessions): repeats {r['labeler_total']} vs "
+                  f"{r['reference_total']}, per-session Spearman {r['spearman']:.2f}, any-repeat kappa "
+                  f"{r['any_kappa']:.2f}, same turn precision {r['turn_precision']:.2f} / recall {r['turn_recall']:.2f}. "
+                  f"Corrections: {v['corrections']['labeler_total']} vs {v['corrections']['reference_total']} "
+                  "(too rare to validate; not used).", ""]
     rows = []
     lines += ["| counselor | sessions | with opportunity | used / opp. | missed / opp. | contradicted / opp. | "
-              "re-asks / session | sessions with contradiction or re-ask |", "|---|---|---|---|---|---|---|---|"]
+              "re-asks / session | sessions with contradiction or re-ask | member repeats / session |",
+              "|---|---|---|---|---|---|---|---|---|"]
     for r in runs:
         lab = labels_by_run.get(r["key"], {})
         if not lab:
@@ -142,14 +138,24 @@ def main() -> None:
             v, lo, hi = ratio_ci({m: tuple(x) for m, x in src.items()})
             row.update({name: v, f"{name}_lo": lo, f"{name}_hi": hi})
             cells.append(f"{v:.2f} [{lo:.2f}, {hi:.2f}]")
+        rep = defaultdict(lambda: [0, 0])
+        for (m, ep) in lab:
+            f = side.get((r["key"], m, ep))
+            if f is not None:
+                rep[m][0] += len(f["repeats"])
+                rep[m][1] += 1
+        v, lo, hi = ratio_ci({m: tuple(x) for m, x in rep.items()}) if rep else (float("nan"),) * 3
+        row.update({"repeats_per_session": v, "repeats_lo": lo, "repeats_hi": hi})
+        cells.append(f"{v:.2f} [{lo:.2f}, {hi:.2f}]" if rep else "-")
         rows.append(row)
         lines.append(f"| {r['label']} | {len(lab)} | {n_op_sessions} | " + " | ".join(cells) + " |")
 
     # Cross-tab against each judge, pooled over counselors.
     xrows = []
+    failure = "replies the member had to answer with a repeat" if side else "contradiction/re-ask replies"
     lines += ["", "## Does the judge flag what the labeler finds?", "",
-              "| judge | contradiction/re-ask replies | flagged memory issue | flagged Major+ | other replies: memory "
-              "issue | other: Major+ | sessions with contradiction/re-ask: judge memory flag | other sessions |",
+              f"| judge | {failure} | flagged memory issue | flagged Major+ | other replies: memory "
+              "issue | other: Major+ | sessions with such a reply: judge memory flag | other sessions |",
               "|---|---|---|---|---|---|---|---|"]
     for judge in args.judges.split(","):
         hit = {"bad": [0, 0, 0], "other": [0, 0, 0]}  # replies, memory flag, Major+
@@ -163,8 +169,14 @@ def main() -> None:
             for v in load_verdicts(path).values():
                 by_session[v["member"], v["episode"]][v["turn"]] = v
             for (m, ep), p in lab.items():
-                bad_turns = {o["turn"] for o in p["opportunities"] if o["status"] == "contradicted" and o["turn"]}
-                bad_turns |= {x["turn"] for x in p["reasks"] if x.get("turn")}
+                if side:
+                    f = side.get((r["key"], m, ep))
+                    if f is None:
+                        continue
+                    bad_turns = {x["turn"] for x in f["repeats"] if x.get("turn")}
+                else:
+                    bad_turns = {o["turn"] for o in p["opportunities"] if o["status"] == "contradicted" and o["turn"]}
+                    bad_turns |= {x["turn"] for x in p["reasks"] if x.get("turn")}
                 vs = by_session.get((m, ep), {})
                 if not vs:
                     continue
@@ -201,7 +213,8 @@ def main() -> None:
     (args.out / "report.md").write_text("\n".join(lines) + "\n")
     write_manifest(args.out, "analysis/c3_continuity.py", runs,
                    {j: judge_identity(root, runs, j, judges) for j in args.judges.split(",")},
-                   {"labels": str(args.labels), "agreement": str(args.agreement)})
+                   {"labels": str(args.labels), "agreement": str(args.agreement),
+                    "member_side": str(args.member_side), "member_side_agreement": str(args.member_side_agreement)})
     print("\n".join(lines))
 
 

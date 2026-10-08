@@ -143,7 +143,8 @@ def main() -> None:
     ap.add_argument("--workers", type=int, default=32)
     ap.add_argument("--max_tokens", type=int, default=64000,
                     help="cut a runaway reasoning loop (successful labels use about 28k, at most 46k); retried")
-    ap.add_argument("--timeout", type=float, default=1500)
+    ap.add_argument("--timeout", type=float, default=3600,
+                    help="seconds per call; keep workers low enough that a 46k-token label finishes inside it")
     ap.add_argument("--limit", type=int, default=0, help="label at most this many new sessions (0 = all)")
     ap.add_argument("--members", type=int, default=0, help="only the first N members of each run (0 = all)")
     ap.add_argument("--ids", type=Path, help="only these session ids (one per line), e.g. a validation sample")
