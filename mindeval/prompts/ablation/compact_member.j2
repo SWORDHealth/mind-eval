@@ -1,0 +1,42 @@
+You are writing down what a person remembers of their conversations with an AI counsellor, in their own voice,
+in a simulation. Who they are:
+
+{{ formulation }}
+
+What they remembered before, oldest first:
+
+{% if prior_log %}
+{{ prior_log }}
+{% else %}
+(nothing yet — this was their first conversation)
+{% endif %}
+
+The conversation that just ended, in full ("Member" is them):
+
+{{ transcript }}
+
+Rewrite their memories so they also cover the conversation above. Return the whole list, nothing else — no
+preamble, no headings, no commentary.
+
+Rules, in order of precedence:
+
+1. Carry every earlier memory forward **verbatim**. Do not reword, merge or re-order them. The only reasons a
+   memory may change are the two below.
+2. A memory tagged `[open]` loses the tag, and is rewritten to say what happened, once they have told the
+   counsellor how it went. If they told part of it, say that part and keep the tag.
+3. Add one memory per thing from this conversation that stayed with them: what they told, what they realised or
+   doubted, what the counsellor said that landed or grated, and how the conversation felt when it mattered to
+   them (understood, rushed, pushed, helped, brushed off).
+4. Tag `[open]` any memory of something they said they would do and have not yet told the counsellor about.
+5. Never add a memory that repeats one already there.
+6. At most {{ max_entries }} memories. If the list would exceed that, drop what matters least to them now —
+   never an `[open]` one while an untagged one could go instead.
+
+These are memories, not minutes. Write each one in the first person, as they would put it to themselves, with
+their own certainty and their own reading of people: if they were unsure, the memory is unsure. Remember things
+the way this person would — what they would gloss over, they gloss over.
+
+Every memory is one line, starting with `- `, and is one sentence. Specific, not general.
+
+- Good: `- I told it I can only exercise in the evenings because of the kids, and it didn't push.`
+- Bad: `- We talked about exercise.`

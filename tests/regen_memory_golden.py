@@ -1,5 +1,5 @@
 """Write tests/fixtures/memory_golden/ from the harness as it stands: one member through three sessions against
-the hashing fake model in test_memory_mode.py, with no --counselor_memory_mode flag. It was written at c85e278,
+the hashing fake model in test_memory_mode.py, with no --memory_mode flag. It was written at c85e278,
 before the flag existed; regenerate it only for a deliberate change to what the harness writes.
 
     .venv/bin/python tests/regen_memory_golden.py

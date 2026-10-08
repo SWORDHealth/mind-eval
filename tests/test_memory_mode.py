@@ -1,12 +1,13 @@
-"""`--counselor_memory_mode`: what the counselor receives under `# Memory`, and nothing else.
+"""`--memory_mode`: what each side carries between sessions.
 
 One member through three sessions against a scripted model whose every answer is a hash of what it was sent, so a
 change to any input anywhere shows in the files. The clock is a counter, so the files are deterministic.
 
   - compacted, the default, reproduces the files the harness wrote before the flag existed, byte for byte
     (`fixtures/memory_golden/`, written by `regen_memory_golden.py` at c85e278);
-  - none gives the counselor its session-1 text in every session; full gives it the earlier sessions verbatim;
-  - in every mode the member's inputs for session 2 are identical, and session 1 is identical everywhere.
+  - none gives the counselor its session-1 text in every session and leaves the member exactly as in compacted;
+  - full gives both sides the earlier sessions verbatim instead of the log;
+  - session 1 is identical everywhere, and so is the situation each member walks into session 2 with.
 """
 
 import hashlib
@@ -54,6 +55,10 @@ def _fake(calls: list):
             return _response(f"Counselor {_h(first)} {_h(msgs[1:])}: how was it?")
         if "running log" in first:
             return _response(f"- Member said {_h(first)}.\n- [open] Member will try {_h(first)[:4]}.")
+        if "case notes" in first:
+            return _response(f"- Member says {_h(first)}.")
+        if "what a person remembers" in first:
+            return _response(f"- I said {_h(first)}.")
         if "Answer with JSON only" in first:
             return _response(json.dumps({"event": f"event {_h(first)}", "automatic_thoughts": ["same"],
                                          "behaviors": ["stayed in"], "physical": [], "goal": "talk",
@@ -62,8 +67,7 @@ def _fake(calls: list):
     return completion
 
 
-def produce(tmp: Path, monkeypatch, mode: str | None = None) -> tuple[Path, list]:
-    """Run the CLI for one member x three sessions; returns the arc directory and every model call."""
+def _env(tmp: Path, monkeypatch) -> list:
     tmp.mkdir(parents=True, exist_ok=True)
     monkeypatch.chdir(tmp)
     for name in [k for k in os.environ if k.startswith("MINDEVAL_")]:
@@ -76,10 +80,16 @@ def produce(tmp: Path, monkeypatch, mode: str | None = None) -> tuple[Path, list
     monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=_fake(calls)))
     clock = iter(range(10 ** 6))
     monkeypatch.setattr(time, "monotonic", lambda: next(clock) / 1000)
+    return calls
+
+
+def produce(tmp: Path, monkeypatch, mode: str | None = None) -> tuple[Path, list]:
+    """Run the CLI for one member x three sessions; returns the arc directory and every model call."""
+    calls = _env(tmp, monkeypatch)
     out = tmp / "run"
     argv = ["--output_dir", str(out), "--members", "1", "--sessions", "3", "--max_turns", "3", "--max_workers", "1"]
     if mode is not None:
-        argv += ["--counselor_memory_mode", mode]
+        argv += ["--memory_mode", mode]
     assert CLI([generate_interactions.main], as_positional=False, args=argv) == 0
     member = json.loads((out / "run.json").read_text())["member_ids"][0]
     return out / "members" / member / "arc", calls
@@ -100,27 +110,75 @@ def test_modes_change_only_the_counselor_memory(tmp_path, monkeypatch):
     arcs = {m: produce(tmp_path / m, monkeypatch, m)[0] for m in ("compacted", "none", "full")}
     first = {m: (a / "ep000" / "trace.jsonl").read_bytes() for m, a in arcs.items()}
     assert first["none"] == first["compacted"] == first["full"]  # session 1 is the same everywhere
-    for m, a in arcs.items():  # the member walks into session 2 with the same situation, memory and prompt
+    for m, a in arcs.items():  # the member walks into session 2 with the same situation in every mode
         assert (a / "ep001" / "situation.yaml").read_bytes() == (arcs["compacted"] / "ep001" / "situation.yaml").read_bytes()
-        assert _session(a, 1)["member_system_prompt"] == _session(arcs["compacted"], 1)["member_system_prompt"]
+    # none changes nothing on the member's side: its session-2 prompt is compacted's
+    assert _session(arcs["none"], 1)["member_system_prompt"] == _session(arcs["compacted"], 1)["member_system_prompt"]
     s1_prompt = _session(arcs["compacted"], 0)["counselor_system_prompt"]
     for ep in (1, 2):
         assert _session(arcs["none"], ep)["counselor_system_prompt"] == s1_prompt
         log = (arcs["compacted"] / f"ep{ep - 1:03d}" / "log.md").read_text().strip()
         assert log in _session(arcs["compacted"], ep)["counselor_system_prompt"]
-    full = _session(arcs["full"], 2)["counselor_system_prompt"]
-    assert "# Memory" in full and "Session 1" in full and "Session 2" in full
-    for ep in (0, 1):  # every earlier session, verbatim, oldest first
-        for msg in _session(arcs["full"], ep)["member_messages"]:
-            assert msg["content"] in full
-    assert full.index("Session 1") < full.index("Session 2")
-    assert (arcs["full"] / "ep001" / "log.md").read_text() not in full  # the transcripts replace the log
+    for side, field in (("counsellor", "counselor_system_prompt"), ("member", "member_system_prompt")):
+        full = _session(arcs["full"], 2)[field]
+        assert "Session 1" in full and "Session 2" in full, side
+        for ep in (0, 1):  # every earlier session, verbatim, oldest first
+            for msg in _session(arcs["full"], ep)["member_messages"]:
+                assert msg["content"] in full, side
+        assert full.index("Session 1") < full.index("Session 2")
+        assert (arcs["full"] / "ep001" / "log.md").read_text().strip() not in full  # the transcripts replace the log
+        assert (arcs["full"] / "ep001" / "log.md").is_file()  # compaction still runs
+    assert "# Memory" in _session(arcs["full"], 2)["counselor_system_prompt"]
+    assert "# What you remember" in _session(arcs["full"], 2)["member_system_prompt"]
 
 
 def test_full_memory_keeps_the_latest_sessions_under_the_cap():
     sessions = [SimpleNamespace(member_messages=[{"role": "assistant", "content": f"s{i} " + "x" * 50},
                                                  {"role": "user", "content": f"c{i}"}]) for i in range(5)]
-    text = arc_module.counselor_full_memory(sessions, max_chars=300)  # the intro and two sessions
+    text = arc_module.full_memory(sessions, "counsellor", max_chars=300)  # the intro and two sessions
     assert "s4 " in text and "s3 " in text and "s0 " not in text
     assert "3 earlier sessions are not included" in text
-    assert arc_module.counselor_full_memory(sessions[:1], max_chars=10 ** 6).count("Session 1") == 1
+    assert arc_module.full_memory(sessions[:1], "member", max_chars=10 ** 6).count("Session 1") == 1
+
+
+def test_split_gives_each_side_its_own_log(tmp_path, monkeypatch):
+    arc, _ = produce(tmp_path / "split", monkeypatch, "split")
+    for ep in (1, 2):
+        notes = (arc / f"ep{ep - 1:03d}" / "log_counselor.md").read_text().strip()
+        mine = (arc / f"ep{ep - 1:03d}" / "log_member.md").read_text().strip()
+        assert notes.startswith("- Member says") and mine.startswith("- I said")
+        session = _session(arc, ep)
+        assert notes in session["counselor_system_prompt"] and mine not in session["counselor_system_prompt"]
+        assert mine in session["member_system_prompt"] and notes not in session["member_system_prompt"]
+        assert (arc / f"ep{ep - 1:03d}" / "log.md").is_file()  # the shared log is still kept
+
+
+def test_fork_resumes_after_session_one(tmp_path, monkeypatch):
+    """analysis/fork_run.py: session 1 copied, session 2's situation the source's, then any mode."""
+    import sys
+    sys.path.insert(0, str(ROOT.parent / "analysis"))
+    import fork_run
+
+    source, _ = produce(tmp_path / "source", monkeypatch, None)
+    src_run = source.parents[2]
+    member = source.parent.name
+    (tmp_path / "ids.txt").write_text(member + "\n")
+    for mode in ("none", "split"):
+        _env(tmp_path / f"fork_{mode}", monkeypatch)
+        out = tmp_path / f"fork_{mode}" / "run"
+        argv = ["fork_run.py", "--src", str(src_run), "--members_file", str(tmp_path / "ids.txt"), "--",
+                "--output_dir", str(out), "--sessions", "3", "--max_turns", "3", "--max_workers", "1",
+                "--memory_mode", mode]
+        monkeypatch.setattr(sys, "argv", argv)
+        assert fork_run.main() == 0
+        arc = out / "members" / member / "arc"
+        for name in ("ep000/trace.jsonl", "ep000/log.md", "ep000/situation.yaml", "ep001/situation.yaml"):
+            assert (arc / name).read_bytes() == (source / name).read_bytes(), f"{mode}: {name}"
+        assert json.loads((arc / "arc.json").read_text())["arc_id"] == json.loads((source / "arc.json").read_text())["arc_id"]
+        if mode == "none":  # the member walks into session 2 exactly as in the source run
+            assert _session(arc, 1)["member_system_prompt"] == _session(source, 1)["member_system_prompt"]
+            assert _session(arc, 1)["counselor_system_prompt"] == _session(source, 0)["counselor_system_prompt"]
+        else:  # split catches each side's log up on the forked session 1
+            assert (arc / "ep000" / "log_counselor.md").read_text().strip() in _session(arc, 1)["counselor_system_prompt"]
+            assert (arc / "ep000" / "log_member.md").read_text().strip() in _session(arc, 1)["member_system_prompt"]
+        assert json.loads((out / "fork.json").read_text())["members"] == [member]

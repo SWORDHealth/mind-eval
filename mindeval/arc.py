@@ -6,12 +6,16 @@ are seeded by the member and the seed alone, so every counselor meets the same s
 
 Between sessions the patient model makes two calls. Compaction folds the session into one running
 log, which is the whole of memory: the member carries it into the next session and the counselor
-walks in with the same log under `# Memory`. `counselor_memory_mode` changes what the counselor
-receives there, and nothing else: `compacted` (the default) is the log; `none` is the session-1 text
-in every session, as if nothing had been kept; `full` is every earlier session verbatim, the transcript
-compaction reads, oldest first, the oldest dropped first past `FULL_MEMORY_MAX_CHARS`. The member's
-side never changes, and the mode is a counselor setting outside the fingerprint, so every mode meets
-the same schedule. Evolution writes the next session's situation from the
+walks in with the same log under `# Memory`. `memory_mode` changes what each side carries:
+`compacted` (the default) is the log, on both sides; `none` gives the counselor the session-1 text in
+every session, as if it kept nothing, while the member keeps the log; `full` gives both sides every
+earlier session verbatim instead of the log, the transcript compaction reads, oldest first, the oldest
+dropped first past `FULL_MEMORY_MAX_CHARS`, so the counselor never remembers more than the member;
+`split` gives each side a log of its own, compacted separately by the patient model: objective case
+notes for the counselor (`log_counselor.md`), the member's own first-person recollection for the
+member (`log_member.md`). Its two prompts are under `prompts/ablation/`, outside the fingerprint.
+Compaction of the shared log runs in every mode, so every arc has it. The mode is a run setting outside the
+fingerprint, so every mode meets the same schedule. Evolution writes the next session's situation from the
 member's formulation, the last situation, the last conversation, the time that has passed and the
 drawn beat; its opening message is the member's first line next time.
 
@@ -191,19 +195,29 @@ def counselor_memory(log: list[str]) -> str:
     return render("memory_log", reader="counsellor", log=render_log(log)).rstrip()
 
 
-#: What the counselor's memory can be. Only the counselor's `# Memory` text differs between them.
-COUNSELOR_MEMORY_MODES = ("compacted", "none", "full")
+#: What each side carries between sessions (see the module docstring).
+MEMORY_MODES = ("compacted", "none", "full", "split")
+#: `split`: the prompt each side's log is compacted with, and the file it is written to.
+SPLIT = {"counselor": ("ablation/compact_counselor", "log_counselor.md"),
+         "member": ("ablation/compact_member", "log_member.md")}
+_SPLIT_MEMBER_INTRO = ("What you remember of your earlier conversations with the AI counsellor, oldest first, in "
+                       "your own words. Lines tagged `[open]` are things you said you would do and have not come back "
+                       "to yet.")
 #: The cap on `full` memory, about 30k tokens: whole sessions are kept newest first while they fit.
 FULL_MEMORY_MAX_CHARS = 120_000
-_FULL_INTRO = ("Transcripts of your previous sessions with this member, oldest first. \"Counsellor\" is you; "
-               "\"Member\" is the member.")
+_FULL_INTRO = {
+    "counsellor": "Transcripts of your previous sessions with this member, oldest first. \"Counsellor\" is you; "
+                  "\"Member\" is the member.",
+    "member": "Your earlier conversations with the AI counsellor, word for word, oldest first. \"Member\" is you.",
+}
 
 
-def counselor_full_memory(sessions: list, max_chars: int = FULL_MEMORY_MAX_CHARS) -> str:
-    """Every earlier session verbatim, as compaction reads it, oldest first. Past `max_chars` the oldest
-    sessions are left out whole, and the text says how many."""
+def full_memory(sessions: list, reader: str, max_chars: int = FULL_MEMORY_MAX_CHARS) -> str:
+    """Every earlier session verbatim, as compaction reads it, oldest first, framed for `reader` ("member" or
+    "counsellor"). Past `max_chars` the oldest sessions are left out whole, and the text says how many."""
+    intro = _FULL_INTRO[reader]
     blocks = [f"Session {i + 1}:\n{_conversation(s.member_messages, 'Member')}" for i, s in enumerate(sessions)]
-    kept, size = [], len(_FULL_INTRO)
+    kept, size = [], len(intro)
     for block in reversed(blocks):
         if kept and size + len(block) + 2 > max_chars:
             break
@@ -212,18 +226,38 @@ def counselor_full_memory(sessions: list, max_chars: int = FULL_MEMORY_MAX_CHARS
     dropped = len(blocks) - len(kept)
     note = ([f"({dropped} earlier session{'s are' if dropped > 1 else ' is'} not included: the transcripts are "
              "too long to carry.)"] if dropped else [])
-    return "\n\n".join([_FULL_INTRO, *note, *kept])
+    return "\n\n".join([intro, *note, *kept])
 
 
-def counselor_memory_for(mode: str, log: list[str], sessions: list, ep: int) -> str:
+def _check_mode(mode: str) -> None:
+    if mode not in MEMORY_MODES:
+        raise ValueError(f"unknown memory mode {mode!r}; choose one of {MEMORY_MODES}")
+
+
+def counselor_memory_for(mode: str, log: list[str], sessions: list, ep: int,
+                         split: dict[str, list[str]] | None = None) -> str:
     """The counselor's `# Memory` text for session `ep` (0-based) under `mode`."""
+    _check_mode(mode)
     if mode == "compacted":
         return counselor_memory(log if ep > 0 else [])
     if mode == "none" or ep == 0:
         return counselor_memory([])
+    if mode == "split":
+        return counselor_memory(split["counselor"])
+    return full_memory(sessions[:ep], "counsellor")
+
+
+def member_memory_for(mode: str, log: list[str], sessions: list, ep: int,
+                      split: dict[str, list[str]] | None = None) -> str | None:
+    """What the member carries into session `ep` (0-based) under `mode`: nothing in session 1."""
+    _check_mode(mode)
+    if ep == 0:
+        return None
     if mode == "full":
-        return counselor_full_memory(sessions[:ep])
-    raise ValueError(f"unknown counselor memory mode {mode!r}; choose one of {COUNSELOR_MEMORY_MODES}")
+        return full_memory(sessions[:ep], "member")
+    if mode == "split":
+        return f"{_SPLIT_MEMBER_INTRO}\n\n{render_log(split['member'])}"
+    return member_memory(log)
 
 
 def _conversation(messages: list[dict], member_label: str) -> str:
@@ -232,11 +266,14 @@ def _conversation(messages: list[dict], member_label: str) -> str:
 
 
 def compact_log(prior: list[str], session: SessionRecord, patient: CallSpec, *, max_entries: int,
-                arc_seed: int, arc_id: str, episode_id: int) -> list[str]:
-    """Fold one closed session into the log and return the whole log. Raises after three attempts."""
-    prompt = render("compact_log", prior_log=render_log(prior),
-                    transcript=_conversation(session.member_messages, "Member"), max_entries=max_entries)
-    seed = provider_seed(turn_seed(arc_seed, arc_id, episode_id, "compact_log"))
+                arc_seed: int, arc_id: str, episode_id: int, template: str = "compact_log",
+                **context) -> list[str]:
+    """Fold one closed session into the log and return the whole log. Raises after three attempts.
+    `template` other than the shared log's draws its seed from a stream of its own."""
+    prompt = render(template, prior_log=render_log(prior),
+                    transcript=_conversation(session.member_messages, "Member"), max_entries=max_entries, **context)
+    kind = "compact_log" if template == "compact_log" else f"compact_log:{template}"
+    seed = provider_seed(turn_seed(arc_seed, arc_id, episode_id, kind))
     err = None
     for attempt in range(3):
         try:
@@ -299,9 +336,11 @@ def _situation_file(s: Situation, episode_id: int) -> str:
 # -- checkpoints -----------------------------------------------------------------------------------
 
 def _save_state(out: Path, *, arc_id: str, fingerprint: str, done: int, clock: float, log: list[str],
-                episodes: list[EpisodeRef]) -> None:
+                episodes: list[EpisodeRef], split: dict[str, list[str]] | None = None) -> None:
     payload = {"version": STATE_VERSION, "arc_id": arc_id, "fingerprint": fingerprint, "episodes_done": done,
                "clock": clock, "log": log, "episodes": [e.model_dump() for e in episodes]}
+    if split is not None:
+        payload["split"] = split
     tmp = out / (STATE_FILE + ".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
     tmp.replace(out / STATE_FILE)
@@ -321,7 +360,8 @@ def _load_state(out: Path, *, arc_id: str, fingerprint: str):
         if session is None:
             raise ValueError(f"{path} says {done} session(s) finished but session {i + 1} has no record")
         sessions.append(session)
-    return done, float(ck["clock"]), list(ck["log"]), [EpisodeRef(**e) for e in ck["episodes"]], sessions
+    return (done, float(ck["clock"]), list(ck["log"]), [EpisodeRef(**e) for e in ck["episodes"]], sessions,
+            ck.get("split"))
 
 
 def set_aside_partial(arc_dir: Path) -> str | None:
@@ -346,23 +386,37 @@ def set_aside_partial(arc_dir: Path) -> str | None:
 # -- the run ---------------------------------------------------------------------------------------
 
 def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, patient: CallSpec, sessions: int,
-            max_turns: int, arc_seed: int, out: Path, counselor_memory_mode: str = "compacted") -> ArcRecord:
-    if counselor_memory_mode not in COUNSELOR_MEMORY_MODES:
-        raise ValueError(f"unknown counselor memory mode {counselor_memory_mode!r}; choose one of "
-                         f"{COUNSELOR_MEMORY_MODES}")
+            max_turns: int, arc_seed: int, out: Path, memory_mode: str = "compacted") -> ArcRecord:
+    _check_mode(memory_mode)
     arc_id = arc_id_of(row, arc_seed, cfg.fingerprint)
     shape = draw_shape(cfg.episode, row, arc_seed, arc_id, sessions)
     anchor = Anchor(shape.anchor_weekday, shape.anchor_hour)
     spacing_hours = cfg.episode.turn_spacing_minutes / 60
     out.mkdir(parents=True, exist_ok=True)
 
-    start, clock, log, episodes, done_sessions = 0, 0.0, [], [], []
+    start, clock, log, episodes, done_sessions, split = 0, 0.0, [], [], [], None
     situation = row.situation
     resumed = _load_state(out, arc_id=arc_id, fingerprint=cfg.fingerprint)
     if resumed is not None:
-        start, clock, log, episodes, done_sessions = resumed
+        start, clock, log, episodes, done_sessions, split = resumed
         if start > 0:
             situation = Situation.model_validate(done_sessions[-1].situation)
+
+    def compact_split(prior: dict[str, list[str]], record: SessionRecord, ep: int) -> dict[str, list[str]]:
+        logs = {}
+        for side, (template, name) in SPLIT.items():
+            logs[side] = compact_log(prior[side], record, patient, max_entries=cfg.patient.log_max_entries,
+                                     arc_seed=arc_seed, arc_id=arc_id, episode_id=ep, template=template,
+                                     formulation=row.formulation)
+            (out / f"ep{ep:03d}" / name).write_text(render_log(logs[side]) + "\n", encoding="utf-8")
+        return logs
+
+    if memory_mode == "split" and split is None:
+        # Resumed from a checkpoint made in another mode (a fork after session 1): each side's log is caught up on
+        # the sessions already finished, in order.
+        split = {"counselor": [], "member": []}
+        for i, record in enumerate(done_sessions):
+            split = compact_split(split, record, i)
 
     for ep in range(start, sessions):
         ep_dir = out / f"ep{ep:03d}"
@@ -386,8 +440,8 @@ def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, patient: CallS
         prev_close = episodes[-1].closed_ts if episodes else None
         record = run_session(cfg, row, situation, knobs, counselor, patient=patient, max_turns=max_turns,
                              seed=ep_seed, trace_path=trace_path,
-                             memory_text=member_memory(log) if ep > 0 else None,
-                             counselor_memory=counselor_memory_for(counselor_memory_mode, log, done_sessions, ep),
+                             memory_text=member_memory_for(memory_mode, log, done_sessions, ep, split),
+                             counselor_memory=counselor_memory_for(memory_mode, log, done_sessions, ep, split),
                              time_context=describe_now(anchor, clock, prev_close))
         turns, _ = read_trace(trace_path)
         turn_ts = [clock + i * spacing_hours for i in range(len(turns))]
@@ -397,6 +451,8 @@ def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, patient: CallS
         log = compact_log(log, record, patient, max_entries=cfg.patient.log_max_entries, arc_seed=arc_seed,
                           arc_id=arc_id, episode_id=ep)
         compact_ms = round((time.monotonic() - t0) * 1000, 1)
+        if memory_mode == "split":
+            split = compact_split(split, record, ep)
         rendered = render_log(log)
         (ep_dir / "log.md").write_text(rendered + "\n", encoding="utf-8")
         episodes.append(EpisodeRef(
@@ -409,7 +465,7 @@ def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, patient: CallS
         if ep < sessions - 1:
             clock = closed + shape.gaps_hours[ep]
         _save_state(out, arc_id=arc_id, fingerprint=cfg.fingerprint, done=ep + 1, clock=clock, log=log,
-                    episodes=episodes)
+                    episodes=episodes, split=split)
 
     arc = ArcRecord(arc_id=arc_id, arc_seed=arc_seed, profile_id=row.member_id,
                     situation_id=row.situation.situation_id, fingerprint=cfg.fingerprint, shape=shape,

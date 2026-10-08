@@ -1,0 +1,35 @@
+# The paper's counselor runs. Paths are relative to the runs root (--runs_root, or MINDEVAL_RUNS_ROOT).
+#
+# Every run plays the same 50 members (profiles sha256 464da37f…) with base seed 0, 3 sessions, at most 30 counselor
+# replies a session, DeepSeek-V4.1-Flash as the patient. Two harness fingerprints are in the set: within one
+# fingerprint every counselor meets the same schedule (gaps, beats, concealment, affect); across the two, the
+# session-2 and session-3 schedules differ for some members. `fingerprint` is checked against each run.json.
+#
+# Judges: `own` is the verdicts each run was judged with when it was made (MindJudge-27B); the others are re-judgings
+# of the same runs kept under <runs_root>/judging/<judge>/<key>/judge/mindeval2/.
+
+runs:
+  - {key: gpt56terra, label: GPT-5.6 Terra, path: mindeval2_counselors/gpt56terra, fingerprint: d4e680b4dd653883}
+  - {key: gpt56sol, label: GPT-5.6 Sol, path: mindeval2_counselors/gpt56sol, fingerprint: d4e680b4dd653883}
+  - {key: gpt56luna, label: GPT-5.6 Luna, path: mindeval2_counselors/gpt56luna, fingerprint: d4e680b4dd653883}
+  - {key: sonnet5, label: Claude Sonnet 5, path: mindeval2_counselors/sonnet5, fingerprint: d4e680b4dd653883}
+  - {key: gemini38flash, label: Gemini 3.8 Flash, path: mindeval2_counselors/gemini38flash, fingerprint: d4e680b4dd653883}
+  - {key: kimik3, label: Kimi K3, path: mindeval2_counselors/kimik3, fingerprint: d4e680b4dd653883}
+  - {key: glm53, label: GLM-5.3, path: mindeval2_glm53/run, fingerprint: d4e680b4dd653883}
+  - {key: qwen38_27b, label: Qwen3.8 27B, path: mindeval_qwen/qwen38_27b, fingerprint: 7962e7caed157571}
+  - {key: qwen35_27b, label: Qwen3.5 27B, path: mindeval_qwen/qwen35_27b, fingerprint: 7962e7caed157571}
+  - {key: qwen35_9b, label: Qwen3.5 9B, path: mindeval_qwen/qwen35_9b, fingerprint: 7962e7caed157571}
+  - {key: qwen35_4b, label: Qwen3.5 4B, path: mindeval_qwen/qwen35_4b, fingerprint: 7962e7caed157571}
+  - {key: gemma4_31b, label: Gemma 4 31B, path: mindeval_qwen/gemma4_31b, fingerprint: 7962e7caed157571}
+  - {key: gemma4_26b_a4b, label: Gemma 4 26B-A4B, path: mindeval_qwen/gemma4_26b_a4b, fingerprint: 7962e7caed157571}
+  - {key: gemma4_12b, label: Gemma 4 12B, path: mindeval_qwen/gemma4_12b, fingerprint: 7962e7caed157571}
+  - {key: muse_glimmer_30b, label: Muse Glimmer 30B, path: mindeval_qwen/muse_glimmer_30b, fingerprint: 7962e7caed157571}
+  - {key: claude_opus5, label: Claude Opus 5, path: mindeval_qwen/claude_opus5, fingerprint: 7962e7caed157571}
+  - {key: qwen35_397b, label: Qwen3.5 397B-A17B, path: mindeval_qwen/qwen35_397b, fingerprint: 7962e7caed157571}
+  - {key: qwen35_122b, label: Qwen3.5 122B-A10B, path: mindeval_qwen/qwen35_122b, fingerprint: 7962e7caed157571}
+
+judges:
+  gpt61_sol: {label: GPT-6.1 Sol, dir: judging/gpt61_sol}
+  own: {label: MindJudge-27B}
+  deepseek_v4: {label: DeepSeek-V4.1-Flash, dir: judging/deepseek_v4}
+  hy4: {label: Hy4-preview, dir: judging/hy4}
