@@ -103,13 +103,31 @@ def analyse(root: Path, runs: list[dict], judges: dict, judge: str, members: lis
     def taus_of(lv):
         return {f"{a}~{b}": kendall_tau_b([lv[k][a] for k in keys], [lv[k][b] for k in keys]) for a, b in CONTRASTS}
 
+    # The interaction itself: how much counselors' changes from session 1 differ from each other (the SD over
+    # counselors of later - s1). Zero if every counselor moved by the same amount; the permutation null gives what
+    # member-level noise alone produces.
+    def spread_of_change(lv, w="later"):
+        xs = [lv[k][w] - lv[k]["s1"] for k in keys]
+        m = mean(xs)
+        return (sum((x - m) ** 2 for x in xs) / (len(xs) - 1)) ** 0.5
+
     tau_point = taus_of(point)
     tau_boot = [taus_of(lv) for lv in boot]
     rng = random.Random(1)
-    tau_null = []
+    tau_null, inter_null = [], []
     for _ in range(PERM):
         perm = permuted(scores, keys, members, rng)
-        tau_null.append(taus_of({k: {w: level(perm[k], w, members) for w in windows} for k in keys}))
+        lv = {k: {w: level(perm[k], w, members) for w in windows} for k in keys}
+        tau_null.append(taus_of(lv))
+        inter_null.append({w: spread_of_change(lv, w) for w in ("s2", "s3", "later")})
+    interaction = []
+    for w in ("s2", "s3", "later"):
+        obs = spread_of_change(point, w)
+        lo, hi = ci([spread_of_change(lv, w) for lv in boot])
+        null = sorted(x[w] for x in inter_null)
+        interaction.append({"judge": judge, "change": f"{w}-s1", "sd_of_change_over_counselors": obs, "lo": lo,
+                            "hi": hi, "null_median": null[len(null) // 2], "null_95": null[int(0.95 * len(null))],
+                            "p_perm": (1 + sum(1 for x in null if x >= obs)) / (1 + len(null))})
     tau_rows = []
     for name in tau_point:
         lo, hi = ci([t[name] for t in tau_boot])
@@ -189,7 +207,8 @@ def analyse(root: Path, runs: list[dict], judges: dict, judge: str, members: lis
         fan.append({"judge": judge, "change": f"{w}-s1", "spearman_s1_vs_change": rho(point), "lo": lo, "hi": hi})
 
     return {"keys": keys, "point": point, "ranks": rk, "n": n, "taus": tau_rows, "changes": change_rows,
-            "pairs": pair_rows, "spread": spread, "fan": fan, "problems": loaded["problems"]}
+            "pairs": pair_rows, "spread": spread, "fan": fan, "interaction": interaction,
+            "problems": loaded["problems"]}
 
 
 def write_csv(path: Path, rows: list[dict]) -> None:
@@ -238,6 +257,10 @@ def report(results: dict, labels: dict, subset: str) -> str:
                          f"{x['ratio_to_s1']:.2f} [{x['ratio_lo']:.2f}, {x['ratio_hi']:.2f}] | {sep} |")
         lines += [""] + [f"- Spearman(session-1 MQM, {x['change']}): {x['spearman_s1_vs_change']:+.2f} "
                          f"[{x['lo']:+.2f}, {x['hi']:+.2f}]" for x in res["fan"]]
+        lines += [""] + [f"- Counselor x session interaction, SD over counselors of {x['change']}: "
+                         f"{x['sd_of_change_over_counselors']:.3f} [{x['lo']:.3f}, {x['hi']:.3f}]; noise alone "
+                         f"(permutation) median {x['null_median']:.3f}, 95th pct {x['null_95']:.3f}; "
+                         f"p = {x['p_perm']:.4f}" for x in res["interaction"]]
         lines += ["", "| counselor | s2 - s1 [95% CI] | excess over mean change | s3 - s1 [95% CI] | excess |",
                   "|---|---|---|---|---|"]
         ch = {(r["counselor"], r["later"]): r for r in res["changes"]}
@@ -282,6 +305,7 @@ def main() -> None:
     write_csv(out / "taus.csv", [t for res in results.values() for t in res["taus"]])
     write_csv(out / "spread.csv", [t for res in results.values() for t in res["spread"]])
     write_csv(out / "fan.csv", [t for res in results.values() for t in res["fan"]])
+    write_csv(out / "interaction.csv", [t for res in results.values() for t in res["interaction"]])
     (out / "report.md").write_text(report(results, labels, args.subset))
     write_manifest(out, "analysis/c1_ranking.py", runs,
                    {j: judge_identity(root, runs, j, judges) for j in results},
