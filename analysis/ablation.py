@@ -186,6 +186,11 @@ def main() -> None:
         if args.labels:
             cont = {mode: {k: continuity_measures(p) for k, p in labels(args.labels / "continuity_v1" / counselor / mode).items()}
                     for mode in ("compacted", *MODES)}
+            # Re-asks and contradictions from the focused labeler (validated on its own), where it has coded.
+            for mode in ("compacted", *MODES):
+                for k, f in labels(args.labels / "reask_contradict_v1" / counselor / mode).items():
+                    if k in cont[mode]:
+                        cont[mode][k].update({"reasks": len(f["reasks"]), "contradicted": len(f["contradictions"])})
             side = {mode: {k: {"corrections": len(p["corrections"]), "repeats": len(p["repeats"])}
                            for k, p in labels(args.labels / "member_side_v1" / counselor / mode).items()}
                     for mode in ("compacted", *MODES)}

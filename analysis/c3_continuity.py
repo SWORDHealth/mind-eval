@@ -1,6 +1,10 @@
 """C3: continuity failures in sessions 2 onward, and whether the MQM judge sees them.
 
-    python analysis/c3_continuity.py --runs_root <dir> --labels <c3_label.py output dir> --agreement <json> --out <dir>
+    python analysis/c3_continuity.py --runs_root <dir> --labels <continuity_v1 labels> [--failures <reask_contradict_v1
+        labels>] --agreement <json> [--failures_agreement <json>] --out <dir>
+
+With --failures, re-asks and contradictions come from the focused labeler (a tighter definition, validated
+separately) and continuity use from continuity_v1.
 
 Per counselor (sessions with no opportunity are left out of the per-opportunity rates):
   used, missed and contradicted per opportunity (pooled over the counselor's opportunities; intervals resample
@@ -66,6 +70,8 @@ def main() -> None:
     ap.add_argument("--runs_root")
     ap.add_argument("--labels", required=True, type=Path)
     ap.add_argument("--agreement", type=Path)
+    ap.add_argument("--failures", type=Path, help="reask_contradict_v1 labels: re-asks and contradictions from here")
+    ap.add_argument("--failures_agreement", type=Path)
     ap.add_argument("--judges", default="gpt61_sol,own,deepseek_v4,hy4")
     ap.add_argument("--out", required=True, type=Path)
     args = ap.parse_args()
@@ -75,6 +81,18 @@ def main() -> None:
     labels_by_run = defaultdict(dict)
     for (name, m, ep), p in labels.items():
         labels_by_run[name][m, ep] = p
+    if args.failures:
+        # Re-asks and contradictions from the focused labeler replace continuity_v1's, on sessions both coded.
+        for (name, m, ep), f in load_labels(args.failures).items():
+            if (m, ep) in labels_by_run.get(name, {}):
+                p = labels_by_run[name][m, ep]
+                p["reasks"] = f["reasks"]
+                p["opportunities"] = [o for o in p["opportunities"] if o["status"] != "contradicted"] + [
+                    {"note": c["note"], "status": "contradicted", "turn": c["turn"], "evidence": c["quote"]}
+                    for c in f["contradictions"]]
+                p["_failures"] = True
+        for name in list(labels_by_run):
+            labels_by_run[name] = {k: p for k, p in labels_by_run[name].items() if p.get("_failures")}
     lines = ["# C3: continuity failures and whether the judge sees them", ""]
     if args.agreement and args.agreement.is_file():
         a = json.loads(args.agreement.read_text())
@@ -87,6 +105,14 @@ def main() -> None:
                   + ", ".join(f"{k} {x['spearman']:.2f}" for k, x in v["session_level"].items())
                   + (f". Test-retest: status kappa {t['note_level']['status_kappa']:.2f}, recall "
                      f"{t['note_level']['recall']:.2f}." if t else "."), ""]
+    if args.failures_agreement and args.failures_agreement.is_file():
+        a = json.loads(args.failures_agreement.read_text())
+        for who, v in a.items():
+            lines.append(f"Failures labeler, {who.replace('_', ' ')} ({v['sessions']} sessions): " + "; ".join(
+                f"{k} {v[k]['labeler_total']} vs {v[k]['reference_total']}, same turn {v[k]['same_turn']} "
+                f"(precision {v[k]['turn_precision']:.2f}, recall {v[k]['turn_recall']:.2f}), any kappa "
+                f"{v[k]['any_kappa']:.2f}" for k in ("reasks", "contradictions")))
+        lines.append("")
     rows = []
     lines += ["| counselor | sessions | with opportunity | used / opp. | missed / opp. | contradicted / opp. | "
               "re-asks / session | sessions with contradiction or re-ask |", "|---|---|---|---|---|---|---|---|"]
