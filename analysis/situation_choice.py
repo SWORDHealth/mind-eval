@@ -28,7 +28,7 @@ import random
 import re
 import sys
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -158,17 +158,21 @@ def main() -> None:
             def ask(job):
                 key, a, b, m, right, prompt = job
                 try:
-                    text, _ = llm.call_messages([{"role": "user", "content": prompt}], args.model, args.api_base,
-                                                0.6, None, 1800, params={}, api_key="EMPTY")
+                    text, meta = llm.call_messages([{"role": "user", "content": prompt}], args.model, args.api_base,
+                                                   0.6, 16000, 1800, params={}, api_key="EMPTY")
+                    if meta.get("finish_reason") == "length":
+                        raise ValueError("cut at 16000 tokens")
                     said = (re.findall(r"\b([AB])\b", text.split("</think>")[-1]) or ["?"])[-1]
                 except Exception as e:  # noqa: BLE001
                     said = f"error: {e}"[:200]
                 return {"key": key, "pair": f"{a}|{b}", "member": m, "right": right, "said": said}
 
             llm._lib()
-            with ThreadPoolExecutor(max_workers=64) as pool, cache_path.open("a") as f:
-                for res in pool.map(ask, jobs):
+            with ThreadPoolExecutor(max_workers=96) as pool, cache_path.open("a") as f:
+                for fut in as_completed([pool.submit(ask, j) for j in jobs]):
+                    res = fut.result()
                     f.write(json.dumps(res) + "\n")
+                    f.flush()
                     cache[res["key"]] = res
             lines += ["", "| pair | asked | forced-choice accuracy [95% CI] |", "|---|---|---|"]
             for a, b in pairs:
