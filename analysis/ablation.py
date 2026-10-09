@@ -22,10 +22,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections import defaultdict
 from pathlib import Path
 
 from common import BOOT, WEIGHT, ci, git_describe, load_verdicts, mean, member_draws
+from common import ISSUES as ALL_ISSUES
 
 MODES = ("none", "full", "split")
 ISSUES = ("missed_shared_context", "false_memory")
@@ -41,6 +43,16 @@ def session_scores(verdicts: dict) -> dict[tuple[str, str], dict]:
             s[k] += v.get(k) == 1
     return {k: {"mqm": sum(s["w"]) / len(s["w"]), "major_plus": s["major"] / len(s["w"]),
                 **{i: s[i] / len(s["w"]) for i in ISSUES}, "n": len(s["w"])} for k, s in acc.items()}
+
+
+def issue_rates(path: Path) -> dict[tuple[str, str], dict[str, float]]:
+    """(member, episode) -> share of the session's replies carrying each issue flag, sessions 2 onward."""
+    acc: dict = defaultdict(lambda: defaultdict(list))
+    for v in load_verdicts(path).values():
+        if v["episode"] != "ep000":
+            for i in ALL_ISSUES:
+                acc[v["member"], v["episode"]][i].append(v.get(i) == 1)
+    return {k: {i: mean(x) for i, x in d.items()} for k, d in acc.items()}
 
 
 def traces(run: Path) -> dict[tuple[str, str], dict]:
@@ -72,6 +84,40 @@ def labels(path: Path) -> dict[tuple[str, str], dict]:
             k = keys[x["id"]]
             out[k["member"], k["episode"]] = x["parsed"]
     return out
+
+
+STOP = set("the a an and or but to of in on at for with is was were be been it its this that i you he she they we my your "
+           "her his their me him them not no do did does have has had so if as about from by up out what how why when "
+           "who which there then just like get got going know think feel said say says member counsellor dont im "
+           "thats".split())
+WORD = re.compile(r"[a-z']+")
+
+
+def _words(text: str) -> set[str]:
+    return {w for w in WORD.findall(text.lower()) if len(w) > 3 and w not in STOP}
+
+
+def beyond_restatement(run: Path, member: str, ep: str, parsed: dict) -> int:
+    """How many of the labeler's `used` codes the member's own earlier words this session do not explain: the
+    content words the counselor's reply shares with the note are mostly (>= 70%) absent from the member's turns
+    before it. The labeler counts building on a restated fact as use; this keeps only use that needed the memory."""
+    trace = run / "members" / member / "arc" / ep / "trace.jsonl"
+    log_path = run / "members" / member / "arc" / f"ep{int(ep[2:]) - 1:03d}" / "log.md"
+    if not trace.is_file() or not log_path.is_file():
+        return 0
+    turns = {x["turn"]: x for x in map(json.loads, trace.read_text().split("\n")[:-1]) if x.get("type") == "turn"}
+    log = log_path.read_text().splitlines()
+    n = 0
+    for o in parsed["opportunities"]:
+        if o["status"] != "used" or not o.get("turn"):
+            continue
+        k = int(o["note"][1:]) - 1
+        shared = _words(log[k]) & _words((turns.get(o["turn"]) or {}).get("counselor_utterance") or "") \
+            if k < len(log) else set()
+        before = set().union(*([_words(turns[i].get("utterance") or "") for i in turns if i < o["turn"]] or [set()]))
+        if shared and len(shared & before) / len(shared) < 0.7:
+            n += 1
+    return n
 
 
 def continuity_measures(p: dict) -> dict:
@@ -161,6 +207,37 @@ def main() -> None:
                             cells.append(f"{scale * r['diff']:+.2f} [{scale * r['lo']:+.2f}, {scale * r['hi']:+.2f}]"
                                          f" ({r['n_members']}, {r['n_sessions']})")
                     lines.append(f"| {mode} | {view} | " + " | ".join(cells) + " |")
+            # Per session index: does the gap grow over the horizon?
+            eps = sorted({e for (m, e) in comp if e != "ep000"})
+            lines += ["", f"MQM by session ({judge}; condition minus compacted, [95% CI]):", "",
+                      "| condition | view | " + " | ".join(f"s{int(e[2:]) + 1}" for e in eps) + " |",
+                      "|---|---|" + "---|" * len(eps)]
+            for mode in MODES:
+                for view in ("as_sent", "reference"):
+                    vp = base_dir / mode / view / "judge" / "mindeval2" / "verdicts.jsonl"
+                    if not vp.is_file():
+                        continue
+                    cond = session_scores(load_verdicts(vp))
+                    cells = []
+                    for e in eps:
+                        r = paired(cond, comp, "mqm", members, [e])
+                        rows.append({"counselor": counselor, "judge": judge, "mode": mode, "view": view,
+                                     "field": f"mqm_{e}", **r})
+                        cells.append("-" if r["diff"] is None else f"{r['diff']:+.2f} [{r['lo']:+.2f}, {r['hi']:+.2f}]")
+                    lines.append(f"| {mode} | {view} | " + " | ".join(cells) + " |")
+            # Which issues move (pooled share of replies, condition minus compacted, paired by session).
+            lines += ["", f"Issues that move most ({judge}, points of replies flagged):", ""]
+            base_rates = issue_rates(ref)
+            for mode in MODES:
+                for view in ("as_sent", "reference"):
+                    vp = base_dir / mode / view / "judge" / "mindeval2" / "verdicts.jsonl"
+                    if not vp.is_file():
+                        continue
+                    cr = issue_rates(vp)
+                    keys = set(cr) & set(base_rates)
+                    d = {i: 100 * mean(cr[k][i] - base_rates[k][i] for k in keys) for i in ALL_ISSUES} if keys else {}
+                    top = sorted(d.items(), key=lambda kv: -abs(kv[1]))[:4]
+                    lines.append(f"- {mode}, {view}: " + ", ".join(f"{i} {x:+.1f}" for i, x in top))
             lines.append("")
         # Tokens and lengths from the traces.
         tr = {mode: traces(run) for mode, run in runs.items()}
@@ -184,8 +261,14 @@ def main() -> None:
                       + ", ".join(f"s{int(e[2:]) + 1} {mean(x):.0f} (max {max(x)})" for e, x in sorted(by_ep.items()))]
         # Labels.
         if args.labels:
-            cont = {mode: {k: continuity_measures(p) for k, p in labels(args.labels / "continuity_v1" / counselor / mode).items()}
-                    for mode in ("compacted", *MODES)}
+            cont = {}
+            for mode in ("compacted", *MODES):
+                cont[mode] = {}
+                for k, p in labels(args.labels / "continuity_v1" / counselor / mode).items():
+                    c = continuity_measures(p)
+                    n_ops = c["opportunities"]
+                    c["memory_use_share"] = (beyond_restatement(runs[mode], k[0], k[1], p) / n_ops) if n_ops else None
+                    cont[mode][k] = c
             # Re-asks and contradictions from the focused labeler (validated on its own), where it has coded.
             for mode in ("compacted", *MODES):
                 for k, f in labels(args.labels / "reask_contradict_v1" / counselor / mode).items():
@@ -195,18 +278,20 @@ def main() -> None:
                            for k, p in labels(args.labels / "member_side_v1" / counselor / mode).items()}
                     for mode in ("compacted", *MODES)}
             lines += ["", "### Continuity (labeler) and the member's side", "",
-                      "| condition | used / opportunity | missed / opportunity | contradictions / session | "
-                      "re-asks / session | member corrections / session | member repeats / session |",
-                      "|---|---|---|---|---|---|---|"]
+                      "| condition | used / opportunity | used beyond restatement / opportunity | missed / opportunity "
+                      "| contradictions / session | re-asks / session | member corrections / session | member repeats / "
+                      "session |", "|---|---|---|---|---|---|---|---|"]
             for mode in ("compacted", *MODES):
                 c, s = cont.get(mode, {}), side.get(mode, {})
                 if not c and not s:
                     continue
-                vals = [level(c, f) if c else None for f in ("used_share", "missed_share", "contradicted", "reasks")]
+                vals = [level(c, f) if c else None
+                        for f in ("used_share", "memory_use_share", "missed_share", "contradicted", "reasks")]
                 vals += [level(s, f) if s else None for f in ("corrections", "repeats")]
                 lines.append(f"| {mode} | " + " | ".join("-" if v is None else f"{v:.3f}" for v in vals) + " |")
                 if mode != "compacted":
-                    for f, src in (("used_share", c), ("missed_share", c), ("contradicted", c), ("reasks", c)):
+                    for f, src in (("used_share", c), ("memory_use_share", c), ("missed_share", c),
+                                   ("contradicted", c), ("reasks", c)):
                         if src and cont["compacted"]:
                             rows.append({"counselor": counselor, "judge": "labeler", "mode": mode, "view": "-",
                                          "field": f, **paired(src, cont["compacted"], f, members)})
@@ -214,6 +299,11 @@ def main() -> None:
                         if s and side["compacted"]:
                             rows.append({"counselor": counselor, "judge": "labeler", "mode": mode, "view": "-",
                                          "field": f, **paired(s, side["compacted"], f, members)})
+            lines += ["", "Paired against compacted (condition minus compacted, [95% CI], (members, sessions)):", ""]
+            for r in rows:
+                if r["counselor"] == counselor and r["judge"] == "labeler" and r.get("diff") is not None:
+                    lines.append(f"- {r['mode']}, {r['field']}: {r['diff']:+.3f} [{r['lo']:+.3f}, {r['hi']:+.3f}] "
+                                 f"({r['n_members']}, {r['n_sessions']})")
         # Noise floor: the compacted rerun against its source, sessions 2-3, under each judge's verdicts of the source.
         lines += [""]
         src = Path(sources.get(counselor, ""))
