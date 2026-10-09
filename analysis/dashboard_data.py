@@ -182,7 +182,7 @@ def validation(later: Path) -> list[dict]:
     ]
 
 
-def facts(later: Path, stats, iss, cont, flags, abl, beh, tok, sit) -> list[dict]:
+def facts(later: Path, stats, iss, cont, flags, abl, beh, tok, sit, extra: dict | None = None) -> list[dict]:
     """The numbers the page's sentences quote, each named by a key, read from the datasets above."""
     def pick(rs, **kw):
         return next(r for r in rs if all(r.get(k) == v for k, v in kw.items()))
@@ -240,7 +240,26 @@ def facts(later: Path, stats, iss, cont, flags, abl, beh, tok, sit) -> list[dict
         "full_tokens_max": f"{tmax:,}",
         "floor_min": f"{min(floor):.2f}", "floor_max": f"{max(floor):.2f}",
     }
+    out.update(extra or {})
     return [{"key": k, "display": v} for k, v in out.items()]
+
+
+def strict(later: Path) -> tuple[list[dict], dict]:
+    """Strict re-asks and contradictions coded by reference coders: the judges on those replies, and the figures."""
+    r = json.loads((later / "c3_strict" / "results" / "results.json").read_text())
+    rows = [{"sessions": x["set"], "judge": x["judge"], "view": x["view"], "coded_replies": x["failure_replies"],
+             "memory_flag_failure": round(x["memory_flag_failure"], 3),
+             "memory_flag_other": round(x["memory_flag_other"], 3) if x["memory_flag_other"] is not None else None,
+             "sessions_with_failure": x["sessions_with_failure"],
+             "session_flagged": round(x["session_memory_flag_failure"], 3)} for x in r["crosstab"]]
+    rates = {x["group"]: x for x in r["rates"]}
+    figs = {"strict_kappa_reask": f"{r['agreement']['reasks']['kappa_any']:.2f}",
+            "strict_kappa_contra": f"{r['agreement']['contradictions']['kappa_any']:.2f}",
+            "strict_double_n": f"{r['agreement']['reasks']['sessions']}",
+            "strict_paper_reasks": f"{rates['paper']['reasks'][0]:.2f}",
+            "strict_glm_none_reasks": f"{rates['ablation glm53 none']['reasks'][0]:.2f}",
+            "strict_glm_comp_reasks": f"{rates['ablation glm53 compacted']['reasks'][0]:.2f}"}
+    return rows, figs
 
 
 def api_plans(path: Path) -> list[dict]:
@@ -261,10 +280,11 @@ def main() -> None:
     cont, flags = continuity(args.later, change), judge_flags(args.later)
     abl, beh, tok = ablation_mqm(args.later), ablation_behaviour(args.later), full_tokens(args.later)
     sit = situations(args.later)
-    data = {"ranking_change": change, "ranking_stats": stats, "issues": iss, "continuity": cont, "judge_flags": flags,
+    strict_rows, strict_figs = strict(args.later)
+    data = {"strict_crosstab": strict_rows, "ranking_change": change, "ranking_stats": stats, "issues": iss, "continuity": cont, "judge_flags": flags,
             "ablation_mqm": abl, "ablation_behaviour": beh, "full_tokens": tok, "situations": sit,
             "validation": validation(args.later), "api_plans": api_plans(args.api_plans),
-            "facts": facts(args.later, stats, iss, cont, flags, abl, beh, tok, sit)}
+            "facts": facts(args.later, stats, iss, cont, flags, abl, beh, tok, sit, strict_figs)}
     for name, rs in data.items():
         (args.out / f"{name}.json").write_text(json.dumps(rs, ensure_ascii=False, indent=1) + "\n")
         print(f"{name}: {len(rs)} rows")
