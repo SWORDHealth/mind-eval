@@ -182,15 +182,3 @@ def test_fork_resumes_after_session_one(tmp_path, monkeypatch):
             assert (arc / "ep000" / "log_counselor.md").read_text().strip() in _session(arc, 1)["counselor_system_prompt"]
             assert (arc / "ep000" / "log_member.md").read_text().strip() in _session(arc, 1)["member_system_prompt"]
         assert json.loads((out / "fork.json").read_text())["members"] == [member]
-
-
-def test_full_counselor_leaves_the_member_as_in_compacted(tmp_path, monkeypatch):
-    comp, _ = produce(tmp_path / "compacted", monkeypatch, "compacted")
-    fc, _ = produce(tmp_path / "full_counselor", monkeypatch, "full_counselor")
-    # The member walks into session 2 exactly as in compacted, and carries the log, not transcripts.
-    assert _session(fc, 1)["member_system_prompt"] == _session(comp, 1)["member_system_prompt"]
-    assert (fc / "ep001" / "log.md").read_text().strip() in _session(fc, 2)["member_system_prompt"]
-    counselor = _session(fc, 2)["counselor_system_prompt"]
-    assert "Session 1" in counselor and "Session 2" in counselor
-    for msg in _session(fc, 0)["member_messages"]:
-        assert msg["content"] in counselor

@@ -194,9 +194,8 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
         max_workers: members run in parallel
         memory_mode: what each side carries between sessions: compacted (the running log, on both sides;
             the benchmark), none (the counselor gets its session-1 text in every session; the member keeps
-            the log), full (both sides get every earlier session verbatim, the oldest dropped first past
-            about 30k tokens), full_counselor (only the counselor does; the member keeps the log) or split
-            (each side its own log: objective notes for the counselor, the member's recollection)
+            the log) or full (both sides get every earlier session verbatim, the oldest dropped first past
+            about 30k tokens)
         dry_run: validate and render prompts; no model calls, no writes
 
     Returns:
