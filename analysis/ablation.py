@@ -310,8 +310,10 @@ def main() -> None:
         for judge in args.judges.split(","):
             rerun = args.root / "judging" / judge / args.batch / counselor / "compacted" / "as_sent" / "judge" / "mindeval2" / "verdicts.jsonl"
             own = {"mindjudge": [src / "judge" / "mindeval2" / "verdicts.jsonl", src / "judge" / "verdicts.jsonl"],
-                   "deepseek_v4": [Path(f"/mnt/data/jmendonca/MindSim-runs/judging/deepseek_v4/{counselor}/judge/mindeval2/verdicts.jsonl"),
-                                   args.root / "judging" / "deepseek_v4" / "source" / counselor / "as_sent" / "judge" / "mindeval2" / "verdicts.jsonl"]}
+                   # The source re-judged on the same DeepSeek server as the ablation; older verdicts of the source
+                   # (another serving of the model) only as a fallback, since a judge's serving can shift its level.
+                   "deepseek_v4": [args.root / "judging" / "deepseek_v4" / "source" / counselor / "as_sent" / "judge" / "mindeval2" / "verdicts.jsonl",
+                                   Path(f"/mnt/data/jmendonca/MindSim-runs/judging/deepseek_v4/{counselor}/judge/mindeval2/verdicts.jsonl")]}
             src_path = next((p for p in own.get(judge, []) if p.is_file()), None)
             if src_path is None or not rerun.is_file():
                 continue
