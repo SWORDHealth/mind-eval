@@ -32,13 +32,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import BOOT, ci, git_describe, mean, member_draws  # noqa: E402
+from common import BOOT, ablation_counselors, ci, git_describe, mean, member_draws, runs_root  # noqa: E402
 
 from mindeval import llm  # noqa: E402
 
 WORD = re.compile(r"[a-z']+")
-SOURCES = {"glm53": "/mnt/data/jmendonca/MindSim-runs/mindeval2_preserve/glm53",
-           "gemma4_12b": "/mnt/data/jmendonca/MindSim-runs/mindeval_qwen/gemma4_12b"}
 CHOICE = """Below is a conversation between a person and an AI counsellor, and two short descriptions of what happened
 to that person afterwards, before their next conversation. Both are plausible. Exactly one of them was written as
 the continuation of this particular conversation. Which one?
@@ -98,15 +96,17 @@ def main() -> None:
     ap.add_argument("--model", default="hosted_vllm/nemotron-3.5-super-ea")
     ap.add_argument("--api_base", default="http://worker-11:8067/v1")
     ap.add_argument("--max_tokens", type=int, default=48000, help="cut a runaway reasoning loop; retried on rerun")
+    ap.add_argument("--runs_root", help="the source runs' root (else MINDEVAL_RUNS_ROOT); sources from runs.yaml")
     ap.add_argument("--out", required=True, type=Path)
     args = ap.parse_args()
+    sources = {k: runs_root(args.runs_root) / c["path"] for k, c in ablation_counselors().items()}
     args.out.mkdir(parents=True, exist_ok=True)
     prev = f"ep{int(args.episode[2:]) - 1:03d}"
     lines, rows = [f"# Session-{int(args.episode[2:]) + 1} situations across memory conditions ({args.batch})", ""], []
     for cdir in sorted(p for p in (args.root / args.batch).iterdir() if p.is_dir()):
         c = cdir.name
         runs = {m.name: m for m in cdir.iterdir() if (m / "run.json").is_file()}
-        runs["source"] = Path(SOURCES[c])
+        runs["source"] = sources[c]
         members = json.loads((runs["compacted"] / "run.json").read_text())["member_ids"]
         docs = {}
         for name, run in runs.items():
@@ -196,7 +196,7 @@ def main() -> None:
     (args.out / "rows.json").write_text(json.dumps(rows, indent=2) + "\n")
     (args.out / "manifest.json").write_text(json.dumps({"script": "analysis/situation_choice.py",
                                                         "analysis_git": git_describe(), "batch": args.batch,
-                                                        "episode": args.episode, "sources": SOURCES,
+                                                        "episode": args.episode, "sources": {k: str(v) for k, v in sources.items()},
                                                         "choice_model": args.model if args.choice else None},
                                                        indent=2) + "\n")
     print("\n".join(lines))

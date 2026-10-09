@@ -26,7 +26,7 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
-from common import BOOT, WEIGHT, ci, git_describe, load_verdicts, mean, member_draws
+from common import BOOT, WEIGHT, ablation_counselors, ci, git_describe, load_verdicts, mean, member_draws, runs_root
 from common import ISSUES as ALL_ISSUES
 
 MODES = ("none", "full", "split")
@@ -160,11 +160,10 @@ def main() -> None:
     ap.add_argument("--batch", default="main6")
     ap.add_argument("--judges", default="mindjudge,deepseek_v4")
     ap.add_argument("--labels", type=Path, help="directory holding <prompt>/<counselor>/<mode>/ label outputs")
-    ap.add_argument("--sources", default="glm53=/mnt/data/jmendonca/MindSim-runs/mindeval2_preserve/glm53,"
-                                        "gemma4_12b=/mnt/data/jmendonca/MindSim-runs/mindeval_qwen/gemma4_12b")
+    ap.add_argument("--runs_root", help="the source runs' root (else MINDEVAL_RUNS_ROOT); sources from runs.yaml")
     ap.add_argument("--out", required=True, type=Path)
     args = ap.parse_args()
-    sources = dict(x.split("=", 1) for x in args.sources.split(","))
+    sources = {k: str(runs_root(args.runs_root) / c["path"]) for k, c in ablation_counselors().items()}
     args.out.mkdir(parents=True, exist_ok=True)
     rows, lines = [], [f"# Memory ablation ({args.batch})", "",
                        "Each cell: condition minus compacted, mean over members of the per-member mean over sessions "

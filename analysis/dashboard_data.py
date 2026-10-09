@@ -15,11 +15,11 @@ import json
 import re
 from pathlib import Path
 
-from common import EPISODES, ci, load_judge, mean, member_draws, registry, runs_root
+from common import EPISODES, ablation_counselors, ci, load_judge, mean, member_draws, registry, runs_root
 
 JUDGES = {"gpt61_sol": "GPT-6.1 Sol", "own": "MindJudge-27B", "deepseek_v4": "DeepSeek-V4.1", "hy4": "Hy4-preview",
           "mindjudge": "MindJudge-27B"}
-COUNSELORS = {"glm53": "GLM-5.3", "gemma4_12b": "Gemma 4 12B"}
+COUNSELORS = {k: c["label"] for k, c in ablation_counselors().items()}
 
 
 def rows(path: Path) -> list[dict]:

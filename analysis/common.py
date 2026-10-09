@@ -42,6 +42,20 @@ def runs_root(arg: str | None = None) -> Path:
     return Path(root)
 
 
+#: The memory ablation forks runs of the mind-eval port (this fingerprint): every such run in runs.yaml, and GLM-5.3's
+#: port run, which runs.yaml does not list (the paper's GLM-5.3 row is the earlier harness's run).
+ABLATION_FINGERPRINT = "7962e7caed157571"
+ABLATION_EXTRA = {"glm53": {"label": "GLM-5.3", "path": "mindeval2_preserve/glm53"}}
+
+
+def ablation_counselors(path: Path = HERE / "runs.yaml") -> dict[str, dict]:
+    """key -> {label, path}: the counselors the memory ablation can fork, with each source run's path under the runs
+    root."""
+    out = {r["key"]: {"label": r["label"], "path": r["path"]} for r in yaml.safe_load(path.read_text())["runs"]
+           if r["fingerprint"] == ABLATION_FINGERPRINT}
+    return {**out, **ABLATION_EXTRA}
+
+
 def registry(root: Path, path: Path = HERE / "runs.yaml") -> tuple[list[dict], dict]:
     """The runs (each with its run.json under `run`) and the judges. A run whose fingerprint differs from the
     registry's is refused."""
