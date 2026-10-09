@@ -182,7 +182,7 @@ def main() -> None:
     ap.add_argument("--labels", type=Path, help="directory holding <prompt>/<counselor>/<mode>/ label outputs")
     ap.add_argument("--runs_root", help="the source runs' root (else MINDEVAL_RUNS_ROOT); sources from runs.yaml")
     ap.add_argument("--complete_only", action="store_true",
-                    help="judge tables over the members judged in every session of every view (a partial, balanced set)")
+                    help="each contrast over the members judged in every session of both its views (a partial, balanced set)")
     ap.add_argument("--sessions", type=int, default=6)
     ap.add_argument("--pool_exclude", default="glm53", help="counselors left out of the pooled section (replicates)")
     ap.add_argument("--out", required=True, type=Path)
@@ -209,13 +209,13 @@ def main() -> None:
             comp = session_scores(load_verdicts(ref))
             if level(comp, "mqm") is None:
                 continue  # nothing after session 1 judged yet
-            judge_members = members
-            if args.complete_only:  # while judging is under way: members judged in every session of every view
-                views = [comp] + [session_scores(load_verdicts(vp)) for mode in MODES for view in ("as_sent", "reference")
-                                  if (vp := base_dir / mode / view / "judge" / "mindeval2" / "verdicts.jsonl").is_file()]
-                eps = [f"ep{i:03d}" for i in range(1, args.sessions)]
-                judge_members = [m for m in members if all((m, e) in v for v in views for e in eps)]
-                lines += [f"(complete members only: {len(judge_members)} of {len(members)})", ""]
+            eps_all = [f"ep{i:03d}" for i in range(1, args.sessions)]
+
+            def pair_members(cond: dict) -> list[str]:
+                """--complete_only, while judging is under way: the members judged in every session of both views."""
+                if not args.complete_only:
+                    return members
+                return [m for m in members if all((m, e) in cond and (m, e) in comp for e in eps_all)]
             lines += [f"### Judge: {judge}", "", "| condition | view | MQM | " + " | ".join(ISSUES) + " | Major+ |",
                       "|---|---|---|---|---|---|"]
             lines.append(f"| compacted (level) | - | {level(comp, 'mqm'):.3f} | "
@@ -228,8 +228,9 @@ def main() -> None:
                         continue
                     cond = session_scores(load_verdicts(vp))
                     cells = []
+                    pm = pair_members(cond)
                     for field in ("mqm", *ISSUES, "major_plus"):
-                        r = paired(cond, comp, field, judge_members)
+                        r = paired(cond, comp, field, pm)
                         rows.append({"counselor": counselor, "judge": judge, "mode": mode, "view": view,
                                      "field": field, **r})
                         if r["diff"] is None:
@@ -252,7 +253,7 @@ def main() -> None:
                     cond = session_scores(load_verdicts(vp))
                     cells = []
                     for e in eps:
-                        r = paired(cond, comp, "mqm", judge_members, [e])
+                        r = paired(cond, comp, "mqm", pair_members(cond), [e])
                         rows.append({"counselor": counselor, "judge": judge, "mode": mode, "view": view,
                                      "field": f"mqm_{e}", **r})
                         cells.append("-" if r["diff"] is None else f"{r['diff']:+.2f} [{r['lo']:+.2f}, {r['hi']:+.2f}]")
