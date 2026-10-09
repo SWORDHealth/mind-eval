@@ -20,6 +20,11 @@ from common import EPISODES, ablation_counselors, ci, load_judge, mean, member_d
 JUDGES = {"gpt61_sol": "GPT-6.1 Sol", "own": "MindJudge-27B", "deepseek_v4": "DeepSeek-V4.1", "hy4": "Hy4-preview",
           "mindjudge": "MindJudge-27B"}
 COUNSELORS = {k: c["label"] for k, c in ablation_counselors().items()}
+#: Not shown per counselor: GLM-5.3 on FP8 weights, the replicate of glm53_nvfp4 (it ran compacted and none only).
+REPLICATES = ("glm53",)
+#: The labeler measures the pooled dataset carries, and their names on the page.
+LABEL_FIELDS = {"memory_use_share": "use beyond restatement", "used_share": "use", "reasks": "re-asks / session",
+                "repeats": "member repeats / session", "corrections": "member corrections / session"}
 
 
 def rows(path: Path) -> list[dict]:
@@ -102,7 +107,7 @@ def ablation_mqm(later: Path) -> list[dict]:
         if r["judge"] not in ("mindjudge", "deepseek_v4") or not r["diff"]:
             continue
         m = re.fullmatch(r"mqm(?:_ep(\d+))?", r["field"])
-        if not m or r["mode"] == "compacted_rerun_vs_source":
+        if not m or r["mode"] == "compacted_rerun_vs_source" or r["counselor"] in REPLICATES:
             continue
         session = f"s{int(m.group(1)) + 1}" if m.group(1) else "s2–s6"
         out.append({"counselor": COUNSELORS[r["counselor"]], "mode": r["mode"], "judge": JUDGES[r["judge"]],
@@ -117,6 +122,8 @@ def ablation_behaviour(later: Path) -> list[dict]:
     out = []
     for block in text.split("\n## ")[1:]:
         key = block.split("\n", 1)[0].strip()
+        if key not in COUNSELORS or key in REPLICATES:
+            continue
         lab = block.split("### Continuity (labeler)")[1] if "### Continuity (labeler)" in block else ""
         tr = block.split("### Counselor input and output")[1].split("###")[0]
         for mode in ("compacted", "none", "full", "split"):
@@ -136,6 +143,8 @@ def full_tokens(later: Path) -> list[dict]:
     for block in text.split("\n## ")[1:]:
         key = block.split("\n", 1)[0].strip()
         m = re.search(r"first-reply prompt tokens by session: ([^\n]+)", block)
+        if key not in COUNSELORS or key in REPLICATES or not m:
+            continue
         for s, mean_tok, mx in re.findall(r"s(\d) (\d+) \(max (\d+)\)", m.group(1)):
             out.append({"counselor": COUNSELORS[key], "session": f"s{s}", "prompt_tokens": int(mean_tok),
                         "max_tokens": int(mx)})
@@ -145,6 +154,8 @@ def full_tokens(later: Path) -> list[dict]:
 def situations(later: Path) -> list[dict]:
     out = []
     for r in json.loads((later / "situations_main6" / "rows.json").read_text()):
+        if r["counselor"] in REPLICATES:
+            continue
         pair = r["pair"].replace("-compacted", " vs compacted").replace("compacted-source", "rerun vs source (floor)")
         if "choice_accuracy" in r:
             out.append({"counselor": COUNSELORS[r["counselor"]], "pair": pair, "measure": "forced-choice accuracy",
@@ -153,6 +164,38 @@ def situations(later: Path) -> list[dict]:
             out.append({"counselor": COUNSELORS[r["counselor"]], "pair": pair, "measure": "similarity minus floor",
                         "value": round(r["minus_floor"], 3), "lo": round(r["lo"], 3), "hi": round(r["hi"], 3)})
     return out
+
+
+def ablation_pooled(later: Path) -> list[dict]:
+    """The mean across counselors (ablation.py's pooled.csv): MQM per judge and view, overall and per session, the
+    labeler measures, and the noise floor."""
+    out = []
+    for r in rows(later / "ablation_main6" / "pooled.csv"):
+        if not r["diff"]:
+            continue
+        m = re.fullmatch(r"mqm(?:_ep(\d+))?", r["field"])
+        if r["judge"] in ("mindjudge", "deepseek_v4") and m:
+            measure, session = "MQM", (f"s{int(m.group(1)) + 1}" if m.group(1) else "s2–s6")
+        elif r["judge"] == "labeler" and r["field"] in LABEL_FIELDS:
+            measure, session = LABEL_FIELDS[r["field"]], "s2–s6"
+        else:
+            continue
+        out.append({"measure": measure, "judge": JUDGES.get(r["judge"], "Labelers"),
+                    "view": {"as_sent": "as sent", "reference": "reference memory"}.get(r["view"], "-"),
+                    "mode": "rerun vs source (floor)" if r["mode"] == "compacted_rerun_vs_source" else r["mode"],
+                    "session": session, "diff": f(r["diff"]), "lo": f(r["lo"]), "hi": f(r["hi"]),
+                    "counselors": int(r["n_counselors"]), "above": int(r["above"]), "below": int(r["below"])})
+    return out
+
+
+def situations_pooled(later: Path) -> list[dict]:
+    path = later / "situations_main6" / "pooled.json"
+    if not path.is_file():
+        return []
+    return [{"measure": x["measure"], "pair": x["pair"].replace("-compacted", " vs compacted")
+             .replace("compacted-source", "rerun vs source (floor)"), "value": round(x["diff"], 3),
+             "lo": round(x["lo"], 3), "hi": round(x["hi"], 3), "counselors": x["n_counselors"]}
+            for x in json.loads(path.read_text()) if x.get("diff") is not None]
 
 
 def validation(later: Path) -> list[dict]:
@@ -182,7 +225,7 @@ def validation(later: Path) -> list[dict]:
     ]
 
 
-def facts(later: Path, stats, iss, cont, flags, abl, beh, tok, sit, extra: dict | None = None) -> list[dict]:
+def facts(later: Path, stats, iss, cont, flags, pool, beh, tok, sit, extra: dict | None = None) -> list[dict]:
     """The numbers the page's sentences quote, each named by a key, read from the datasets above."""
     def pick(rs, **kw):
         return next(r for r in rs if all(r.get(k) == v for k, v in kw.items()))
@@ -193,16 +236,19 @@ def facts(later: Path, stats, iss, cont, flags, abl, beh, tok, sit, extra: dict 
     msc = pick(iss, judge="GPT-6.1 Sol", category="Missed shared context")
     use = sorted(cont, key=lambda r: -r["use"])
     fl = {r["judge"]: r for r in flags}
-    glm_none = pick(abl, counselor="GLM-5.3", mode="none", judge="DeepSeek-V4.1", view="reference memory", session="s2–s6")
-    gem_none = pick(abl, counselor="Gemma 4 12B", mode="none", judge="DeepSeek-V4.1", view="reference memory", session="s2–s6")
-    mj_glm = pick(abl, counselor="GLM-5.3", mode="none", judge="MindJudge-27B", view="reference memory", session="s2–s6")
-    mj_gem = pick(abl, counselor="Gemma 4 12B", mode="none", judge="MindJudge-27B", view="reference memory", session="s2–s6")
-    full_mj = [r["diff"] for r in abl if r["mode"] == "full" and r["judge"] == "MindJudge-27B" and r["view"] == "as sent"
-               and r["session"] == "s2–s6"]
-    bg = {(r["counselor"], r["mode"]): r for r in beh}
+    def pooled(measure, mode, judge, view="-"):
+        return pick(pool, measure=measure, mode=mode, judge=judge, view=view, session="s2–s6")
+
+    def ci_text(r, nd=2):
+        return f"{r['diff']:+.{nd}f} [{r['lo']:+.{nd}f}, {r['hi']:+.{nd}f}]"
+    full_mj = pooled("MQM", "full", "MindJudge-27B", "as sent")
+    none_ds = pooled("MQM", "none", "DeepSeek-V4.1", "reference memory")
+    none_mj = pooled("MQM", "none", "MindJudge-27B", "reference memory")
+    beyond = pooled("use beyond restatement", "none", "Labelers")
+    reasks = pooled("re-asks / session", "none", "Labelers")
+    repeats = pooled("member repeats / session", "none", "Labelers")
     tmax = max(r["max_tokens"] for r in tok)
     floor = [r["value"] for r in sit if r["measure"] == "forced-choice accuracy" and "floor" in r["pair"]]
-
     def ranks(rs):
         rho = {}
         xs = [r["use"] for r in rs]
@@ -228,15 +274,13 @@ def facts(later: Path, stats, iss, cont, flags, abl, beh, tok, sit, extra: dict 
         "flag_gpt_other": f"{100 * fl['GPT-6.1 Sol']['memory_flag_other']:.0f}%",
         "flag_mj_repeat": f"{100 * fl['MindJudge-27B']['memory_flag_repeat']:.0f}%",
         "repeat_replies": f"{fl['GPT-6.1 Sol']['repeat_replies']:,}",
-        "glm_none_ds": f"{glm_none['diff']:+.2f}", "gem_none_ds": f"{gem_none['diff']:+.2f}",
-        "glm_none_mj": f"{mj_glm['diff']:+.2f}", "gem_none_mj": f"{mj_gem['diff']:+.2f}",
-        "full_mj_min": f"{min(full_mj):+.2f}", "full_mj_max": f"{max(full_mj):+.2f}",
-        "glm_reasks_none": f"{bg['GLM-5.3', 'none']['reasks']:.2f}",
-        "glm_reasks_comp": f"{bg['GLM-5.3', 'compacted']['reasks']:.2f}",
-        "glm_repeats_none": f"{bg['GLM-5.3', 'none']['member_repeats']:.2f}",
-        "glm_repeats_comp": f"{bg['GLM-5.3', 'compacted']['member_repeats']:.2f}",
-        "glm_beyond_none": f"{bg['GLM-5.3', 'none']['use_beyond_restatement']:.3f}",
-        "gem_beyond_none": f"{bg['Gemma 4 12B', 'none']['use_beyond_restatement']:.3f}",
+        "abl_counselors": f"{full_mj['counselors']}",
+        "full_mj": ci_text(full_mj), "full_mj_above": f"{full_mj['above']}", "full_mj_d": f"{full_mj['diff']:+.2f}",
+        "none_ds_d": f"{none_ds['diff']:+.2f}", "none_mj_d": f"{none_mj['diff']:+.2f}",
+        "none_ds": ci_text(none_ds), "none_ds_above": f"{none_ds['above']}", "none_ds_n": f"{none_ds['counselors']}",
+        "none_mj": ci_text(none_mj), "none_mj_above": f"{none_mj['above']}",
+        "beyond_none": ci_text(beyond, 3), "beyond_none_below": f"{beyond['below']}", "beyond_n": f"{beyond['counselors']}",
+        "reasks_none": ci_text(reasks), "repeats_none": ci_text(repeats),
         "full_tokens_max": f"{tmax:,}",
         "floor_min": f"{min(floor):.2f}", "floor_max": f"{max(floor):.2f}",
     }
@@ -279,12 +323,13 @@ def main() -> None:
     stats, iss = ranking_stats(args.later), issues(args.later)
     cont, flags = continuity(args.later, change), judge_flags(args.later)
     abl, beh, tok = ablation_mqm(args.later), ablation_behaviour(args.later), full_tokens(args.later)
-    sit = situations(args.later)
+    pool, sit, sitp = ablation_pooled(args.later), situations(args.later), situations_pooled(args.later)
     strict_rows, strict_figs = strict(args.later)
     data = {"strict_crosstab": strict_rows, "ranking_change": change, "ranking_stats": stats, "issues": iss, "continuity": cont, "judge_flags": flags,
-            "ablation_mqm": abl, "ablation_behaviour": beh, "full_tokens": tok, "situations": sit,
+            "ablation_mqm": abl, "ablation_pooled": pool, "ablation_behaviour": beh, "full_tokens": tok, "situations": sit,
+            "situations_pooled": sitp,
             "validation": validation(args.later), "api_plans": api_plans(args.api_plans),
-            "facts": facts(args.later, stats, iss, cont, flags, abl, beh, tok, sit, strict_figs)}
+            "facts": facts(args.later, stats, iss, cont, flags, pool, beh, tok, sit, strict_figs)}
     for name, rs in data.items():
         (args.out / f"{name}.json").write_text(json.dumps(rs, ensure_ascii=False, indent=1) + "\n")
         print(f"{name}: {len(rs)} rows")
