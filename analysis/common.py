@@ -45,7 +45,10 @@ def runs_root(arg: str | None = None) -> Path:
 #: The memory ablation forks runs of the mind-eval port (this fingerprint): every such run in runs.yaml, and GLM-5.3's
 #: port run, which runs.yaml does not list (the paper's GLM-5.3 row is the earlier harness's run).
 ABLATION_FINGERPRINT = "7962e7caed157571"
-ABLATION_EXTRA = {"glm53": {"label": "GLM-5.3", "path": "mindeval2_preserve/glm53"}}
+#: glm53_nvfp4 forks the same run against the NVFP4 weights (the FP8 server went away mid-ablation); its conditions are
+#: compared with its own compacted rerun only.
+ABLATION_EXTRA = {"glm53": {"label": "GLM-5.3", "path": "mindeval2_preserve/glm53"},
+                  "glm53_nvfp4": {"label": "GLM-5.3 NVFP4", "path": "mindeval2_preserve/glm53"}}
 
 
 def ablation_counselors(path: Path = HERE / "runs.yaml") -> dict[str, dict]:

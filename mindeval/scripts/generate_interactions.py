@@ -30,6 +30,11 @@ from mindeval.utils import InputError, hold_lock, release_locks
 
 DEFAULT_PROFILES = PACKAGE_DIR.parent / "data" / "profiles.jsonl"
 DEFAULT_COUNSELOR = PACKAGE_DIR.parent / "examples" / "counselor_system.j2"
+
+#: The prompts each memory mode adds, outside the fingerprint, so the run records them itself.
+MODE_PROMPTS = {"full": {"evolve": EVOLVE_FULL},
+                "split": {**{side: t for side, (t, _) in SPLIT.items()}, "evolve": EVOLVE_FULL}}
+
 #: The fields of run.json that make two invocations the same benchmark run. Endpoints, timeouts,
 #: retries and the worker count may change between invocations; these may not.
 IDENTITY = ("mindeval_version", "fingerprint", "patient.model", "counselor.model",
@@ -102,12 +107,9 @@ def run_manifest(counselor_system_prompt_path: Path, profiles_path: Path, sessio
                      "rows": sum(1 for line in profiles_path.read_text().splitlines() if line.strip())},
         "members": len(rows), "member_ids": [m.member_id for m in rows], "sessions": sessions,
         "max_turns": max_turns, "seed": seed, "workers": max_workers, "memory_mode": memory_mode,
-        # split's two compaction prompts and full's situation writer sit outside the fingerprint, so the run records
-        # them itself
-        **({"memory_prompts_sha256": {side: _sha((PROMPTS_DIR / f"{t}.j2").read_bytes()) for side, (t, _) in SPLIT.items()}}
-           if memory_mode == "split" else {}),
-        **({"memory_prompts_sha256": {"evolve": _sha((PROMPTS_DIR / f"{EVOLVE_FULL}.j2").read_bytes())}}
-           if memory_mode == "full" else {}),
+        **({"memory_prompts_sha256": {k: _sha((PROMPTS_DIR / f"{t}.j2").read_bytes())
+                                      for k, t in MODE_PROMPTS[memory_mode].items()}}
+           if memory_mode in MODE_PROMPTS else {}),
     }
 
 
@@ -198,8 +200,8 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
         memory_mode: what each side carries between sessions: compacted (the running log, on both sides;
             the benchmark), none (the counselor gets its session-1 text in every session; the member keeps
             the log), full (both sides get every earlier session verbatim, the oldest dropped first past
-            about 30k tokens, and the next situation is written from them too) or split (objective notes for the
-            counselor, the member's own recollection for the member)
+            about 30k tokens, and the next situation is written from them too) or split (the counselor gets objective
+            notes of its own; the member and the situation writer read every earlier session, as in full)
         dry_run: validate and render prompts; no model calls, no writes
 
     Returns:

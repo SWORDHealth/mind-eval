@@ -11,13 +11,13 @@ walks in with the same log under `# Memory`. `memory_mode` changes what each sid
 every session, as if it kept nothing, while the member keeps the log; `full` gives both sides every
 earlier session verbatim instead of the log, the transcript compaction reads, oldest first, the oldest
 dropped first past `FULL_MEMORY_MAX_CHARS`, so the counselor never remembers more than the member;
-`split` gives each side a log of its own, compacted separately by the patient model: objective case
-notes for the counselor (`log_counselor.md`), the member's own first-person recollection for the
-member (`log_member.md`). Its two prompts are under `prompts/ablation/`, outside the fingerprint.
+`split` gives the counselor objective case notes of its own, compacted separately by the patient model
+(`log_counselor.md`, prompt `prompts/ablation/compact_counselor.j2`, outside the fingerprint), while the member
+carries every earlier session verbatim as under `full`; split and full differ in the counselor's memory alone.
 Compaction of the shared log runs in every mode, so every arc has it. The mode is a run setting outside the
 fingerprint, so every mode meets the same schedule. Evolution writes the next session's situation from the
 member's formulation, the last situation, the last conversation, the time that has passed and the
-drawn beat; its opening message is the member's first line next time. Under `full` it also reads every
+drawn beat; its opening message is the member's first line next time. Under `full` and `split` it also reads every
 conversation before the last one, verbatim, oldest first, the same sessions the member carries
 (`prompts/ablation/evolve_situation_full.j2`, the benchmark prompt plus that one section); with a single earlier
 session that is the benchmark prompt itself, so session 2 is written the same way in every mode.
@@ -200,13 +200,11 @@ def counselor_memory(log: list[str]) -> str:
 
 #: What each side carries between sessions (see the module docstring).
 MEMORY_MODES = ("compacted", "none", "full", "split")
-#: `split`: the prompt each side's log is compacted with, and the file it is written to.
-SPLIT = {"counselor": ("ablation/compact_counselor", "log_counselor.md"),
-         "member": ("ablation/compact_member", "log_member.md")}
-_SPLIT_MEMBER_INTRO = ("What you remember of your earlier conversations with the AI counsellor, oldest first, in "
-                       "your own words. Lines tagged `[open]` are things you said you would do and have not come back "
-                       "to yet.")
-#: `full`: the situation writer's prompt, the benchmark's with the earlier conversations added.
+#: `split`: the prompt the counselor's own notes are compacted with, and the file they are written to.
+SPLIT = {"counselor": ("ablation/compact_counselor", "log_counselor.md")}
+#: The modes in which the member, and the writer of the next situation, read every earlier session verbatim.
+TRANSCRIPT_MODES = ("full", "split")
+#: Those modes' situation writer: the benchmark's prompt with the earlier conversations added.
 EVOLVE_FULL = "ablation/evolve_situation_full"
 #: The cap on `full` memory, about 30k tokens: whole sessions are kept newest first while they fit.
 FULL_MEMORY_MAX_CHARS = 120_000
@@ -276,10 +274,8 @@ def member_memory_for(mode: str, log: list[str], sessions: list, ep: int,
     _check_mode(mode)
     if ep == 0:
         return None
-    if mode == "full":
+    if mode in TRANSCRIPT_MODES:
         return full_memory(sessions[:ep], "member")
-    if mode == "split":
-        return f"{_SPLIT_MEMBER_INTRO}\n\n{render_log(split['member'])}"
     return member_memory(log)
 
 
@@ -440,9 +436,9 @@ def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, patient: CallS
         return logs
 
     if memory_mode == "split" and split is None:
-        # Resumed from a checkpoint made in another mode (a fork after session 1): each side's log is caught up on
-        # the sessions already finished, in order.
-        split = {"counselor": [], "member": []}
+        # Resumed from a checkpoint made in another mode (a fork after session 1): the counselor's notes are caught up
+        # on the sessions already finished, in order.
+        split = {side: [] for side in SPLIT}
         for i, record in enumerate(done_sessions):
             split = compact_split(split, record, i)
 
@@ -458,7 +454,7 @@ def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, patient: CallS
             situation = evolve_situation(cfg, row, situation, done_sessions[-1], gap, patient, arc_seed=arc_seed,
                                          arc_id=arc_id, episode_id=ep, now_line=f"It is now {describe_ts(anchor, clock)}.",
                                          beat=shape.beats[ep - 1],
-                                         earlier=done_sessions[:-1] if memory_mode == "full" else None)
+                                         earlier=done_sessions[:-1] if memory_mode in TRANSCRIPT_MODES else None)
             evolve_ms = round((time.monotonic() - t0) * 1000, 1)
         ep_dir.mkdir(parents=True, exist_ok=True)
         (ep_dir / "situation.yaml").write_text(_situation_file(situation, ep), encoding="utf-8")

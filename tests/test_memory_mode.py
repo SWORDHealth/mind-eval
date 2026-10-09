@@ -8,6 +8,7 @@ change to any input anywhere shows in the files. The clock is a counter, so the 
   - none gives the counselor its session-1 text in every session and leaves the member exactly as in compacted;
   - full gives both sides the earlier sessions verbatim instead of the log, and the next situation is written from
     them too;
+  - split is full with the counselor's memory replaced by objective notes of its own;
   - session 1 is identical everywhere, and so is the situation each member walks into session 2 with.
 """
 
@@ -58,8 +59,6 @@ def _fake(calls: list):
             return _response(f"- Member said {_h(first)}.\n- [open] Member will try {_h(first)[:4]}.")
         if "case notes" in first:
             return _response(f"- Member says {_h(first)}.")
-        if "what a person remembers" in first:
-            return _response(f"- I said {_h(first)}.")
         if "Answer with JSON only" in first:
             return _response(json.dumps({"event": f"event {_h(first)}", "automatic_thoughts": ["same"],
                                          "behaviors": ["stayed in"], "physical": [], "goal": "talk",
@@ -181,16 +180,23 @@ def test_full_memory_keeps_the_latest_sessions_under_the_cap():
     assert arc_module.full_memory(sessions[:1], "member", max_chars=10 ** 6).count("Session 1") == 1
 
 
-def test_split_gives_each_side_its_own_log(tmp_path, monkeypatch):
-    arc, _ = produce(tmp_path / "split", monkeypatch, "split")
+def test_split_is_full_with_the_counselor_on_its_own_notes(tmp_path, monkeypatch):
+    runs = {m: produce(tmp_path / m, monkeypatch, m) for m in ("full", "split")}
+    arc = runs["split"][0]
     for ep in (1, 2):
         notes = (arc / f"ep{ep - 1:03d}" / "log_counselor.md").read_text().strip()
-        mine = (arc / f"ep{ep - 1:03d}" / "log_member.md").read_text().strip()
-        assert notes.startswith("- Member says") and mine.startswith("- I said")
+        assert notes.startswith("- Member says")
+        assert not (arc / f"ep{ep - 1:03d}" / "log_member.md").exists()
         session = _session(arc, ep)
-        assert notes in session["counselor_system_prompt"] and mine not in session["counselor_system_prompt"]
-        assert mine in session["member_system_prompt"] and notes not in session["member_system_prompt"]
+        assert notes in session["counselor_system_prompt"] and notes not in session["member_system_prompt"]
         assert (arc / f"ep{ep - 1:03d}" / "log.md").is_file()  # the shared log is still kept
+    # the member and the situation writer get what they get under full
+    assert _session(arc, 1)["member_system_prompt"] == _session(runs["full"][0], 1)["member_system_prompt"]
+    for msg in _session(arc, 0)["member_messages"] + _session(arc, 1)["member_messages"]:
+        assert msg["content"] in _session(arc, 2)["member_system_prompt"]
+    assert "Session 1:" in _evolve_prompts(runs["split"][1])[1]
+    run = json.loads((arc.parents[2] / "run.json").read_text())
+    assert set(run["memory_prompts_sha256"]) == {"counselor", "evolve"}
 
 
 def test_fork_resumes_after_session_one(tmp_path, monkeypatch):
@@ -218,10 +224,9 @@ def test_fork_resumes_after_session_one(tmp_path, monkeypatch):
         if mode == "none":  # the member walks into session 2 exactly as in the source run
             assert _session(arc, 1)["member_system_prompt"] == _session(source, 1)["member_system_prompt"]
             assert _session(arc, 1)["counselor_system_prompt"] == _session(source, 0)["counselor_system_prompt"]
-        elif mode == "split":  # split catches each side's log up on the forked session 1
+        elif mode == "split":  # split catches the counselor's notes up on the forked session 1
             assert (arc / "ep000" / "log_counselor.md").read_text().strip() in _session(arc, 1)["counselor_system_prompt"]
-            assert (arc / "ep000" / "log_member.md").read_text().strip() in _session(arc, 1)["member_system_prompt"]
-        else:  # session 2's situation is pinned; session 3's is written from the forked session 1 as well
+        if mode in ("full", "split"):  # session 2's situation is pinned; session 3's is written from session 1 too
             (prompt,) = _evolve_prompts(calls)
             assert "Session 1:" in prompt
             assert all(m["content"] in prompt for m in _session(source, 0)["member_messages"])
