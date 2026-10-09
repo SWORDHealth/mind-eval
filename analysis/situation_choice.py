@@ -139,7 +139,8 @@ def main() -> None:
         if args.choice:
             cache_path = args.out / f"choice_{c}.jsonl"
             cache = {}
-            if cache_path.is_file():  # answered choices are kept; failed ones (cut off, errors) are asked again
+            if cache_path.is_file():  # answered choices are kept; failed ones (cut off, errors) are asked again, and so
+                # is a choice whose prompt has changed since (a rerun condition); the earliest answers carry no hash
                 cache = {x["key"]: x for x in map(json.loads, cache_path.read_text().splitlines())
                          if x["said"] in ("A", "B")}
             jobs = []
@@ -150,12 +151,14 @@ def main() -> None:
                         if not tr or f"{x}/{m}" not in docs or f"{y}/{m}" not in docs:
                             continue
                         key = f"{x}|{y}|{m}"
-                        if key in cache:
-                            continue
                         flip = random.Random(int(hashlib.sha256(key.encode()).hexdigest()[:8], 16)).random() < 0.5
                         da, db = (docs[f"{y}/{m}"], docs[f"{x}/{m}"]) if flip else (docs[f"{x}/{m}"], docs[f"{y}/{m}"])
-                        jobs.append((key, a, b, m, "B" if flip else "A",
-                                     CHOICE.format(transcript=tr, a=da, b=db)))
+                        prompt = CHOICE.format(transcript=tr, a=da, b=db)
+                        sha = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+                        if key in cache and cache[key].get("prompt_sha", sha) == sha:
+                            continue
+                        cache.pop(key, None)
+                        jobs.append((key, a, b, m, "B" if flip else "A", prompt))
 
             def ask(job):
                 key, a, b, m, right, prompt = job
@@ -167,7 +170,8 @@ def main() -> None:
                     said = (re.findall(r"\b([AB])\b", text.split("</think>")[-1]) or ["?"])[-1]
                 except Exception as e:  # noqa: BLE001
                     said = f"error: {e}"[:200]
-                return {"key": key, "pair": f"{a}|{b}", "member": m, "right": right, "said": said}
+                return {"key": key, "pair": f"{a}|{b}", "member": m, "right": right, "said": said,
+                        "prompt_sha": hashlib.sha256(prompt.encode()).hexdigest()[:16]}
 
             llm._lib()
             with ThreadPoolExecutor(max_workers=96) as pool, cache_path.open("a") as f:
