@@ -21,6 +21,7 @@ session (from the traces), continuity use per opportunity and re-asks, and the m
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import re
 from collections import defaultdict
@@ -30,6 +31,8 @@ from common import BOOT, WEIGHT, ablation_counselors, ci, git_describe, load_ver
 from common import ISSUES as ALL_ISSUES
 
 MODES = ("none", "full", "split")
+#: Counselors forked from another counselor's source run (whose source verdicts they share).
+SOURCE_KEY = {"glm53_nvfp4": "glm53"}
 ISSUES = ("missed_shared_context", "false_memory")
 
 
@@ -146,7 +149,24 @@ def paired(a: dict, b: dict, field: str, members: list[str], eps: list[str] | No
     lo, hi = ci(draws)
     n_sessions = sum(1 for m in ms for e in {e for (mm, e) in a if mm == m}
                      if (m, e) in b and e != "ep000")
-    return {"diff": mean(per.values()), "lo": lo, "hi": hi, "n_members": len(ms), "n_sessions": n_sessions}
+    return {"diff": mean(per.values()), "lo": lo, "hi": hi, "n_members": len(ms), "n_sessions": n_sessions,
+            "_per": per}
+
+
+def pool(per_counselor: dict[str, dict[str, float]]) -> dict:
+    """The mean over counselors of each counselor's mean member difference, with a bootstrap that resamples members
+    within every counselor (each counselor its own fixed draws), and how many counselors' own intervals sit above or
+    below zero."""
+    cs = sorted(c for c, per in per_counselor.items() if per)
+    if not cs:
+        return {"diff": None}
+    draws_by_c = {c: [mean(per_counselor[c][m] for m in d) for d in member_draws(sorted(per_counselor[c]), BOOT, seed=i)]
+                  for i, c in enumerate(cs)}
+    draws = [mean(draws_by_c[c][b] for c in cs) for b in range(BOOT)]
+    lo, hi = ci(draws)
+    own = {c: ci(draws_by_c[c]) for c in cs}
+    return {"diff": mean(mean(per_counselor[c].values()) for c in cs), "lo": lo, "hi": hi, "n_counselors": len(cs),
+            "above": sum(1 for c in cs if own[c][0] > 0), "below": sum(1 for c in cs if own[c][1] < 0)}
 
 
 def level(a: dict, field: str) -> float | None:
@@ -161,6 +181,7 @@ def main() -> None:
     ap.add_argument("--judges", default="mindjudge,deepseek_v4")
     ap.add_argument("--labels", type=Path, help="directory holding <prompt>/<counselor>/<mode>/ label outputs")
     ap.add_argument("--runs_root", help="the source runs' root (else MINDEVAL_RUNS_ROOT); sources from runs.yaml")
+    ap.add_argument("--pool_exclude", default="glm53", help="counselors left out of the pooled section (replicates)")
     ap.add_argument("--out", required=True, type=Path)
     args = ap.parse_args()
     sources = {k: str(runs_root(args.runs_root) / c["path"]) for k, c in ablation_counselors().items()}
@@ -183,6 +204,8 @@ def main() -> None:
             if not ref.is_file():
                 continue
             comp = session_scores(load_verdicts(ref))
+            if level(comp, "mqm") is None:
+                continue  # nothing after session 1 judged yet
             lines += [f"### Judge: {judge}", "", "| condition | view | MQM | " + " | ".join(ISSUES) + " | Major+ |",
                       "|---|---|---|---|---|---|"]
             lines.append(f"| compacted (level) | - | {level(comp, 'mqm'):.3f} | "
@@ -247,10 +270,16 @@ def main() -> None:
             if mode not in tr:
                 continue
             t = tr[mode]
-            lines.append(f"| {mode} | {level(t, 'system_prompt_chars'):.0f} | {level(t, 'counselor_prompt_tokens_first') or 0:.0f} | "
-                         f"{level(t, 'counselor_completion_tokens'):.0f} | {level(t, 'replies'):.1f} | "
+            if not any(e != "ep000" for (m, e) in t):
+                continue  # no finished session after the first yet
+
+            def f0(x, nd=0):
+                return "-" if x is None else f"{x:.{nd}f}"
+            lines.append(f"| {mode} | {f0(level(t, 'system_prompt_chars'))} | "
+                         f"{f0(level(t, 'counselor_prompt_tokens_first'))} | "
+                         f"{f0(level(t, 'counselor_completion_tokens'))} | {f0(level(t, 'replies'), 1)} | "
                          f"{100 * mean(float(v['left']) for (m, e), v in t.items() if e != 'ep000'):.0f} | "
-                         f"{level(t, 'member_prompt_chars'):.0f} |")
+                         f"{f0(level(t, 'member_prompt_chars'))} |")
         by_ep = defaultdict(list)
         for (m, e), v in tr.get("full", {}).items():
             if v["counselor_prompt_tokens_first"]:
@@ -306,13 +335,15 @@ def main() -> None:
         # Noise floor: the compacted rerun against its source, sessions 2-3, under each judge's verdicts of the source.
         lines += [""]
         src = Path(sources.get(counselor, ""))
+        src_key = SOURCE_KEY.get(counselor, counselor)
         for judge in args.judges.split(","):
             rerun = args.root / "judging" / judge / args.batch / counselor / "compacted" / "as_sent" / "judge" / "mindeval2" / "verdicts.jsonl"
-            own = {"mindjudge": [src / "judge" / "mindeval2" / "verdicts.jsonl", src / "judge" / "verdicts.jsonl"],
+            own = {"mindjudge": [args.root / "judging" / "mindjudge" / "source" / src_key / "as_sent" / "judge" / "mindeval2" / "verdicts.jsonl",
+                                 src / "judge" / "mindeval2" / "verdicts.jsonl", src / "judge" / "verdicts.jsonl"],
                    # The source re-judged on the same DeepSeek server as the ablation; older verdicts of the source
                    # (another serving of the model) only as a fallback, since a judge's serving can shift its level.
-                   "deepseek_v4": [args.root / "judging" / "deepseek_v4" / "source" / counselor / "as_sent" / "judge" / "mindeval2" / "verdicts.jsonl",
-                                   Path(f"/mnt/data/jmendonca/MindSim-runs/judging/deepseek_v4/{counselor}/judge/mindeval2/verdicts.jsonl")]}
+                   "deepseek_v4": [args.root / "judging" / "deepseek_v4" / "source" / src_key / "as_sent" / "judge" / "mindeval2" / "verdicts.jsonl",
+                                   Path(f"/mnt/data/jmendonca/MindSim-runs/judging/deepseek_v4/{src_key}/judge/mindeval2/verdicts.jsonl")]}
             src_path = next((p for p in own.get(judge, []) if p.is_file()), None)
             if src_path is None or not rerun.is_file():
                 continue
@@ -324,7 +355,34 @@ def main() -> None:
                 lines.append(f"- Noise floor ({judge}): compacted rerun minus source run, MQM sessions 2-3: "
                              f"{r['diff']:+.3f} [{r['lo']:+.3f}, {r['hi']:+.3f}] ({r['n_members']}, {r['n_sessions']})")
         lines.append("")
-    import csv
+    # Across counselors: every counselor that ran the condition, but not --pool_exclude (a replicate of another).
+    keys = sorted({(r["judge"], r["mode"], r["view"], r["field"]) for r in rows if r.get("_per")
+                   and not r["field"].startswith("mqm_ep")})
+    pooled = []
+    for k in keys:
+        per = {r["counselor"]: r["_per"] for r in rows if (r["judge"], r["mode"], r["view"], r["field"]) == k
+               and r.get("_per") and r["counselor"] not in args.pool_exclude.split(",")}
+        if len(per) < 2:
+            continue
+        pooled.append({"judge": k[0], "mode": k[1], "view": k[2], "field": k[3], **pool(per)})
+    if pooled:
+        lines += ["## Across counselors", "",
+                  "Mean over counselors of the paired difference (condition minus compacted); 95% CI resampling members "
+                  "within each counselor; counselors whose own interval is above / below zero.", "",
+                  "| judge | condition | view | measure | mean [95% CI] | counselors | above 0 | below 0 |",
+                  "|---|---|---|---|---|---|---|---|"]
+        for x in pooled:
+            if x["diff"] is None:
+                continue
+            lines.append(f"| {x['judge']} | {x['mode']} | {x['view']} | {x['field']} | {x['diff']:+.3f} "
+                         f"[{x['lo']:+.3f}, {x['hi']:+.3f}] | {x['n_counselors']} | {x['above']} | {x['below']} |")
+        lines.append("")
+        with (args.out / "pooled.csv").open("w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=sorted({k for x in pooled for k in x}))
+            w.writeheader()
+            w.writerows(pooled)
+    for r in rows:
+        r.pop("_per", None)
     if rows:
         with (args.out / "ablation.csv").open("w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=sorted({k for r in rows for k in r}))
