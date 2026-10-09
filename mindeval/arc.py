@@ -17,7 +17,10 @@ member (`log_member.md`). Its two prompts are under `prompts/ablation/`, outside
 Compaction of the shared log runs in every mode, so every arc has it. The mode is a run setting outside the
 fingerprint, so every mode meets the same schedule. Evolution writes the next session's situation from the
 member's formulation, the last situation, the last conversation, the time that has passed and the
-drawn beat; its opening message is the member's first line next time.
+drawn beat; its opening message is the member's first line next time. Under `full` it also reads every
+conversation before the last one, verbatim, oldest first, the same sessions the member carries
+(`prompts/ablation/evolve_situation_full.j2`, the benchmark prompt plus that one section); with a single earlier
+session that is the benchmark prompt itself, so session 2 is written the same way in every mode.
 
 A checkpoint after every session lets a member that died mid-run resume at the session it died in.
 """
@@ -203,6 +206,8 @@ SPLIT = {"counselor": ("ablation/compact_counselor", "log_counselor.md"),
 _SPLIT_MEMBER_INTRO = ("What you remember of your earlier conversations with the AI counsellor, oldest first, in "
                        "your own words. Lines tagged `[open]` are things you said you would do and have not come back "
                        "to yet.")
+#: `full`: the situation writer's prompt, the benchmark's with the earlier conversations added.
+EVOLVE_FULL = "ablation/evolve_situation_full"
 #: The cap on `full` memory, about 30k tokens: whole sessions are kept newest first while they fit.
 FULL_MEMORY_MAX_CHARS = 120_000
 _FULL_INTRO = {
@@ -212,21 +217,39 @@ _FULL_INTRO = {
 }
 
 
-def full_memory(sessions: list, reader: str, max_chars: int = FULL_MEMORY_MAX_CHARS) -> str:
-    """Every earlier session verbatim, as compaction reads it, oldest first, framed for `reader` ("member" or
-    "counsellor"). Past `max_chars` the oldest sessions are left out whole, and the text says how many."""
-    intro = _FULL_INTRO[reader]
-    blocks = [f"Session {i + 1}:\n{_conversation(s.member_messages, 'Member')}" for i, s in enumerate(sessions)]
-    kept, size = [], len(intro)
+def _full_blocks(sessions: list, label: str, reserved: int, max_chars: int) -> tuple[int, list[str]]:
+    """One block per session, numbered from 1; the oldest are left out whole once `max_chars` would be passed.
+    Returns how many were left out and the blocks kept."""
+    blocks = [f"Session {i + 1}:\n{_conversation(s.member_messages, label)}" for i, s in enumerate(sessions)]
+    kept, size = [], reserved
     for block in reversed(blocks):
         if kept and size + len(block) + 2 > max_chars:
             break
         kept.insert(0, block)
         size += len(block) + 2
-    dropped = len(blocks) - len(kept)
-    note = ([f"({dropped} earlier session{'s are' if dropped > 1 else ' is'} not included: the transcripts are "
+    return len(blocks) - len(kept), kept
+
+
+def _dropped_note(dropped: int) -> list[str]:
+    return ([f"({dropped} earlier session{'s are' if dropped > 1 else ' is'} not included: the transcripts are "
              "too long to carry.)"] if dropped else [])
-    return "\n\n".join([intro, *note, *kept])
+
+
+def full_memory(sessions: list, reader: str, max_chars: int = FULL_MEMORY_MAX_CHARS) -> str:
+    """Every earlier session verbatim, as compaction reads it, oldest first, framed for `reader` ("member" or
+    "counsellor"). Past `max_chars` the oldest sessions are left out whole, and the text says how many."""
+    intro = _FULL_INTRO[reader]
+    dropped, kept = _full_blocks(sessions, "Member", len(intro), max_chars)
+    return "\n\n".join([intro, *_dropped_note(dropped), *kept])
+
+
+def full_history(earlier: list, last, max_chars: int = FULL_MEMORY_MAX_CHARS) -> str:
+    """The sessions before `last` for the situation writer under `full`: the ones the member carries into the next
+    session, so the same oldest are left out, numbered as in the member's memory."""
+    dropped, _ = _full_blocks([*earlier, last], "Member", len(_FULL_INTRO["member"]), max_chars)
+    blocks = [f"Session {i + 1}:\n{_conversation(s.member_messages, 'Them')}"
+              for i, s in enumerate(earlier) if i >= dropped]
+    return "\n\n".join([*_dropped_note(dropped), *blocks])
 
 
 def _check_mode(mode: str) -> None:
@@ -298,14 +321,19 @@ def _situation_block(s: Situation) -> str:
 
 def evolve_situation(cfg: Config, row: MemberRow, prev: Situation, last: SessionRecord, gap_hours: float,
                      patient: CallSpec, *, arc_seed: int, arc_id: str, episode_id: int, now_line: str,
-                     beat: str) -> Situation:
-    """The next session's situation, written by the patient model. Raises after three attempts."""
+                     beat: str, earlier: list | None = None) -> Situation:
+    """The next session's situation, written by the patient model. Raises after three attempts. `earlier`, under
+    `full`: the sessions before `last`, which the writer then reads too (`full_history`)."""
     leftover = [i["text"] for i in (last.agenda or {}).get("todos", []) if i["status"] == "open"]
-    prompt = render("evolve_situation", formulation=row.formulation, prev_situation=_situation_block(prev),
-                    transcript=_conversation(last.member_messages, "Them"), gap=describe_gap(gap_hours),
-                    leftover_todos=leftover, now_line=now_line,
-                    beat_gloss=cfg.episode.episode_beats.vocabulary[beat].gloss,
-                    register_lines=[cfg.knob_line(row.knobs, k) for k in REGISTER_KNOBS])
+    context = dict(formulation=row.formulation, prev_situation=_situation_block(prev),
+                   transcript=_conversation(last.member_messages, "Them"), gap=describe_gap(gap_hours),
+                   leftover_todos=leftover, now_line=now_line,
+                   beat_gloss=cfg.episode.episode_beats.vocabulary[beat].gloss,
+                   register_lines=[cfg.knob_line(row.knobs, k) for k in REGISTER_KNOBS])
+    if earlier:
+        prompt = render(EVOLVE_FULL, earlier=full_history(earlier, last), **context)
+    else:
+        prompt = render("evolve_situation", **context)
     seed = provider_seed(turn_seed(arc_seed, arc_id, episode_id, "evolve_situation"))
     err = None
     for attempt in range(3):
@@ -429,7 +457,8 @@ def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, patient: CallS
             t0 = time.monotonic()
             situation = evolve_situation(cfg, row, situation, done_sessions[-1], gap, patient, arc_seed=arc_seed,
                                          arc_id=arc_id, episode_id=ep, now_line=f"It is now {describe_ts(anchor, clock)}.",
-                                         beat=shape.beats[ep - 1])
+                                         beat=shape.beats[ep - 1],
+                                         earlier=done_sessions[:-1] if memory_mode == "full" else None)
             evolve_ms = round((time.monotonic() - t0) * 1000, 1)
         ep_dir.mkdir(parents=True, exist_ok=True)
         (ep_dir / "situation.yaml").write_text(_situation_file(situation, ep), encoding="utf-8")

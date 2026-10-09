@@ -6,7 +6,8 @@ change to any input anywhere shows in the files. The clock is a counter, so the 
   - compacted, the default, reproduces the files the harness wrote before the flag existed, byte for byte
     (`fixtures/memory_golden/`, written by `regen_memory_golden.py` at c85e278);
   - none gives the counselor its session-1 text in every session and leaves the member exactly as in compacted;
-  - full gives both sides the earlier sessions verbatim instead of the log;
+  - full gives both sides the earlier sessions verbatim instead of the log, and the next situation is written from
+    them too;
   - session 1 is identical everywhere, and so is the situation each member walks into session 2 with.
 """
 
@@ -132,6 +133,45 @@ def test_modes_change_only_the_counselor_memory(tmp_path, monkeypatch):
     assert "# What you remember" in _session(arcs["full"], 2)["member_system_prompt"]
 
 
+def _evolve_prompts(calls: list) -> list[str]:
+    return [c["messages"][0]["content"] for c in calls
+            if c["messages"][0]["content"].startswith("You are generating the next session")]
+
+
+def test_full_writes_the_next_situation_from_every_earlier_session(tmp_path, monkeypatch):
+    runs = {m: produce(tmp_path / m, monkeypatch, m) for m in ("compacted", "full")}
+    prompts = {m: _evolve_prompts(calls) for m, (_, calls) in runs.items()}
+    assert len(prompts["full"]) == len(prompts["compacted"]) == 2  # before sessions 2 and 3
+    assert prompts["full"][0] == prompts["compacted"][0]  # one earlier session: the benchmark prompt itself
+    arc = runs["full"][0]
+    first = [m["content"] for m in _session(arc, 0)["member_messages"]]
+    assert all(f"Them: {m}" in prompts["full"][1] or f"Counsellor: {m}" in prompts["full"][1] for m in first)
+    assert "Session 1:" in prompts["full"][1] and "Session 2:" not in prompts["full"][1]  # the last is "previous"
+    assert not any(m in prompts["compacted"][1] for m in first if len(m) > 20)
+    assert (arc / "ep002" / "situation.yaml").read_bytes() != (runs["compacted"][0] / "ep002" / "situation.yaml").read_bytes()
+    run = json.loads((arc.parents[2] / "run.json").read_text())
+    assert set(run["memory_prompts_sha256"]) == {"evolve"}
+
+
+def test_full_situation_prompt_is_the_benchmark_prompt_plus_one_section():
+    prompts = ROOT.parent / "mindeval" / "prompts"
+    main = (prompts / "evolve_situation.j2").read_text()
+    full = (prompts / "ablation" / "evolve_situation_full.j2").read_text()
+    section = ("Their earlier conversations with the counsellor, before the previous one, in full, oldest first:\n\n"
+               "{{ earlier }}\n\n")
+    assert full.count(section) == 1 and full.replace(section, "") == main
+
+
+def test_full_history_leaves_out_what_the_member_does_not_carry():
+    sessions = [SimpleNamespace(member_messages=[{"role": "assistant", "content": f"s{i} " + "x" * 50},
+                                                 {"role": "user", "content": f"c{i}"}]) for i in range(5)]
+    text = arc_module.full_history(sessions[:-1], sessions[-1], max_chars=300)
+    memory = arc_module.full_memory(sessions, "member", max_chars=300)
+    for i in range(4):
+        assert (f"s{i} " in text) == (f"s{i} " in memory)
+    assert "s4 " not in text and "Them: s3 " in text and "3 earlier sessions are not included" in text
+
+
 def test_full_memory_keeps_the_latest_sessions_under_the_cap():
     sessions = [SimpleNamespace(member_messages=[{"role": "assistant", "content": f"s{i} " + "x" * 50},
                                                  {"role": "user", "content": f"c{i}"}]) for i in range(5)]
@@ -163,8 +203,8 @@ def test_fork_resumes_after_session_one(tmp_path, monkeypatch):
     src_run = source.parents[2]
     member = source.parent.name
     (tmp_path / "ids.txt").write_text(member + "\n")
-    for mode in ("none", "split"):
-        _env(tmp_path / f"fork_{mode}", monkeypatch)
+    for mode in ("none", "split", "full"):
+        calls = _env(tmp_path / f"fork_{mode}", monkeypatch)
         out = tmp_path / f"fork_{mode}" / "run"
         argv = ["fork_run.py", "--src", str(src_run), "--members_file", str(tmp_path / "ids.txt"), "--",
                 "--output_dir", str(out), "--sessions", "3", "--max_turns", "3", "--max_workers", "1",
@@ -178,7 +218,11 @@ def test_fork_resumes_after_session_one(tmp_path, monkeypatch):
         if mode == "none":  # the member walks into session 2 exactly as in the source run
             assert _session(arc, 1)["member_system_prompt"] == _session(source, 1)["member_system_prompt"]
             assert _session(arc, 1)["counselor_system_prompt"] == _session(source, 0)["counselor_system_prompt"]
-        else:  # split catches each side's log up on the forked session 1
+        elif mode == "split":  # split catches each side's log up on the forked session 1
             assert (arc / "ep000" / "log_counselor.md").read_text().strip() in _session(arc, 1)["counselor_system_prompt"]
             assert (arc / "ep000" / "log_member.md").read_text().strip() in _session(arc, 1)["member_system_prompt"]
+        else:  # session 2's situation is pinned; session 3's is written from the forked session 1 as well
+            (prompt,) = _evolve_prompts(calls)
+            assert "Session 1:" in prompt
+            assert all(m["content"] in prompt for m in _session(source, 0)["member_messages"])
         assert json.loads((out / "fork.json").read_text())["members"] == [member]

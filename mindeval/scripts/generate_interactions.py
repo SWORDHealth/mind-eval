@@ -21,7 +21,7 @@ from jsonargparse import CLI
 from pydantic import ValidationError
 
 from mindeval import __version__, env, llm
-from mindeval.arc import MEMORY_MODES, SPLIT, counselor_memory, member_seed, run_arc, set_aside_partial
+from mindeval.arc import EVOLVE_FULL, MEMORY_MODES, SPLIT, counselor_memory, member_seed, run_arc, set_aside_partial
 from mindeval.config import PACKAGE_DIR, PROMPTS_DIR, CallSpec, Config, load_config
 from mindeval.member import build_member
 from mindeval.models import MemberRow
@@ -102,9 +102,12 @@ def run_manifest(counselor_system_prompt_path: Path, profiles_path: Path, sessio
                      "rows": sum(1 for line in profiles_path.read_text().splitlines() if line.strip())},
         "members": len(rows), "member_ids": [m.member_id for m in rows], "sessions": sessions,
         "max_turns": max_turns, "seed": seed, "workers": max_workers, "memory_mode": memory_mode,
-        # split's two compaction prompts sit outside the fingerprint, so the run records them itself
+        # split's two compaction prompts and full's situation writer sit outside the fingerprint, so the run records
+        # them itself
         **({"memory_prompts_sha256": {side: _sha((PROMPTS_DIR / f"{t}.j2").read_bytes()) for side, (t, _) in SPLIT.items()}}
            if memory_mode == "split" else {}),
+        **({"memory_prompts_sha256": {"evolve": _sha((PROMPTS_DIR / f"{EVOLVE_FULL}.j2").read_bytes())}}
+           if memory_mode == "full" else {}),
     }
 
 
@@ -194,8 +197,9 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
         max_workers: members run in parallel
         memory_mode: what each side carries between sessions: compacted (the running log, on both sides;
             the benchmark), none (the counselor gets its session-1 text in every session; the member keeps
-            the log) or full (both sides get every earlier session verbatim, the oldest dropped first past
-            about 30k tokens)
+            the log), full (both sides get every earlier session verbatim, the oldest dropped first past
+            about 30k tokens, and the next situation is written from them too) or split (objective notes for the
+            counselor, the member's own recollection for the member)
         dry_run: validate and render prompts; no model calls, no writes
 
     Returns:
