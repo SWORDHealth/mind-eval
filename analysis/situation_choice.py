@@ -97,6 +97,7 @@ def main() -> None:
     ap.add_argument("--choice", action="store_true")
     ap.add_argument("--model", default="hosted_vllm/nemotron-3.5-super-ea")
     ap.add_argument("--api_base", default="http://worker-11:8067/v1")
+    ap.add_argument("--max_tokens", type=int, default=48000, help="cut a runaway reasoning loop; retried on rerun")
     ap.add_argument("--out", required=True, type=Path)
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
@@ -138,8 +139,9 @@ def main() -> None:
         if args.choice:
             cache_path = args.out / f"choice_{c}.jsonl"
             cache = {}
-            if cache_path.is_file():
-                cache = {x["key"]: x for x in map(json.loads, cache_path.read_text().splitlines())}
+            if cache_path.is_file():  # answered choices are kept; failed ones (cut off, errors) are asked again
+                cache = {x["key"]: x for x in map(json.loads, cache_path.read_text().splitlines())
+                         if x["said"] in ("A", "B")}
             jobs = []
             for a, b in pairs:
                 for m in members:
@@ -159,9 +161,9 @@ def main() -> None:
                 key, a, b, m, right, prompt = job
                 try:
                     text, meta = llm.call_messages([{"role": "user", "content": prompt}], args.model, args.api_base,
-                                                   0.6, 16000, 1800, params={}, api_key="EMPTY")
+                                                   0.6, args.max_tokens, 3600, params={}, api_key="EMPTY")
                     if meta.get("finish_reason") == "length":
-                        raise ValueError("cut at 16000 tokens")
+                        raise ValueError(f"cut at {args.max_tokens} tokens")
                     said = (re.findall(r"\b([AB])\b", text.split("</think>")[-1]) or ["?"])[-1]
                 except Exception as e:  # noqa: BLE001
                     said = f"error: {e}"[:200]
