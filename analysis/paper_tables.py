@@ -1,8 +1,8 @@
-"""LaTeX tables for the later-sessions results, from the outputs of c1_ranking.py and c2_issues.py.
+r"""LaTeX tables for the later-sessions results, from the outputs of c1_ranking.py and c2_issues.py.
 
     python analysis/paper_tables.py --c1 <c1 dir> --c1_shared <c1_shared dir> --c2 <c2 dir> --out <dir>
 
-Writes `tab_later_ranking.tex` (per judge: Kendall tau between the session-1 ranking and sessions 2-3, the
+Writes `tab_c3_judges.tex` and `tab_ablation.tex` when --c3 and --ablation are given, and `tab_later_ranking.tex` (per judge: Kendall tau between the session-1 ranking and sessions 2-3, the
 counselor x session interaction against its permutation null, and the growth of the spread between counselors)
 and `tab_later_errors.tex` (the issue categories whose rate changes most from session 1 to sessions 2-3, under each
 judge; $\dagger$ marks the later-only categories of c2_issues.py), and copies the input manifests beside them.
@@ -72,18 +72,59 @@ def errors(c2: Path) -> str:
     return "\n".join(out) + "\n"
 
 
+def c3_judges(c3: Path) -> str:
+    """Judges against the replies the member had to answer by repeating something recorded."""
+    rows = json.loads((c3 / "judge_crosstab.json").read_text())
+    out = [r"\begin{tabular}{lcccc}", r"\toprule",
+           r"Judge & \multicolumn{2}{c}{Memory issue flagged} & \multicolumn{2}{c}{Major or Critical} \\",
+           r" & repeat-forcing replies & other replies & repeat-forcing & other \\", r"\midrule"]
+    for r in rows:
+        out.append(f"{JUDGES[r['judge']]} & {100 * r['bad_memory_flag']:.0f}\\% & {100 * r['other_memory_flag']:.0f}\\% & "
+                   f"{100 * r['bad_major']:.0f}\\% & {100 * r['other_major']:.0f}\\% \\\\")
+    out += [r"\bottomrule", r"\end{tabular}"]
+    return "\n".join(out) + "\n"
+
+
+def ablation(ab: Path) -> str:
+    """MQM change from compacted, per counselor, mode, judge and view."""
+    rows = {(r["counselor"], r["judge"], r["mode"], r["view"], r["field"]): r for r in csv.DictReader((ab / "ablation.csv").open())}
+    names = {"glm53": "GLM-5.3", "gemma4_12b": "Gemma 4 12B"}
+    out = [r"\begin{tabular}{llcccc}", r"\toprule",
+           r"Counselor & Memory & \multicolumn{2}{c}{MindJudge-27B} & \multicolumn{2}{c}{DeepSeek-V4.1} \\",
+           r" & & as sent & reference & as sent & reference \\", r"\midrule"]
+    for c in ("glm53", "gemma4_12b"):
+        for mode in ("none", "full", "split"):
+            cells = []
+            for judge in ("mindjudge", "deepseek_v4"):
+                for view in ("as_sent", "reference"):
+                    r = rows.get((c, judge, mode, view, "mqm"))
+                    cells.append("--" if not r or not r["diff"] else
+                                 f"{float(r['diff']):+.2f} [{float(r['lo']):+.2f}, {float(r['hi']):+.2f}]")
+            out.append(f"{names[c]} & {mode} & " + " & ".join(cells) + r" \\")
+    out += [r"\bottomrule", r"\end{tabular}"]
+    return "\n".join(out) + "\n"
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--c1", required=True, type=Path)
     ap.add_argument("--c1_shared", required=True, type=Path)
     ap.add_argument("--c2", required=True, type=Path)
+    ap.add_argument("--c3", type=Path)
+    ap.add_argument("--ablation", type=Path)
     ap.add_argument("--out", required=True, type=Path)
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "tab_later_ranking.tex").write_text(ranking(args.c1, args.c1_shared))
     (args.out / "tab_later_errors.tex").write_text(errors(args.c2))
-    for name, d in (("c1", args.c1), ("c1_shared", args.c1_shared), ("c2", args.c2)):
-        shutil.copyfile(d / "manifest.json", args.out / f"manifest_{name}.json")
+    if args.c3:
+        (args.out / "tab_c3_judges.tex").write_text(c3_judges(args.c3))
+    if args.ablation:
+        (args.out / "tab_ablation.tex").write_text(ablation(args.ablation))
+    for name, d in (("c1", args.c1), ("c1_shared", args.c1_shared), ("c2", args.c2), ("c3", args.c3),
+                    ("ablation", args.ablation)):
+        if d and (d / "manifest.json").is_file():
+            shutil.copyfile(d / "manifest.json", args.out / f"manifest_{name}.json")
     print(json.dumps(sorted(p.name for p in args.out.iterdir())))
 
 
