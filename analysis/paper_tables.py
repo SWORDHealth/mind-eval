@@ -16,6 +16,8 @@ import json
 import shutil
 from pathlib import Path
 
+from common import ablation_counselors
+
 JUDGES = {"gpt61_sol": "GPT-6.1 Sol", "own": "MindJudge-27B", "deepseek_v4": "DeepSeek-V4.1", "hy4": "Hy4-preview"}
 CATEGORIES = {"missed_shared_context": "Missed shared context", "gives_bad_advice": "Gives bad advice",
               "uncritical_endorsement": "Uncritical endorsement", "false_memory": "False memory",
@@ -86,23 +88,36 @@ def c3_judges(c3: Path) -> str:
 
 
 def ablation(ab: Path) -> str:
-    """MQM change from compacted, per counselor, mode, judge and view."""
+    """MQM change from compacted, per counselor, mode, judge and view, then the mean across counselors."""
     rows = {(r["counselor"], r["judge"], r["mode"], r["view"], r["field"]): r for r in csv.DictReader((ab / "ablation.csv").open())}
-    names = {"glm53": "GLM-5.3", "gemma4_12b": "Gemma 4 12B"}
+    pooled = ({(r["judge"], r["mode"], r["view"], r["field"]): r for r in csv.DictReader((ab / "pooled.csv").open())}
+              if (ab / "pooled.csv").is_file() else {})
+    names = {k: c["label"] for k, c in ablation_counselors().items()}
+    present = [c for c in names if any(k[0] == c for k in rows) and c not in EXCLUDE]
+
+    def cell(r):
+        return "--" if not r or not r["diff"] else f"{float(r['diff']):+.2f} [{float(r['lo']):+.2f}, {float(r['hi']):+.2f}]"
+
     out = [r"\begin{tabular}{llcccc}", r"\toprule",
            r"Counselor & Memory & \multicolumn{2}{c}{MindJudge-27B} & \multicolumn{2}{c}{DeepSeek-V4.1} \\",
            r" & & as sent & reference & as sent & reference \\", r"\midrule"]
-    for c in ("glm53", "gemma4_12b"):
+    for c in present:
         for mode in ("none", "full", "split"):
-            cells = []
-            for judge in ("mindjudge", "deepseek_v4"):
-                for view in ("as_sent", "reference"):
-                    r = rows.get((c, judge, mode, view, "mqm"))
-                    cells.append("--" if not r or not r["diff"] else
-                                 f"{float(r['diff']):+.2f} [{float(r['lo']):+.2f}, {float(r['hi']):+.2f}]")
+            cells = [cell(rows.get((c, judge, mode, view, "mqm")))
+                     for judge in ("mindjudge", "deepseek_v4") for view in ("as_sent", "reference")]
             out.append(f"{names[c]} & {mode} & " + " & ".join(cells) + r" \\")
+    if pooled:
+        out.append(r"\midrule")
+        for mode in ("none", "full", "split"):
+            cells = [cell(pooled.get((judge, mode, view, "mqm")))
+                     for judge in ("mindjudge", "deepseek_v4") for view in ("as_sent", "reference")]
+            out.append(f"Mean of {len(present)} & {mode} & " + " & ".join(cells) + r" \\")
     out += [r"\bottomrule", r"\end{tabular}"]
     return "\n".join(out) + "\n"
+
+
+#: Counselors left out of the paper's ablation table: GLM-5.3 on FP8 weights, a replicate of glm53_nvfp4.
+EXCLUDE = ("glm53",)
 
 
 def main() -> None:
