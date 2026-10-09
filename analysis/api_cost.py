@@ -104,6 +104,8 @@ def main() -> None:
                     help="judge non-compacted modes as sent and against the reference memory, or the reference only")
     ap.add_argument("--judge_only", action="store_true",
                     help="no new conversations: judge the free-model ablation's existing sessions (`--ablation`)")
+    ap.add_argument("--plan", help="name this estimate and append it to --json")
+    ap.add_argument("--json", type=Path, help="a JSON list of plans to append this estimate to")
     args = ap.parse_args()
     prices = load_prices(args.prices)
     p_in, p_cache, p_out, write = prices[args.counselor]
@@ -131,6 +133,14 @@ def main() -> None:
         total_j += j
         print(f"{mode:10} {sessions:>8} {c:>12.2f} {views:>11} {j:>9.2f}")
     print(f"{'total':10} {'':>8} {total_c:>12.2f} {'':>11} {total_j:>9.2f}   = {total_c + total_j:.2f} USD")
+    if args.json and args.plan:
+        plans = json.loads(args.json.read_text()) if args.json.is_file() else []
+        plans = [p for p in plans if p["plan"] != args.plan] + [{
+            "plan": args.plan, "counselor": "existing free-model sessions" if args.judge_only else args.counselor,
+            "modes": args.modes.replace(",", " + "), "members": args.members,
+            "views": "reference memory" if args.views == "reference" else "as sent + reference memory",
+            "counselor_usd": round(total_c), "judge_usd": round(total_j), "total_usd": round(total_c + total_j)}]
+        args.json.write_text(json.dumps(plans, indent=1) + "\n")
 
 
 if __name__ == "__main__":
