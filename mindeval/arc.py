@@ -11,6 +11,8 @@ walks in with the same log under `# Memory`. `memory_mode` changes what each sid
 every session, as if it kept nothing, while the member keeps the log; `full` gives both sides every
 earlier session verbatim instead of the log, the transcript compaction reads, oldest first, the oldest
 dropped first past `FULL_MEMORY_MAX_CHARS`, so the counselor never remembers more than the member;
+`full_counselor` gives only the counselor those transcripts, while the member keeps the log, so the
+member's inputs are the benchmark's;
 `split` gives each side a log of its own, compacted separately by the patient model: objective case
 notes for the counselor (`log_counselor.md`), the member's own first-person recollection for the
 member (`log_member.md`). Its two prompts are under `prompts/ablation/`, outside the fingerprint.
@@ -196,7 +198,7 @@ def counselor_memory(log: list[str]) -> str:
 
 
 #: What each side carries between sessions (see the module docstring).
-MEMORY_MODES = ("compacted", "none", "full", "split")
+MEMORY_MODES = ("compacted", "none", "full", "full_counselor", "split")
 #: `split`: the prompt each side's log is compacted with, and the file it is written to.
 SPLIT = {"counselor": ("ablation/compact_counselor", "log_counselor.md"),
          "member": ("ablation/compact_member", "log_member.md")}
@@ -244,7 +246,7 @@ def counselor_memory_for(mode: str, log: list[str], sessions: list, ep: int,
         return counselor_memory([])
     if mode == "split":
         return counselor_memory(split["counselor"])
-    return full_memory(sessions[:ep], "counsellor")
+    return full_memory(sessions[:ep], "counsellor")  # full and full_counselor
 
 
 def member_memory_for(mode: str, log: list[str], sessions: list, ep: int,
