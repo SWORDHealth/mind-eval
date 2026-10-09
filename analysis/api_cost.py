@@ -65,6 +65,17 @@ def memory_extra(ablation: Path) -> dict:
     return {m: first[m] - first["compacted"] for m in first}
 
 
+def free_replies(ablation: Path) -> dict:
+    """Counselor replies in sessions 2 onward of the free-model ablation, per mode."""
+    out = {}
+    for mode in ("compacted", "none", "full", "split"):
+        n = 0
+        for f in glob.glob(f"{ablation}/{mode}/members/*/arc/ep00[1-9]/trace.jsonl"):
+            n += sum(1 for line in open(f) if '"counselor_utterance": "' in line)
+        out[mode] = n
+    return out
+
+
 def judge_profile(judge_dir: Path) -> dict:
     us = []
     for f in sorted(glob.glob(f"{judge_dir}/*/judge/mindeval2/verdicts.jsonl"))[:6]:
@@ -88,6 +99,11 @@ def main() -> None:
     ap.add_argument("--members", type=int, default=50)
     ap.add_argument("--sessions", type=int, default=5, help="forked sessions per arc (2 to 6 = 5)")
     ap.add_argument("--new_session1", action="store_true", help="the counselor has no run at this fingerprint yet")
+    ap.add_argument("--modes", default="compacted,none,full,split", help="the memory modes to run")
+    ap.add_argument("--views", choices=("both", "reference"), default="both",
+                    help="judge non-compacted modes as sent and against the reference memory, or the reference only")
+    ap.add_argument("--judge_only", action="store_true",
+                    help="no new conversations: judge the free-model ablation's existing sessions (`--ablation`)")
     args = ap.parse_args()
     prices = load_prices(args.prices)
     p_in, p_cache, p_out, write = prices[args.counselor]
@@ -99,14 +115,17 @@ def main() -> None:
     print(f"judge profile: {jp['in']:.0f} input ({jp['cached']:.0f} cached), {jp['out']:.0f} output tokens/verdict")
     total_c = total_j = 0.0
     print(f"\n{'mode':10} {'sessions':>8} {'counselor $':>12} {'judge views':>11} {'judge $':>9}")
-    for mode in ("compacted", "none", "full", "split"):
+    replies_free = free_replies(args.ablation) if args.judge_only else {}
+    for mode in args.modes.split(","):
         sessions = args.members * (args.sessions + (1 if args.new_session1 and mode == "compacted" else 0))
-        replies = sessions * prof["replies"]
+        replies = replies_free.get(mode, 0) if args.judge_only else sessions * prof["replies"]
         tok_in = prof["in"] + extra[mode]
         new_in = tok_in * (1 - prof["cached_share"]) if prof["cached_share"] < 1 else tok_in * 0.1
-        c = replies * (new_in * p_in * write + (tok_in - new_in) * p_cache + prof["out"] * p_out) / 1e6
-        views = 1 if mode == "compacted" else 2
-        jin = jp["in"] + extra[mode] / 2  # the as-sent view carries the mode's memory; the reference view does not
+        c = 0.0 if args.judge_only else \
+            replies * (new_in * p_in * write + (tok_in - new_in) * p_cache + prof["out"] * p_out) / 1e6
+        views = 1 if mode == "compacted" or args.views == "reference" else 2
+        # the as-sent view carries the mode's memory; the reference view does not
+        jin = jp["in"] + (extra[mode] / 2 if views == 2 else 0)
         j = views * replies * ((jin - jp["cached"]) * j_in + jp["cached"] * j_cache + jp["out"] * j_out) / 1e6
         total_c += c
         total_j += j
