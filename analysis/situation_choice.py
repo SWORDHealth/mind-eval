@@ -32,6 +32,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from ablation import pool  # noqa: E402
 from common import BOOT, ablation_counselors, ci, git_describe, mean, member_draws, runs_root  # noqa: E402
 
 from mindeval import llm  # noqa: E402
@@ -97,12 +98,14 @@ def main() -> None:
     ap.add_argument("--api_base", default="http://worker-11:8067/v1")
     ap.add_argument("--max_tokens", type=int, default=48000, help="cut a runaway reasoning loop; retried on rerun")
     ap.add_argument("--runs_root", help="the source runs' root (else MINDEVAL_RUNS_ROOT); sources from runs.yaml")
+    ap.add_argument("--pool_exclude", default="glm53", help="counselors left out of the pooled section (replicates)")
     ap.add_argument("--out", required=True, type=Path)
     args = ap.parse_args()
     sources = {k: runs_root(args.runs_root) / c["path"] for k, c in ablation_counselors().items()}
     args.out.mkdir(parents=True, exist_ok=True)
     prev = f"ep{int(args.episode[2:]) - 1:03d}"
     lines, rows = [f"# Session-{int(args.episode[2:]) + 1} situations across memory conditions ({args.batch})", ""], []
+    per_c: dict = {}  # (measure, pair) -> counselor -> member -> value, for the pooled section
     for cdir in sorted(p for p in (args.root / args.batch).iterdir() if p.is_dir()):
         c = cdir.name
         runs = {m.name: m for m in cdir.iterdir() if (m / "run.json").is_file()}
@@ -129,6 +132,7 @@ def main() -> None:
                 lines.append(f"| rerun vs source (floor) | {len(s)} | {mean(s.values()):.3f} | - |")
                 continue
             d = {m: s[m] - floor[m] for m in shared}
+            per_c.setdefault(("similarity minus floor", f"{a}-compacted"), {})[c] = d
             lo, hi = ci([mean(d[m] for m in dr) for dr in member_draws(shared, BOOT)]) if shared else (None, None)
             lines.append(f"| {a} vs compacted | {len(s)} | {mean(s.values()):.3f} | "
                          + (f"{mean(d.values()):+.3f} [{lo:+.3f}, {hi:+.3f}] |" if shared else "- |"))
@@ -174,8 +178,8 @@ def main() -> None:
                         "prompt_sha": hashlib.sha256(prompt.encode()).hexdigest()[:16]}
 
             llm._lib()
-            with ThreadPoolExecutor(max_workers=96) as pool, cache_path.open("a") as f:
-                for fut in as_completed([pool.submit(ask, j) for j in jobs]):
+            with ThreadPoolExecutor(max_workers=96) as ex, cache_path.open("a") as f:
+                for fut in as_completed([ex.submit(ask, j) for j in jobs]):
                     res = fut.result()
                     f.write(json.dumps(res) + "\n")
                     f.flush()
@@ -190,12 +194,24 @@ def main() -> None:
                 if not ms:
                     continue
                 acc = mean(mean(v) for v in per.values())
+                per_c.setdefault(("forced-choice accuracy", f"{a}-{b}"), {})[c] = {m: mean(v) for m, v in per.items()}
                 lo, hi = ci([mean(mean(per[m]) for m in d) for d in member_draws(ms, BOOT)])
                 name = "rerun vs source (floor)" if b == "source" else f"{a} vs compacted"
                 lines.append(f"| {name} | {sum(len(v) for v in per.values())} | {acc:.3f} [{lo:.3f}, {hi:.3f}] |")
                 rows.append({"counselor": c, "pair": f"{a}-{b}", "choice_accuracy": acc, "lo": lo, "hi": hi,
                              "members": len(ms)})
         lines.append("")
+    pooled = []
+    for (measure, pair), by_c in sorted(per_c.items()):
+        by_c = {c: v for c, v in by_c.items() if c not in args.pool_exclude.split(",")}
+        if len(by_c) >= 2:
+            pooled.append({"measure": measure, "pair": pair, **pool(by_c)})
+    if pooled:
+        lines += ["## Across counselors", "", "Mean over counselors; 95% CI resampling members within each counselor.", "",
+                  "| measure | pair | mean [95% CI] | counselors |", "|---|---|---|---|"]
+        lines += [f"| {x['measure']} | {x['pair']} | {x['diff']:+.3f} [{x['lo']:+.3f}, {x['hi']:+.3f}] | {x['n_counselors']} |"
+                  for x in pooled]
+    (args.out / "pooled.json").write_text(json.dumps(pooled, indent=2) + "\n")
     (args.out / "report.md").write_text("\n".join(lines) + "\n")
     (args.out / "rows.json").write_text(json.dumps(rows, indent=2) + "\n")
     (args.out / "manifest.json").write_text(json.dumps({"script": "analysis/situation_choice.py",

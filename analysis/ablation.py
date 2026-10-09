@@ -367,8 +367,7 @@ def main() -> None:
                              f"{r['diff']:+.3f} [{r['lo']:+.3f}, {r['hi']:+.3f}] ({r['n_members']}, {r['n_sessions']})")
         lines.append("")
     # Across counselors: every counselor that ran the condition, but not --pool_exclude (a replicate of another).
-    keys = sorted({(r["judge"], r["mode"], r["view"], r["field"]) for r in rows if r.get("_per")
-                   and not r["field"].startswith("mqm_ep")})
+    keys = sorted({(r["judge"], r["mode"], r["view"], r["field"]) for r in rows if r.get("_per")})
     pooled = []
     for k in keys:
         per = {r["counselor"]: r["_per"] for r in rows if (r["judge"], r["mode"], r["view"], r["field"]) == k
@@ -383,7 +382,7 @@ def main() -> None:
                   "| judge | condition | view | measure | mean [95% CI] | counselors | above 0 | below 0 |",
                   "|---|---|---|---|---|---|---|---|"]
         for x in pooled:
-            if x["diff"] is None:
+            if x["diff"] is None or x["field"].startswith("mqm_ep"):  # per session: pooled.csv only
                 continue
             lines.append(f"| {x['judge']} | {x['mode']} | {x['view']} | {x['field']} | {x['diff']:+.3f} "
                          f"[{x['lo']:+.3f}, {x['hi']:+.3f}] | {x['n_counselors']} | {x['above']} | {x['below']} |")
