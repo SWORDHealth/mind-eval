@@ -179,6 +179,8 @@ def main() -> None:
     ap.add_argument("--root", required=True, type=Path)
     ap.add_argument("--batch", default="main6")
     ap.add_argument("--judges", default="mindjudge,deepseek_v4")
+    ap.add_argument("--judging_batch", help="read verdicts from judging/<judge>/<this>/ instead of the batch's own "
+                    "(single: every counselor's views judged on one serving)")
     ap.add_argument("--labels", type=Path, help="directory holding <prompt>/<counselor>/<mode>/ label outputs")
     ap.add_argument("--runs_root", help="the source runs' root (else MINDEVAL_RUNS_ROOT); sources from runs.yaml")
     ap.add_argument("--complete_only", action="store_true",
@@ -202,7 +204,7 @@ def main() -> None:
         lines += [f"## {counselor}", ""]
         # Judges and views.
         for judge in args.judges.split(","):
-            base_dir = args.root / "judging" / judge / args.batch / counselor
+            base_dir = args.root / "judging" / judge / (args.judging_batch or args.batch) / counselor
             ref = base_dir / "compacted" / "as_sent" / "judge" / "mindeval2" / "verdicts.jsonl"
             if not ref.is_file():
                 continue
@@ -348,7 +350,7 @@ def main() -> None:
         src = Path(sources.get(counselor, ""))
         src_key = SOURCE_KEY.get(counselor, counselor)
         for judge in args.judges.split(","):
-            rerun = args.root / "judging" / judge / args.batch / counselor / "compacted" / "as_sent" / "judge" / "mindeval2" / "verdicts.jsonl"
+            rerun = args.root / "judging" / judge / (args.judging_batch or args.batch) / counselor / "compacted" / "as_sent" / "judge" / "mindeval2" / "verdicts.jsonl"
             own = {"mindjudge": [args.root / "judging" / "mindjudge" / "source" / src_key / "as_sent" / "judge" / "mindeval2" / "verdicts.jsonl",
                                  src / "judge" / "mindeval2" / "verdicts.jsonl", src / "judge" / "verdicts.jsonl"],
                    # The source re-judged on the same DeepSeek server as the ablation; older verdicts of the source
