@@ -194,28 +194,53 @@ def read_csv(path: Path) -> list[dict]:
     return list(csv.DictReader(path.open()))
 
 
+#: drivers.py's mutually exclusive categories. A reply flagged for memory and exploration both is drawn in memory's
+#: blue hatched with exploration's orange, so the two groups' parts cannot trade weight within the same replies.
+EXCLUSIVE_STYLE = {"memory only": (BLUE, None), "memory and exploration": (BLUE, ORANGE),
+                   "exploration only": (ORANGE, None), "advice and validation": (AQUA, None),
+                   "style and scope": (YELLOW, None), "other": ("#e87ba4", None)}
+
+
 def fig_drivers(later: Path, out: Path) -> None:
-    rows = [r for r in read_csv(later / "drivers" / "drivers.csv")
-            if r["judge"] == "GPT-6.1 Sol" and r["counselor"] != "mean of counselors"]
+    rows = [r for r in read_csv(later / "drivers" / "drivers_exclusive.csv") if r["judge"] == "GPT-6.1 Sol"]
     by = {}
     for r in rows:
         by.setdefault(r["counselor"], {})[r["field"]] = float(r["diff"])
-    order = sorted(by, key=lambda c: by[c]["_mqm"])
-    fig, ax = plt.subplots(figsize=(4.6, 4.4))
-    for i, c in enumerate(order):
+    mean_key = "mean of counselors"
+    order = sorted((c for c in by if c != mean_key), key=lambda c: by[c]["_mqm"])
+    ys = {c: i for i, c in enumerate(order)}
+    ys[mean_key] = len(order) + 0.6
+    plt.rcParams["hatch.linewidth"] = 1.4
+    fig, ax = plt.subplots(figsize=(4.8, 4.9))
+    for c, y in ys.items():
         pos = neg = 0.0
-        for g, color in GROUP_COLORS.items():
-            v = by[c].get(f"group:{g}", 0.0)
+        for cat, (color, hatch) in EXCLUSIVE_STYLE.items():
+            v = by[c].get(cat, 0.0)
             left = pos if v >= 0 else neg + v
-            ax.barh(i, abs(v), left=left, color=color, height=0.64, edgecolor="white", linewidth=0.6,
-                    label=g if i == 0 else None)
+            if hatch:
+                ax.barh(y, abs(v), left=left, color=color, height=0.64, hatch="////", edgecolor=hatch, linewidth=0,
+                        label=cat if c == order[0] else None)
+                ax.barh(y, abs(v), left=left, height=0.64, fill=False, edgecolor="white", linewidth=0.6)
+            else:
+                ax.barh(y, abs(v), left=left, color=color, height=0.64, edgecolor="white", linewidth=0.6,
+                        label=cat if c == order[0] else None)
             pos, neg = (pos + v, neg) if v >= 0 else (pos, neg + v)
-        ax.plot(by[c]["_mqm"], i, "D", ms=3.8, color=INK, zorder=4, label="total change" if i == 0 else None)
+        ax.plot(by[c]["_mqm"], y, "D", ms=3.8, color=INK, zorder=4, label="total change" if c == order[0] else None)
     zero(ax)
-    ax.set_yticks(range(len(order)), order)
-    ax.set_xlabel("MQM change from session 1 to sessions 2–3, by issue (GPT-6.1 Sol)")
+    lo = min(sum(min(by[c].get(k, 0.0), 0) for k in EXCLUSIVE_STYLE) for c in ys)
+    hi = max(sum(max(by[c].get(k, 0.0), 0) for k in EXCLUSIVE_STYLE) for c in ys)
+    pad = 0.04 * (hi - lo)
+    ax.set_xlim(lo - pad, hi + pad)
+    ax.axhline(len(order) - 0.2, color=GRID, lw=0.8)
+    ax.set_yticks(list(ys.values()), [c if c != mean_key else f"Mean of {len(order)}" for c in ys])
+    ax.get_yticklabels()[-1].set_fontweight("bold")
+    ax.set_xlabel("MQM change from session 1 to sessions 2–3 (GPT-6.1 Sol)\neach weighted reply counted once, in one "
+                  "category")
     ax.grid(axis="x", color=GRID, lw=0.6)
-    ax.legend(fontsize=6.5, loc="upper center", bbox_to_anchor=(0.4, -0.12), ncol=3)
+    handles, labels = ax.get_legend_handles_labels()
+    keep = ["total change", *EXCLUSIVE_STYLE]
+    pairs = sorted((p for p in zip(handles, labels) if p[1] in keep), key=lambda p: keep.index(p[1]))
+    ax.legend(*zip(*pairs), fontsize=6.5, loc="upper center", bbox_to_anchor=(0.4, -0.15), ncol=3)
     ax.set_title("What moves each counselor's score after session 1", loc="left")
     save(fig, out, "fig_drivers")
 

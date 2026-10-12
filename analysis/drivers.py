@@ -8,7 +8,9 @@ mean over members with a member-bootstrap 95% interval, the mean over counselors
 how far the counselors' total change follows their change in the memory group (Spearman across counselors).
 Ablation (--ablation): each memory condition minus the compacted rerun, sessions 2-6, split the same way, per
 counselor and judge view, and the mean over counselors (the FP8 GLM-5.3 replicate left out).
-Writes drivers.csv, ablation_drivers.csv, report.md.
+Each reply counted once (the figure's split, `exclusive_parts`): a reply flagged for memory and for exploration is a
+category of its own instead of half in each, with the share of replies flagged for each and for both.
+Writes drivers.csv, drivers_exclusive.csv, ablation_drivers.csv, report.md.
 """
 
 from __future__ import annotations
@@ -77,6 +79,42 @@ def parts(verdicts: dict, drop: set[str] = frozenset()) -> dict[tuple[str, str],
     return out
 
 
+#: Mutually exclusive categories (the figure's): every weighted reply counts once, in full. A reply flagged for both
+#: memory and exploration (asking again about what the member already said is both) is a category of its own, so
+#: neither group's part moves only because the other's flag joined the same reply, as it does under `parts`. Replies
+#: with neither split their weight over their issues as in `parts`.
+EXCLUSIVE = ("memory only", "memory and exploration", "exploration only", "advice and validation", "style and scope",
+             "other")
+
+
+def exclusive_parts(verdicts: dict, drop: set[str] = frozenset()) -> dict[tuple[str, str], dict[str, float]]:
+    """(member, episode) -> category -> its share of the session's MQM (summing to the session's MQM), plus "_mqm"."""
+    acc: dict = defaultdict(lambda: defaultdict(float))
+    n: dict = defaultdict(int)
+    for key, v in verdicts.items():
+        if key in drop:
+            continue
+        k = (v["member"], v["episode"])
+        n[k] += 1
+        w = WEIGHT[v["severity"]]
+        if not w:
+            continue
+        flagged = [i for i in ISSUES if v.get(i) == 1] or ["(no flag)"]
+        mem = any(GROUP_OF[i] == "memory" for i in flagged)
+        exp = any(GROUP_OF[i] == "exploration" for i in flagged)
+        if mem or exp:
+            acc[k]["memory and exploration" if mem and exp else "memory only" if mem else "exploration only"] += w
+        else:
+            for i in flagged:
+                acc[k][GROUP_OF[i]] += w / len(flagged)
+    out = {}
+    for k, c in n.items():
+        d = {cat: acc[k].get(cat, 0.0) / c for cat in EXCLUSIVE}
+        d["_mqm"] = sum(d.values())
+        out[k] = d
+    return out
+
+
 def per_member_change(p: dict, early: tuple[str, ...], late: tuple[str, ...]) -> dict[str, dict[str, float]]:
     """member -> field -> mean over `late` sessions minus mean over `early` sessions (members with both)."""
     out = {}
@@ -118,18 +156,55 @@ def fields_of() -> list[str]:
     return ["_mqm", *[f"group:{g}" for g in GROUPS], *ISSUES, "(no flag)"]
 
 
-def paper(root: Path, lines: list[str], rows: list[dict]) -> None:
+def flag_rates(verdicts: dict, drop: set[str] = frozenset()) -> dict[str, dict[str, float]]:
+    """Session 1 and sessions 2-3: the share of replies flagged for exploration, for memory, and for both."""
+    acc: dict = defaultdict(lambda: defaultdict(list))
+    for key, v in verdicts.items():
+        if key in drop:
+            continue
+        s = "session 1" if v["episode"] == "ep000" else "sessions 2-3"
+        exp = any(v.get(i) == 1 for i in GROUPS["exploration"])
+        mem = any(v.get(i) == 1 for i in GROUPS["memory"])
+        acc[s]["exploration"].append(exp)
+        acc[s]["memory"].append(mem)
+        acc[s]["both"].append(exp and mem)
+    return {s: {f: mean(xs) for f, xs in d.items()} for s, d in acc.items()}
+
+
+def paper(root: Path, lines: list[str], rows: list[dict], ex_rows: list[dict]) -> None:
     runs, judges = registry(root)
     for judge in PAPER_JUDGES:
-        per_c = {}
+        per_c, per_x, rates = {}, {}, {}
         for r in runs:
             path = judge_dir(root, r, judge, judges) / "verdicts.jsonl"
             if not path.is_file():
                 continue
-            p = parts(load_verdicts(path), EXCLUDE.get(r["key"], set()))
+            v, drop = load_verdicts(path), EXCLUDE.get(r["key"], set())
+            p = parts(v, drop)
             per_c[r["label"]] = summarise(per_member_change(p, ("ep000",), ("ep001", "ep002")), fields_of())
+            per_x[r["label"]] = summarise(per_member_change(exclusive_parts(v, drop), ("ep000",), ("ep001", "ep002")),
+                                          ["_mqm", *EXCLUSIVE])
+            rates[r["label"]] = flag_rates(v, drop)
         if not per_c:
             continue
+        for c, s in per_x.items():
+            for f, x in s.items():
+                ex_rows.append({"judge": LABEL[judge], "counselor": c, "field": f,
+                                **{k: v for k, v in x.items() if k != "_per"}})
+        pooled_x = {f: pool({c: s[f]["_per"] for c, s in per_x.items()}) for f in ["_mqm", *EXCLUSIVE]}
+        for f, x in pooled_x.items():
+            ex_rows.append({"judge": LABEL[judge], "counselor": "mean of counselors", "field": f,
+                            **{k: v for k, v in x.items() if k in ("diff", "lo", "hi", "n_counselors", "above", "below")}})
+        rate = {s: {f: mean(rates[c][s][f] for c in rates if s in rates[c]) for f in ("exploration", "memory", "both")}
+                for s in ("session 1", "sessions 2-3")}
+        lines += [f"## {LABEL[judge]}: each reply counted once", "",
+                  "Share of replies flagged (mean over counselors), session 1 → sessions 2-3: exploration "
+                  + " → ".join(f"{100 * rate[s]['exploration']:.1f}%" for s in rate) + "; memory "
+                  + " → ".join(f"{100 * rate[s]['memory']:.1f}%" for s in rate) + "; both "
+                  + " → ".join(f"{100 * rate[s]['both']:.1f}%" for s in rate) + ".",
+                  "Change from session 1 with every weighted reply in one category (mean over counselors): "
+                  + ", ".join(f"{f} {pooled_x[f]['diff']:+.3f} [{pooled_x[f]['lo']:+.3f}, {pooled_x[f]['hi']:+.3f}]"
+                              for f in EXCLUSIVE), ""]
         lines += [f"## {LABEL[judge]}: change from session 1 to sessions 2-3, by issue group", "",
                   "| counselor | MQM change | " + " | ".join(GROUPS) + " |", "|---|---|" + "---|" * len(GROUPS)]
         for c, s in sorted(per_c.items(), key=lambda kv: kv[1]["_mqm"]["diff"]):
@@ -208,11 +283,13 @@ def main() -> None:
              "its issues' parts. Changes are means over members [95% member-bootstrap interval]."
              + (f" Replies in {args.exclude.name} left out." if args.exclude else ""), ""]
     rows: list[dict] = []
-    paper(root, lines, rows)
-    with (args.out / "drivers.csv").open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=sorted({k for r in rows for k in r}))
-        w.writeheader()
-        w.writerows(rows)
+    ex_rows: list[dict] = []
+    paper(root, lines, rows, ex_rows)
+    for name, rs in (("drivers.csv", rows), ("drivers_exclusive.csv", ex_rows)):
+        with (args.out / name).open("w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=sorted({k for r in rs for k in r}))
+            w.writeheader()
+            w.writerows(rs)
     if args.ablation:
         ab_rows: list[dict] = []
         lines += ["## Memory ablation: what each condition moves (mean over counselors, sessions 2-6)", ""]
