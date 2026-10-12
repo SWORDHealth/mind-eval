@@ -15,7 +15,17 @@ import json
 import re
 from pathlib import Path
 
-from common import EPISODES, ablation_counselors, ci, load_judge, mean, member_draws, registry, runs_root
+from common import (
+    EPISODES,
+    ablation_counselors,
+    ci,
+    load_judge,
+    mean,
+    member_draws,
+    registry,
+    runs_root,
+    set_exclusions,
+)
 
 JUDGES = {"gpt61_sol": "GPT-6.1 Sol", "own": "MindJudge-27B", "deepseek_v4": "DeepSeek-V4.1", "hy4": "Hy4-preview",
           "mindjudge": "MindJudge-27B"}
@@ -316,7 +326,9 @@ def main() -> None:
     ap.add_argument("--later", required=True, type=Path)
     ap.add_argument("--api_plans", required=True, type=Path, help="JSON rows written from api_cost.py's estimates")
     ap.add_argument("--out", required=True, type=Path)
+    ap.add_argument("--exclude", type=Path, help="replies left out of every score (artifacts.py's leaks.jsonl)")
     args = ap.parse_args()
+    set_exclusions(args.exclude)
     root = runs_root(args.runs_root)
     args.out.mkdir(parents=True, exist_ok=True)
     change = ranking_change(root)

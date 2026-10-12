@@ -129,17 +129,33 @@ def sessions(verdicts: dict[str, dict]) -> dict[tuple[str, str], dict]:
             for k, s in acc.items()}
 
 
+#: Replies left out of every score (run key -> verdict keys), set by set_exclusions (artifacts.py's leaks.jsonl).
+EXCLUDE: dict[str, set[str]] = {}
+
+
+def set_exclusions(path: Path | None) -> None:
+    """Leave the replies listed in `path` (artifacts.py's leaks.jsonl) out of load_judge's scores."""
+    EXCLUDE.clear()
+    if path:
+        for line in Path(path).read_text().splitlines():
+            if line.strip():
+                x = json.loads(line)
+                EXCLUDE.setdefault(x["run"], set()).add(x["key"])
+
+
 def load_judge(root: Path, runs: list[dict], judge: str, judges: dict, check_coverage: bool = True) -> dict:
-    """run key -> sessions(...) for one judge, with a coverage check against the traces."""
+    """run key -> sessions(...) for one judge, with a coverage check against the traces; replies set_exclusions
+    named are left out of both."""
     out, problems = {}, []
     for r in runs:
         path = judge_dir(root, r, judge, judges) / "verdicts.jsonl"
         if not path.is_file():
             problems.append(f"{r['key']}: no verdicts at {path}")
             continue
-        v = load_verdicts(path)
+        drop = EXCLUDE.get(r["key"], set())
+        v = {k: x for k, x in load_verdicts(path).items() if k not in drop}
         if check_coverage:
-            expected = trace_replies(r["dir"])
+            expected = {k for k in trace_replies(r["dir"]) if k not in drop}
             v = {k: x for k, x in v.items() if k in expected}
             missing = len(expected) - len(v)
             if missing:

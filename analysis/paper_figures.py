@@ -185,14 +185,133 @@ def fig_labelers(data: Path, out: Path) -> None:
     save(fig, out, "fig_labelers")
 
 
+GROUP_COLORS = {"memory": BLUE, "exploration": ORANGE, "advice and validation": AQUA, "style and scope": YELLOW,
+                "other": "#e87ba4"}
+
+
+def read_csv(path: Path) -> list[dict]:
+    import csv
+    return list(csv.DictReader(path.open()))
+
+
+def fig_drivers(later: Path, out: Path) -> None:
+    rows = [r for r in read_csv(later / "drivers" / "drivers.csv")
+            if r["judge"] == "GPT-6.1 Sol" and r["counselor"] != "mean of counselors"]
+    by = {}
+    for r in rows:
+        by.setdefault(r["counselor"], {})[r["field"]] = float(r["diff"])
+    order = sorted(by, key=lambda c: by[c]["_mqm"])
+    fig, ax = plt.subplots(figsize=(4.6, 4.4))
+    for i, c in enumerate(order):
+        pos = neg = 0.0
+        for g, color in GROUP_COLORS.items():
+            v = by[c].get(f"group:{g}", 0.0)
+            left = pos if v >= 0 else neg + v
+            ax.barh(i, abs(v), left=left, color=color, height=0.64, edgecolor="white", linewidth=0.6,
+                    label=g if i == 0 else None)
+            pos, neg = (pos + v, neg) if v >= 0 else (pos, neg + v)
+        ax.plot(by[c]["_mqm"], i, "D", ms=3.8, color=INK, zorder=4, label="total change" if i == 0 else None)
+    zero(ax)
+    ax.set_yticks(range(len(order)), order)
+    ax.set_xlabel("MQM change from session 1 to sessions 2–3, by issue (GPT-6.1 Sol)")
+    ax.grid(axis="x", color=GRID, lw=0.6)
+    ax.legend(fontsize=6.5, loc="upper center", bbox_to_anchor=(0.4, -0.12), ncol=3)
+    ax.set_title("What moves each counselor's score after session 1", loc="left")
+    save(fig, out, "fig_drivers")
+
+
+def fig_dose(later: Path, out: Path) -> None:
+    rows = read_csv(later / "dose_response" / "dose_response.csv")
+    bins = [r for r in rows if r["judge"] == "GPT-6.1 Sol" and r["level"] == "session_bin"]
+    reply = [r for r in rows if r["level"] == "reply" and r["measure"].startswith("repeat-forcing")]
+    fig, (a, b) = plt.subplots(1, 2, figsize=(6.8, 2.4), gridspec_kw={"width_ratios": [1.1, 1]})
+    xs = range(len(bins))
+    a.vlines(xs, [float(r["lo"]) for r in bins], [float(r["hi"]) for r in bins], color=BLUE, lw=1.4)
+    a.plot(xs, [float(r["mqm"]) for r in bins], "o-", color=BLUE, ms=5, mec="white", mew=0.8, lw=1.4)
+    a.set_xticks(list(xs), [r["bin"] for r in bins])
+    a.set_xlabel("times the member repeated a recorded fact")
+    a.set_ylabel("session MQM (GPT-6.1 Sol)")
+    a.grid(axis="y", color=GRID, lw=0.6)
+    a.set_title("Sessions where the member repeats score worse", loc="left")
+    order = ["GPT-6.1 Sol", "DeepSeek-V4.1", "Hy4-preview", "MindJudge-27B"]
+    rs = sorted(reply, key=lambda r: order.index(r["judge"]))
+    ys = range(len(rs))
+    b.hlines(ys, [float(r["lo"]) for r in rs], [float(r["hi"]) for r in rs], color=ORANGE, lw=1.8)
+    b.plot([float(r["slope"]) for r in rs], ys, "o", color=ORANGE, ms=5, mec="white", mew=0.8)
+    b.set_yticks(list(ys), [r["judge"] for r in rs])
+    b.invert_yaxis()
+    zero(b)
+    b.set_xlabel("extra MQM weight on the reply that made\nthe member repeat (vs other replies)")
+    b.grid(axis="x", color=GRID, lw=0.6)
+    b.set_title("…and the reply that caused it", loc="left")
+    fig.tight_layout()
+    save(fig, out, "fig_dose")
+
+
+def fig_memory_share(later: Path, out: Path) -> None:
+    rows = [r for r in read_csv(later / "memory_share" / "memory_share.csv")
+            if r["judge"] == "DeepSeek-V4.1" and r["view"] == "reference"]
+    by = {}
+    for r in rows:
+        by.setdefault(r["counselor"], {})[r["measure"]] = float(r["diff"])
+    labels = {k: c["label"] for k, c in __import__("common").ablation_counselors().items()}
+    cs = sorted((c for c in by if c != "mean of counselors"), key=lambda c: by[c]["without memory"])
+    cs.append("mean of counselors")
+    labels["mean of counselors"] = f"Mean of {len(cs) - 1} counselors"
+    fig, ax = plt.subplots(figsize=(3.6, 3.6))
+    for i, c in enumerate(cs):
+        w, wo = by[c]["with memory"], by[c]["without memory"]
+        ax.plot([w, wo], [i, i], color=GREY, lw=1.2, zorder=1)
+        ax.plot(w, i, "o", color=BLUE, ms=4.5, mec="white", mew=0.6, zorder=3, label="with memory" if i == 0 else None)
+        ax.plot(wo, i, "o", color=ORANGE, ms=4.5, mec="white", mew=0.6, zorder=3,
+                label="without the counselor's memory" if i == 0 else None)
+    zero(ax)
+    ax.axhline(len(cs) - 1.5, color=GRID, lw=0.8)
+    ax.set_yticks(range(len(cs)), [labels.get(c, c) for c in cs])
+    ax.set_xlabel("MQM change from session 1 (DeepSeek-V4.1,\nreference memory; higher is worse)")
+    ax.grid(axis="x", color=GRID, lw=0.6)
+    ax.legend(fontsize=6.5, loc="lower right")
+    ax.set_title("Memory keeps later sessions at session-1 quality", loc="left")
+    save(fig, out, "fig_memory_share")
+
+
+def fig_overlap(later: Path, out: Path) -> None:
+    rows = read_csv(later / "judge_overlap" / "overlap.csv")
+    order = ["GPT-6.1 Sol", "Hy4-preview", "DeepSeek-V4.1", "MindJudge-27B"]
+    rows = sorted(rows, key=lambda r: order.index(r["judge"]))
+    fig, ax = plt.subplots(figsize=(3.6, 2.2))
+    ys = range(len(rows))
+    h = 0.36
+    ax.barh([y - h / 2 for y in ys], [100 * float(r["memory_flag"]) for r in rows], height=h, color=BLUE,
+            label="flags a memory issue")
+    ax.barh([y + h / 2 for y in ys], [100 * float(r["major_plus"]) for r in rows], height=h, color=ORANGE,
+            label="rates it Major or Critical")
+    for y, r in zip(ys, rows):
+        ax.annotate(f"{100 * float(r['memory_flag']):.0f}%", (100 * float(r["memory_flag"]), y - h / 2),
+                    xytext=(3, -2.5), textcoords="offset points", fontsize=6.5, color=INK)
+    ax.set_yticks(list(ys), [r["judge"] for r in rows])
+    ax.invert_yaxis()
+    ax.set_xlim(0, 110)
+    ax.set_xlabel("% of the replies GPT-6.1 Sol flags for memory")
+    ax.grid(axis="x", color=GRID, lw=0.6)
+    ax.legend(fontsize=6.5, loc="lower right")
+    ax.set_title("The other judges on Sol's memory failures", loc="left")
+    save(fig, out, "fig_overlap")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--data", required=True, type=Path, help="dashboard_data.py's output directory")
+    ap.add_argument("--later", type=Path, help="the later_sessions dir: drivers/, dose_response/, memory_share/, "
+                    "judge_overlap/ for the figures on what drives the change")
     ap.add_argument("--out", required=True, type=Path)
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     for f in (fig_change, fig_continuity, fig_ablation, fig_sessions, fig_labelers):
         f(args.data, args.out)
+    if args.later:
+        for f in (fig_drivers, fig_dose, fig_memory_share, fig_overlap):
+            f(args.later, args.out)
 
 
 if __name__ == "__main__":

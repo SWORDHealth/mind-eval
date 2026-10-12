@@ -30,6 +30,7 @@ from common import (
     member_draws,
     registry,
     runs_root,
+    set_exclusions,
     write_manifest,
 )
 
@@ -154,10 +155,12 @@ def main() -> None:
     ap.add_argument("--out", required=True)
     ap.add_argument("--judges", default="gpt61_sol,own,deepseek_v4,hy4")
     ap.add_argument("--subset", choices=("all", "shared"), default="all")
+    ap.add_argument("--exclude", type=Path, help="replies to leave out of every score (artifacts.py's leaks.jsonl)")
     ap.add_argument("--rare", type=float, default=0.02)
     ap.add_argument("--rise", type=float, default=1.5)
     ap.add_argument("--min_rise", type=float, default=0.002)
     args = ap.parse_args()
+    set_exclusions(args.exclude)
     root = runs_root(args.runs_root)
     runs, judges = registry(root)
     if args.subset == "shared":
