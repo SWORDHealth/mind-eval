@@ -373,6 +373,54 @@ def fig_trajectory(later: Path, out: Path) -> None:
     save(fig, out, "fig_trajectory")
 
 
+def fig_trajectory_counselors(later: Path, out: Path, judge: str = "DeepSeek-V4.1", view: str = "reference") -> None:
+    """Figure 10(a) per counselor: session MQM with and without the counselor's memory, sessions 1-6."""
+    from common import ablation_counselors
+    labels = {k: v["label"] for k, v in ablation_counselors().items()}
+    rows = [r for r in read_csv(later / "trajectory" / "by_counselor.csv") if r["judge"] == judge and r["view"] == view]
+    trend = {(r["counselor"], r["mode"]): r for r in rows if r["kind"] == "trend"}
+    level = {(r["counselor"], r["mode"], int(r["session"])): float(r["diff"]) for r in rows if r["kind"] == "session"}
+    gap = {c: sum(level.get((c, "none", k), 0) - level.get((c, "compacted", k), 0) for k in range(2, 7)) / 5
+           for c, _ in trend}
+    cs = sorted(gap, key=lambda c: -gap[c])  # largest cost of losing the memory first
+    modes = [("compacted", "with memory", BLUE), ("none", "without the counselor's memory", ORANGE)]
+    ncol = 4
+    nrow = -(-(len(cs) + 1) // ncol)
+    fig, axes = plt.subplots(nrow, ncol, figsize=(7.2, 1.75 * nrow), sharex=True, sharey=True)
+    axes = axes.flatten()
+    for ax, c in zip(axes, cs):
+        for mode, name, color in modes:
+            ps = sorted((int(r["session"]), float(r["diff"]), float(r["lo"]), float(r["hi"])) for r in rows
+                        if r["counselor"] == c and r["mode"] == mode and r["kind"] == "session")
+            xs = [x for x, *_ in ps]
+            ax.fill_between(xs, [lo for *_, lo, _ in ps], [hi for *_, hi in ps], color=color, alpha=0.14, lw=0)
+            ax.plot(xs, [y for _, y, _, _ in ps], "-o", color=color, lw=1.5, ms=2.8, mec="white", mew=0.4, label=name)
+        t = {m: trend[c, m] for m, *_ in modes}
+        star = lambda r: "*" if float(r["lo"]) > 0 or float(r["hi"]) < 0 else ""  # noqa: E731
+        ax.set_title(f"{labels.get(c, c)}", loc="left", fontsize=7, pad=10)
+        ax.text(0.0, 1.015, "trend " + " / ".join(f"{float(t[m]['diff']):+.2f}{star(t[m])}" for m, *_ in modes),
+                transform=ax.transAxes, fontsize=5.8, color=MUTED, va="bottom", ha="left")
+        ax.grid(axis="y", color=GRID, lw=0.5)
+        ax.set_xticks(range(1, 7))
+    for ax in axes[len(cs):]:
+        ax.axis("off")
+    handles, names = axes[0].get_legend_handles_labels()
+    spare = axes[len(cs)] if len(cs) < len(axes) else None
+    if spare is not None:
+        spare.legend(handles, names, loc="upper left", fontsize=6.5)
+        spare.text(0.0, 0.05, "Under each name: trend over\nsessions 2–6 (MQM per session),\nwith / without memory;"
+                   " * 95%\ninterval excludes 0. Ordered by\nthe mean gap over sessions 2–6.",
+                   transform=spare.transAxes, fontsize=5.8, color=MUTED, va="bottom")
+    for ax in axes[::ncol]:
+        ax.set_ylabel("session MQM", fontsize=6.5)
+    for ax in axes[ncol * (nrow - 1):]:
+        ax.set_xlabel("session", fontsize=6.5)
+    fig.suptitle(f"Session MQM by counselor, with and without the counselor's memory ({judge}, "
+                 f"{view.replace('_', ' ')} memory)", x=0.01, ha="left", fontsize=8)
+    fig.tight_layout()
+    save(fig, out, "fig_trajectory_counselors")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--data", required=True, type=Path, help="dashboard_data.py's output directory")
@@ -384,7 +432,7 @@ def main() -> None:
     for f in (fig_change, fig_continuity, fig_ablation, fig_sessions, fig_labelers):
         f(args.data, args.out)
     if args.later:
-        for f in (fig_drivers, fig_dose, fig_memory_share, fig_overlap, fig_trajectory):
+        for f in (fig_drivers, fig_dose, fig_memory_share, fig_overlap, fig_trajectory, fig_trajectory_counselors):
             f(args.later, args.out)
 
 

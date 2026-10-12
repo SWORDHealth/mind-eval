@@ -9,7 +9,9 @@ member repeats and use of notes; then per condition the step (session 2 minus se
 least-squares slope over sessions 2-6, per session). Session 1 is scored from the compacted run in every condition (the
 same session). Paper runs (sessions 1-3, every judge): the same per session, with the step from 1 to 2 and the change
 from 2 to 3. Intervals: 95%, members resampled within each counselor (pool from ablation.py).
-Writes trajectory.csv, steps.csv, report.md.
+Per counselor (by_counselor.csv), with and without memory: session MQM at each session, the step and the trend, each
+with a member-bootstrap interval.
+Writes trajectory.csv, steps.csv, by_counselor.csv, report.md.
 """
 
 from __future__ import annotations
@@ -27,6 +29,9 @@ from drivers import parts  # noqa: E402
 
 FIELDS = {"MQM": "_mqm", "memory part": "group:memory", "exploration part": "group:exploration"}
 MODES = ("compacted", "none", "full", "split")
+#: Conditions drawn per counselor (by_counselor.csv): with and without the counselor's memory; full and split are
+#: deferred.
+BY_COUNSELOR_MODES = ("compacted", "none")
 PAPER = {"gpt61_sol": "GPT-6.1 Sol", "own": "MindJudge-27B", "deepseek_v4": "DeepSeek-V4.1", "hy4": "Hy4-preview"}
 
 
@@ -93,7 +98,7 @@ def main() -> None:
     args = ap.parse_args()
     set_exclusions(args.exclude)
     args.out.mkdir(parents=True, exist_ok=True)
-    traj, steps = [], []
+    traj, steps, by_c = [], [], []
     lines = ["# Session by session: trend or step?", "",
              "Step: session 2 minus session 1. Trend: each member's slope over sessions 2-6 (per session). Means over "
              "counselors; 95% intervals resample members within each counselor.", ""]
@@ -119,6 +124,22 @@ def main() -> None:
                         s = {(m, e): d.get(f, 0.0) for (m, e), d in pd.items() if e != "ep000"}
                         s.update({(m, e): d.get(f, 0.0) for (m, e), d in pc.items() if e == "ep000"})
                         vals[name][cdir.name] = s
+                if mode in BY_COUNSELOR_MODES:
+                    for c, s in vals["MQM"].items():
+                        for e in eps6:
+                            r = pool({c: {m: v for (m, ee), v in s.items() if ee == e}})
+                            if r.get("diff") is not None:
+                                by_c.append({"judge": jl, "view": view, "mode": mode, "counselor": c, "kind": "session",
+                                             "session": int(e[2:]) + 1, **{k: r[k] for k in ("diff", "lo", "hi")}})
+                        step_c = pool({c: {m: s[m, eps6[1]] - s[m, eps6[0]] for (m, e) in s
+                                           if e == eps6[0] and (m, eps6[1]) in s}})
+                        trend_c = pool({c: {m: b for m in {m for (m, _) in s}
+                                            if (b := slope([(int(e[2:]) + 1, s[m, e]) for e in eps6[1:] if (m, e) in s]))
+                                            is not None}})
+                        for kind, r in (("step", step_c), ("trend", trend_c)):
+                            if r.get("diff") is not None:
+                                by_c.append({"judge": jl, "view": view, "mode": mode, "counselor": c, "kind": kind,
+                                             "session": None, **{k: r[k] for k in ("diff", "lo", "hi")}})
                 for name in FIELDS:
                     if not vals[name]:
                         continue
@@ -206,7 +227,27 @@ def main() -> None:
                                       "kind": kind, **{k: r[k] for k in ("diff", "lo", "hi", "n_counselors", "above",
                                                                          "below")}})
         lines.append("")
-    for name, rows in (("trajectory.csv", traj), ("steps.csv", steps)):
+    lines += ["## Per counselor: session MQM trend over sessions 2-6 (per session), with and without memory", ""]
+    for jl in ("DeepSeek-V4.1", "MindJudge-27B"):
+        for view in ("reference", "as_sent"):
+            tr = {(r["counselor"], r["mode"]): r for r in by_c
+                  if r["judge"] == jl and r["view"] == view and r["kind"] == "trend"}
+            st = {(r["counselor"], r["mode"]): r for r in by_c
+                  if r["judge"] == jl and r["view"] == view and r["kind"] == "step"}
+            cs = sorted({c for c, _ in tr})
+            if not cs:
+                continue
+            lines += [f"### {jl}, {view.replace('_', ' ')}", "",
+                      "| counselor | with memory: step s1→s2 | trend s2-6 | without: step | trend |", "|---|---|---|---|---|"]
+            for c in cs:
+                lines.append(f"| {c} | " + " | ".join(fmt(d.get((c, m)), 3) for m in BY_COUNSELOR_MODES
+                                                      for d in (st, tr)) + " |")
+            for m in BY_COUNSELOR_MODES:
+                rs = [tr[c, m] for c in cs if (c, m) in tr]
+                lines.append(f"- {m}: trend above zero for {sum(r['lo'] > 0 for r in rs)} of {len(rs)} counselors, "
+                             f"below for {sum(r['hi'] < 0 for r in rs)}")
+            lines.append("")
+    for name, rows in (("trajectory.csv", traj), ("steps.csv", steps), ("by_counselor.csv", by_c)):
         with (args.out / name).open("w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=sorted({k for r in rows for k in r}))
             w.writeheader()
