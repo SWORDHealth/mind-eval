@@ -234,7 +234,7 @@ def fig_dose(later: Path, out: Path) -> None:
     a.grid(axis="y", color=GRID, lw=0.6)
     a.set_title("Sessions where the member repeats score worse", loc="left")
     order = ["GPT-6.1 Sol", "DeepSeek-V4.1", "Hy4-preview", "MindJudge-27B"]
-    rs = sorted(reply, key=lambda r: order.index(r["judge"]))
+    rs = sorted((r for r in reply if r["judge"] in order), key=lambda r: order.index(r["judge"]))
     ys = range(len(rs))
     b.hlines(ys, [float(r["lo"]) for r in rs], [float(r["hi"]) for r in rs], color=ORANGE, lw=1.8)
     b.plot([float(r["slope"]) for r in rs], ys, "o", color=ORANGE, ms=5, mec="white", mew=0.8)
@@ -299,6 +299,55 @@ def fig_overlap(later: Path, out: Path) -> None:
     save(fig, out, "fig_overlap")
 
 
+def fig_trajectory(later: Path, out: Path) -> None:
+    rows = read_csv(later / "trajectory" / "trajectory.csv")
+
+    def pts(**kw):
+        rs = [r for r in rows if all(r[k] == v for k, v in kw.items())]
+        return sorted(((int(r["session"]), float(r["diff"]), float(r["lo"]), float(r["hi"])) for r in rs))
+    modes = [("compacted", "with memory (benchmark log)", BLUE), ("none", "without the counselor's memory", ORANGE),
+             ("full", "full transcripts", AQUA), ("split", "split notes", YELLOW)]
+    fig, axes = plt.subplots(1, 3, figsize=(7.2, 2.5))
+    panels = [(axes[0], dict(judge="DeepSeek-V4.1", view="reference", measure="MQM"), "MQM (DeepSeek-V4.1, reference memory)"),
+              (axes[1], dict(judge="labelers", measure="member repeats"), "member repeats a session (labeler)"),
+              (axes[2], None, "GPT-6.1 Sol parts, paper runs")]
+    for ax, sel, ylabel in panels[:2]:
+        for k, (mode, name, color) in enumerate(modes):
+            ps = pts(set="ablation", mode=mode, **sel)
+            if not ps:
+                continue
+            xs = [x + (k - 1.5) * 0.05 for x, *_ in ps]
+            emph = mode in ("compacted", "none")
+            ax.plot(xs, [y for _, y, _, _ in ps], "-o", color=color, lw=1.8 if emph else 1.0, ms=3.6 if emph else 2.6,
+                    alpha=1 if emph else 0.7, mec="white", mew=0.5, label=name)
+            ax.vlines(xs, [lo for *_, lo, _ in ps], [hi for *_, hi in ps], color=color, lw=0.9, alpha=1 if emph else 0.6)
+        ax.set_xticks(range(1, 7) if sel.get("judge") != "labelers" else range(2, 7))
+        ax.set_xlabel("session")
+        ax.set_ylabel(ylabel, fontsize=7)
+        ax.grid(axis="y", color=GRID, lw=0.6)
+    axes[0].set_title("(a) Session score", loc="left", fontsize=7.5)
+    axes[1].set_title("(b) Member repeats", loc="left", fontsize=7.5)
+    ax = axes[2]
+    for measure, color, name in (("memory part", "#4a3aa7", "memory issues"), ("exploration part", "#e34948",
+                                                                                   "exploration issues")):
+        ps = pts(set="paper", judge="GPT-6.1 Sol", measure=measure)
+        base = ps[0][1]
+        ax.plot([x for x, *_ in ps], [y - base for _, y, _, _ in ps], "-o", color=color, lw=1.8, ms=3.6, mec="white",
+                mew=0.5, label=name)
+        ax.vlines([x for x, *_ in ps], [lo - base for *_, lo, _ in ps], [hi - base for *_, hi in ps], color=color, lw=0.9)
+    zero(ax, "y")
+    ax.set_xticks([1, 2, 3])
+    ax.set_xlabel("session")
+    ax.set_ylabel("MQM part, change from session 1", fontsize=7)
+    ax.grid(axis="y", color=GRID, lw=0.6)
+    ax.legend(fontsize=6.3, loc="lower left")
+    ax.set_title("(c) Paper runs, GPT-6.1 Sol", loc="left", fontsize=7.5)
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", ncol=4, fontsize=6.5, bbox_to_anchor=(0.5, 1.07))
+    fig.tight_layout()
+    save(fig, out, "fig_trajectory")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--data", required=True, type=Path, help="dashboard_data.py's output directory")
@@ -310,7 +359,7 @@ def main() -> None:
     for f in (fig_change, fig_continuity, fig_ablation, fig_sessions, fig_labelers):
         f(args.data, args.out)
     if args.later:
-        for f in (fig_drivers, fig_dose, fig_memory_share, fig_overlap):
+        for f in (fig_drivers, fig_dose, fig_memory_share, fig_overlap, fig_trajectory):
             f(args.later, args.out)
 
 

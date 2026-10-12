@@ -185,6 +185,25 @@ def overlap(d: Path) -> str:
     return "\n".join(out) + "\n"
 
 
+def trajectory(d: Path) -> str:
+    """Step (session 1 to 2) and trend (slope over sessions 2-6, per session) by memory condition."""
+    rows = list(csv.DictReader((d / "steps.csv").open()))
+    get = lambda **kw: next((r for r in rows if all(r[k] == v for k, v in kw.items())), None)  # noqa: E731
+    out = [r"\begin{tabular}{llcc}", r"\toprule", r"Memory & Measure & Step, s1 $\to$ s2 & Trend per session, s2--s6 \\",
+           r"\midrule"]
+    names = {"compacted": "Benchmark log", "none": "None", "full": "Full transcripts", "split": "Split notes"}
+    for mode in ("compacted", "none", "full", "split"):
+        a = get(set="ablation", judge="DeepSeek-V4.1", view="reference", mode=mode, measure="MQM", kind="step")
+        b = get(set="ablation", judge="DeepSeek-V4.1", view="reference", mode=mode, measure="MQM", kind="trend")
+        c = get(set="ablation", judge="labelers", mode=mode, measure="member repeats", kind="trend")
+        if a and b:
+            out.append(f"{names[mode]} & MQM (DeepSeek, reference) & {fmt_ci(a)} & {fmt_ci(b, 3)} \\\\")
+        if c:
+            out.append(f" & Member repeats & -- & {fmt_ci(c, 3)} \\\\")
+    out += [r"\bottomrule", r"\end{tabular}"]
+    return "\n".join(out) + "\n"
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--c1", required=True, type=Path)
@@ -199,7 +218,8 @@ def main() -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     if args.later:
         for name, f, sub in (("tab_drivers", drivers, "drivers"), ("tab_dose", dose, "dose_response"),
-                             ("tab_memory_share", memory_share, "memory_share"), ("tab_overlap", overlap, "judge_overlap")):
+                             ("tab_memory_share", memory_share, "memory_share"), ("tab_overlap", overlap, "judge_overlap"),
+                             ("tab_trajectory", trajectory, "trajectory")):
             if (args.later / sub).is_dir():
                 (args.out / f"{name}.tex").write_text(f(args.later / sub))
     (args.out / "tab_later_ranking.tex").write_text(ranking(args.c1, args.c1_shared))
