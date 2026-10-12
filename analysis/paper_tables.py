@@ -120,6 +120,71 @@ def ablation(ab: Path) -> str:
 EXCLUDE = ("glm53",)
 
 
+def fmt_ci(r, nd=2, key="diff"):
+    return f"{float(r[key]):+.{nd}f} [{float(r['lo']):+.{nd}f}, {float(r['hi']):+.{nd}f}]"
+
+
+def drivers(d: Path) -> str:
+    """The change from session 1, mean over counselors, and its parts by issue group, per judge."""
+    rows = [r for r in csv.DictReader((d / "drivers.csv").open()) if r["counselor"] == "mean of counselors"]
+    by = {(r["judge"], r["field"]): r for r in rows}
+    groups = ["memory", "exploration", "advice and validation", "style and scope"]
+    out = [r"\begin{tabular}{l" + "c" * (len(groups) + 1) + "}", r"\toprule",
+           "Judge & MQM change & " + " & ".join(g.capitalize() for g in groups) + r" \\", r"\midrule"]
+    for j in ("GPT-6.1 Sol", "Hy4-preview", "DeepSeek-V4.1", "MindJudge-27B"):
+        if (j, "_mqm") not in by:
+            continue
+        out.append(f"{j} & {fmt_ci(by[j, '_mqm'])} & " + " & ".join(fmt_ci(by[j, f'group:{g}']) for g in groups)
+                   + r" \\")
+    out += [r"\bottomrule", r"\end{tabular}"]
+    return "\n".join(out) + "\n"
+
+
+def dose(d: Path) -> str:
+    """Memory failures against score, per judge: session slope per member repeat, and the reply that caused it."""
+    rows = list(csv.DictReader((d / "dose_response.csv").open()))
+    get = lambda j, level, m: next((r for r in rows if r["judge"] == j and r["level"] == level  # noqa: E731
+                                    and r["measure"].startswith(m)), None)
+    out = [r"\begin{tabular}{lccc}", r"\toprule",
+           r"Judge & MQM per member repeat & MQM per 10 pts notes missed & Reply forcing a repeat vs other \\",
+           r"\midrule"]
+    for j in ("GPT-6.1 Sol", "Hy4-preview", "DeepSeek-V4.1", "MindJudge-27B"):
+        a, b, c = get(j, "session", "repeats"), get(j, "session", "missed_share"), get(j, "reply", "repeat-forcing")
+        if a:
+            out.append(f"{j} & {fmt_ci(a, 3, 'slope')} & {fmt_ci(b, 3, 'slope')} & {fmt_ci(c, 2, 'slope')} \\\\")
+    out += [r"\bottomrule", r"\end{tabular}"]
+    return "\n".join(out) + "\n"
+
+
+PART = "memory's part"
+
+
+def memory_share(d: Path) -> str:
+    """Change from session 1 with and without the counselor's memory, mean over counselors."""
+    rows = [r for r in csv.DictReader((d / "memory_share.csv").open()) if r["counselor"] == "mean of counselors"]
+    out = [r"\begin{tabular}{llccc}", r"\toprule",
+           r"Judge & View & Change with memory & Change without & Memory's part \\", r"\midrule"]
+    for j in ("DeepSeek-V4.1", "MindJudge-27B"):
+        for view in ("reference", "as_sent"):
+            by = {r["measure"]: r for r in rows if r["judge"] == j and r["view"] == view}
+            if by:
+                out.append(f"{j} & {view.replace('_', ' ')} & {fmt_ci(by['with memory'])} & "
+                           f"{fmt_ci(by['without memory'])} & {fmt_ci(by[PART])} \\\\")
+    out += [r"\bottomrule", r"\end{tabular}"]
+    return "\n".join(out) + "\n"
+
+
+def overlap(d: Path) -> str:
+    rows = list(csv.DictReader((d / "overlap.csv").open()))
+    out = [r"\begin{tabular}{lccc}", r"\toprule",
+           r"Judge & Flags a memory issue & Major or Critical & On other replies: Major or Critical \\", r"\midrule"]
+    for r in rows:
+        out.append(f"{r['judge']} & {100 * float(r['memory_flag']):.0f}\\% & {100 * float(r['major_plus']):.0f}\\% & "
+                   f"{100 * float(r['major_plus_rest']):.0f}\\% \\\\")
+    out += [r"\bottomrule", r"\end{tabular}"]
+    return "\n".join(out) + "\n"
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--c1", required=True, type=Path)
@@ -127,9 +192,16 @@ def main() -> None:
     ap.add_argument("--c2", required=True, type=Path)
     ap.add_argument("--c3", type=Path)
     ap.add_argument("--ablation", type=Path)
+    ap.add_argument("--later", type=Path, help="later_sessions dir: drivers/, dose_response/, memory_share/, "
+                    "judge_overlap/ for the tables on what drives the change")
     ap.add_argument("--out", required=True, type=Path)
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
+    if args.later:
+        for name, f, sub in (("tab_drivers", drivers, "drivers"), ("tab_dose", dose, "dose_response"),
+                             ("tab_memory_share", memory_share, "memory_share"), ("tab_overlap", overlap, "judge_overlap")):
+            if (args.later / sub).is_dir():
+                (args.out / f"{name}.tex").write_text(f(args.later / sub))
     (args.out / "tab_later_ranking.tex").write_text(ranking(args.c1, args.c1_shared))
     (args.out / "tab_later_errors.tex").write_text(errors(args.c2))
     if args.c3:
