@@ -48,7 +48,11 @@ ABLATION_FINGERPRINT = "7962e7caed157571"
 #: glm53_nvfp4 forks the same run against the NVFP4 weights (the FP8 server went away mid-ablation); its conditions are
 #: compared with its own compacted rerun only.
 ABLATION_EXTRA = {"glm53": {"label": "GLM-5.3", "path": "mindeval2_preserve/glm53"},
-                  "glm53_nvfp4": {"label": "GLM-5.3 NVFP4", "path": "mindeval2_preserve/glm53"}}
+                  "glm53_nvfp4": {"label": "GLM-5.3 NVFP4", "path": "mindeval2_preserve/glm53"},
+                  # API counselors: their paper runs are at the earlier harness, so each has a 3-session source run at
+                  # this fingerprint made for the ablation (mindeval_qwen/go_api.sh).
+                  "claude_sonnet5": {"label": "Claude Sonnet 5", "path": "mindeval_qwen/claude_sonnet5"},
+                  "gpt56terra": {"label": "GPT-5.6 Terra", "path": "mindeval_qwen/gpt56terra"}}
 
 
 def ablation_counselors(path: Path = HERE / "runs.yaml") -> dict[str, dict]:
