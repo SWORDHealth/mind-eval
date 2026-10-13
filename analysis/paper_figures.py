@@ -534,6 +534,7 @@ def fig_sol_validity(later: Path, out: Path) -> None:
             keys.insert(1, "Sol, clean")
             cols.insert(1, "#9cc3ef")
             names.insert(1, "Sol,\nclean*")
+            names[2] = "Deep-\nSeek"
         vals = [float(rr[j]["diff"]) for j in keys]
         ax.bar(range(len(keys)), vals, color=cols, width=0.6)
         ax.errorbar(range(len(keys)), vals, yerr=[[v - float(rr[j]["lo"]) for v, j in zip(vals, keys)],
