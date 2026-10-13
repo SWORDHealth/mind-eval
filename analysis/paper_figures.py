@@ -553,6 +553,62 @@ def fig_sol_validity(later: Path, out: Path) -> None:
     save(fig, out, "fig_sol_validity")
 
 
+def fig_s1_replicates(later: Path, out: Path) -> None:
+    """Three sessions against three runs of session 1 (paper runs' sessions 1-3 against reruns 1-3): (a) how far later
+    sessions land from session 1 against reruns, per counselor; (b) whether the designs order counselors alike;
+    (c) what changes, by issue group (DeepSeek-V4.1)."""
+    rows = read_csv(later / "s1_replicates_paper" / "s1_replicates.csv")
+    judges = [("DeepSeek-V4.1", AQUA), ("MindJudge-27B", GREY)]
+    fig, (a, b, c) = plt.subplots(1, 3, figsize=(7.2, 2.9), gridspec_kw={"width_ratios": [1.3, 1.0, 1.1]})
+    dist = [r for r in rows if r["analysis"] == "distance" and r["measure"] == "distance ratio"]
+    cs = sorted({r["counselor"] for r in dist},
+                key=lambda c: next(float(r["value"]) for r in dist if r["counselor"] == c and r["judge"] == judges[0][0]))
+    for k, (jl, color) in enumerate(judges):
+        pts = {r["counselor"]: r for r in dist if r["judge"] == jl}
+        ys = [i + (k - 0.5) * 0.28 for i in range(len(cs))]
+        a.hlines(ys, [float(pts[c]["lo"]) for c in cs], [float(pts[c]["hi"]) for c in cs], color=color, lw=0.9)
+        a.plot([float(pts[c]["value"]) for c in cs], ys, "o", ms=3.4, color=color, mec="white", mew=0.4, label=jl)
+    a.axvline(1, color=MUTED, lw=0.8)
+    a.set_xlim(0, 4)
+    a.set_yticks(range(len(cs)), [_label(c).replace(" †", "") for c in cs], fontsize=6)
+    a.set_xlabel("distance from session 1:\nsessions 2–3 ÷ reruns 2–3", fontsize=6.8)
+    a.grid(axis="x", color=GRID, lw=0.5)
+    a.set_title("(a) Later sessions land further", loc="left", fontsize=7.5)
+    names = [("split-half sessions", "within\nsessions"), ("split-half reruns", "within\nreruns"),
+             ("across designs", "across\ndesigns")]
+    for k, (jl, color) in enumerate(judges):
+        rr = {r["measure"]: r for r in rows if r["analysis"] == "ranking" and r["judge"] == jl and r["N"] == "3"}
+        xs = [i + (k - 0.5) * 0.36 for i in range(len(names))]
+        vals = [float(rr[m]["value"]) for m, _ in names]
+        b.bar(xs, vals, width=0.34, color=color, label=jl)
+        b.errorbar(xs, vals, yerr=[[v - float(rr[m]["lo"]) for v, (m, _) in zip(vals, names)],
+                                   [float(rr[m]["hi"]) - v for v, (m, _) in zip(vals, names)]],
+                   fmt="none", ecolor=INK, elinewidth=0.7)
+    b.set_xticks(range(len(names)), [n for _, n in names], fontsize=5.8)
+    b.set_ylim(0.5, 1.0)
+    b.set_ylabel("Kendall τ between counselor orders", fontsize=6.5)
+    b.grid(axis="y", color=GRID, lw=0.5)
+    b.set_title("(b) Ranking", loc="left", fontsize=7.5)
+    parts_ = [("memory part", BLUE), ("exploration part", ORANGE), ("advice and validation part", AQUA),
+              ("style and scope part", YELLOW), ("MQM", INK)]
+    rr = {r["measure"].split(": ")[0]: r for r in rows if r["analysis"] == "content" and r["judge"] == judges[0][0]
+          and r["measure"].endswith(": difference")}
+    vals = [float(rr[p]["value"]) for p, _ in parts_]
+    c.barh(range(len(parts_)), vals, color=[col for _, col in parts_], height=0.6)
+    c.errorbar(vals, range(len(parts_)), xerr=[[v - float(rr[p]["lo"]) for v, (p, _) in zip(vals, parts_)],
+                                               [float(rr[p]["hi"]) - v for v, (p, _) in zip(vals, parts_)]],
+               fmt="none", ecolor=INK, elinewidth=0.7)
+    zero(c)
+    c.set_yticks(range(len(parts_)), [p.replace(" part", "") for p, _ in parts_], fontsize=6.3)
+    c.set_xlabel("change from session 1: sessions 2–3\nminus reruns 2–3 (DeepSeek-V4.1)", fontsize=6.8)
+    c.grid(axis="x", color=GRID, lw=0.5)
+    c.set_title("(c) What later sessions add", loc="left", fontsize=7.5)
+    handles, labels = a.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=2, fontsize=6.3, bbox_to_anchor=(0.3, -0.04))
+    fig.tight_layout(rect=(0, 0.05, 1, 1))
+    save(fig, out, "fig_s1_replicates")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--data", required=True, type=Path, help="dashboard_data.py's output directory")
@@ -565,7 +621,7 @@ def main() -> None:
         f(args.data, args.out)
     if args.later:
         for f in (fig_drivers, fig_dose, fig_memory_share, fig_overlap, fig_trajectory, fig_trajectory_counselors,
-                  fig_sol_memory, fig_sol_validity):
+                  fig_sol_memory, fig_sol_validity, fig_s1_replicates):
             f(args.later, args.out)
 
 
