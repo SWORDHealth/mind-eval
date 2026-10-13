@@ -3,21 +3,31 @@
     python analysis/s1_replicates.py --ablation <memory_ablation dir> --counselors glm53_nvfp4[,...] --out <dir>
 
 Per counselor: its 50 members' arc under the benchmark's memory (main6/<c>/compacted, sessions 1-6) and their session 1
-run again under seeds 1-5 (s1rep/<c>/seed<k>; seed 0 is the arc's own session 1). Session 1 keeps the member's own
-situation, affect and concealment whatever the seed, so a rerun changes only the conversation. Each judge reads both
-designs on one serving: DeepSeek-V4.1-Flash on our own server (judging/deepseek_v4_own/), MindJudge-27B
-(judging/mindjudge/). Scores are session MQM; parts are drivers.py's split of it by issue group.
-  distance   per member, the mean squared difference from session 1 of sessions 2-6 and of reruns 1-5, and the
-             ratio of the two means (1 if later sessions were reruns); likewise the spread among sessions 2-6 and
-             among reruns 1-5 around their own mean, which leaves the step from session 1 out.
-  change     by N (2-6): the mean of sessions 2..N minus session 1, beside the mean of reruns 1..N-1 minus session 1
-             (0 in expectation), and their difference.
-  precision  by N (1-6): the member-bootstrap standard error of the counselor's mean over N sessions and over N runs of
-             session 1.
-  content    each issue group's part of the score: session 1, the reruns, sessions 2-6; and sessions 2-6 minus reruns.
-  ranking    with three or more counselors, at N = 3 and 6: Kendall tau between the counselors' order by N sessions
-             and by N runs of session 1, against each design's agreement with itself across random halves of the
-             members (the cross-design tau is computed across halves too, so all three carry the same noise).
+run again under seeds 1-5 (s1rep/<c>/seed<k>). Session 1 keeps the member's own situation, affect and concealment
+whatever the seed, so a rerun changes only the conversation. Scores are session MQM; parts are drivers.py's split of it
+by issue group.
+
+The reruns were generated against another patient server than the arcs, so the rerun design is kept to itself: rerun 1
+is its session 1, reruns 2-5 its repeats, and the arc's own session 1 (seed 0) only measures the shift between the two
+(serving). Judges, one serving per design:
+  DeepSeek-V4.1   arcs: each counselor's single-serving verdicts (judging/deepseek_v4/single/; the API counselors' were
+                  made on our own server, judging/deepseek_v4/main6/); reruns: our own server (judging/deepseek_v4_own/
+                  s1rep/), where the arc's session 1 is also judged again (seed0), so both shifts can be told apart.
+  MindJudge-27B   one server for everything (judging/mindjudge/).
+  serving    seed 0 judged on the reruns' serving minus on the arc's (the judge's shift; DeepSeek, free counselors), and
+             the mean of reruns 1-5 minus seed 0 on one judge serving (the patient server's shift).
+  distance   per member, the mean squared difference from session 1 of sessions 2-6, and of reruns 2-5 from rerun 1, and
+             the ratio of the two means (1 if later sessions were reruns); likewise the spread among sessions 2-6 and
+             among reruns 1-5 around their own mean, which leaves any step from session 1 out.
+  change     by N (2-5): the mean of sessions 2..N minus session 1, beside the mean of reruns 2..N minus rerun 1 (0 in
+             expectation), and their difference.
+  precision  by N (1-5): the member-bootstrap standard error of the counselor's mean over N sessions and over N reruns.
+  content    each issue group's part of the score as a change: sessions 2-6 minus session 1, reruns 2-5 minus rerun 1,
+             and the difference.
+  ranking    with three or more counselors, at N = 3 and 5: Kendall tau between the counselors' order by N sessions and
+             by N reruns, against each design's agreement with itself across random halves of the members (the
+             cross-design tau is across halves too, so all three carry the same noise). DeepSeek leaves out counselors
+             whose arcs were judged on another serving (--rank_exclude).
 Intervals: 95%, members resampled (within each counselor when pooled over counselors).
 Writes s1_replicates.csv, report.md, manifest.json.
 """
@@ -37,34 +47,52 @@ from ablation import pool  # noqa: E402
 from common import BOOT, ci, git_describe, kendall_tau_b, load_verdicts, mean, member_draws  # noqa: E402
 from drivers import GROUPS, parts  # noqa: E402
 
-JUDGES = {"deepseek_v4": ("deepseek_v4_own", "DeepSeek-V4.1 (one serving)"), "mindjudge": ("mindjudge", "MindJudge-27B")}
+JUDGES = {"deepseek_v4": "DeepSeek-V4.1", "mindjudge": "MindJudge-27B"}
 ARC = range(1, 7)
 FIELDS = {"MQM": "_mqm", **{f"{g} part": f"group:{g}" for g in GROUPS}}
 
 
-def verdicts(root: Path, jroot: str, rel: str) -> Path:
-    return root / "judging" / jroot / rel / "as_sent" / "judge" / "mindeval2" / "verdicts.jsonl"
+def verdicts(view: Path) -> Path:
+    return view / "as_sent" / "judge" / "mindeval2" / "verdicts.jsonl"
 
 
-def load(root: Path, jroot: str, c: str, seeds: list[int]) -> tuple[dict, dict, list[Path]]:
-    """arc: member -> session (1-6) -> fields; reruns: member -> seed (0 = the arc's session 1) -> fields."""
-    arc, reruns, used = {}, {}, []
-    p = verdicts(root, jroot, f"main6/{c}/compacted")
-    if p.is_file():
-        used.append(p)
-        for (m, e), d in parts(load_verdicts(p)).items():
+def paths(root: Path, judge: str, c: str) -> tuple[Path, Path | None, Path]:
+    """The arc's verdicts, session 1 judged again on the reruns' serving (None: the same serving), the reruns' root."""
+    j = root / "judging"
+    if judge == "deepseek_v4":
+        single = j / "deepseek_v4" / "single" / c / "compacted"
+        arc = single if verdicts(single).is_file() else j / "deepseek_v4" / "main6" / c / "compacted"
+        seed0 = j / "deepseek_v4_own" / "s1rep" / c / "seed0"
+        return arc, seed0 if verdicts(seed0).is_file() else None, j / "deepseek_v4_own" / "s1rep" / c
+    return j / judge / "main6" / c / "compacted", None, j / judge / "s1rep" / c
+
+
+def load(root: Path, judge: str, c: str, seeds: list[int]) -> tuple[dict, dict, dict, dict, list[Path]]:
+    """arc: member -> session (1-6) -> fields; reruns: member -> seed -> fields; s0: member -> the arc's session 1 on the
+    reruns' judge serving; s1_other: the same on the arc's serving, where the two differ."""
+    arc_dir, seed0_dir, rr = paths(root, judge, c)
+    arc, reruns, s0, s1_other, used = {}, {}, {}, {}, []
+    if verdicts(arc_dir).is_file():
+        used.append(verdicts(arc_dir))
+        for (m, e), d in parts(load_verdicts(verdicts(arc_dir))).items():
             arc.setdefault(m, {})[int(e[2:]) + 1] = d
     for k in seeds:
-        p = verdicts(root, jroot, f"s1rep/{c}/seed{k}")
+        p = verdicts(rr / f"seed{k}")
         if p.is_file():
             used.append(p)
             for (m, e), d in parts(load_verdicts(p)).items():
                 if e == "ep000":
                     reruns.setdefault(m, {})[k] = d
-    for m in reruns:
-        if 1 in arc.get(m, {}):
-            reruns[m][0] = arc[m][1]
-    return arc, reruns, used
+    if seed0_dir is not None:
+        used.append(verdicts(seed0_dir))
+        for (m, e), d in parts(load_verdicts(verdicts(seed0_dir))).items():
+            if e == "ep000":
+                s0[m] = d
+                if 1 in arc.get(m, {}):
+                    s1_other[m] = arc[m][1]
+    else:
+        s0 = {m: a[1] for m, a in arc.items() if 1 in a}
+    return arc, reruns, s0, s1_other, used
 
 
 def f(d: dict, field: str) -> float:
@@ -88,55 +116,79 @@ def fmt(r: dict | None, nd: int = 3) -> str:
     return "-" if not r or r.get("diff") is None else f"{r['diff']:+.{nd}f} [{r['lo']:+.{nd}f}, {r['hi']:+.{nd}f}]"
 
 
+def spread(xs: list[float]) -> float:
+    mu = mean(xs)
+    return sum((x - mu) ** 2 for x in xs) / (len(xs) - 1)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--ablation", required=True, type=Path)
     ap.add_argument("--counselors", required=True)
     ap.add_argument("--seeds", default="1,2,3,4,5")
     ap.add_argument("--splits", type=int, default=1000)
+    ap.add_argument("--rank_exclude", default="claude_sonnet5,gpt56terra",
+                    help="left out of the DeepSeek ranking: their arcs were judged on another serving")
     ap.add_argument("--out", required=True, type=Path)
     args = ap.parse_args()
     cs = args.counselors.split(",")
     seeds = [int(k) for k in args.seeds.split(",")]
+    first, later = seeds[0], seeds[1:]
+    nmax = min(len(seeds), len(ARC))
     args.out.mkdir(parents=True, exist_ok=True)
     rows, inputs = [], []
     lines = ["# Session 1 run N times against N sessions", "",
              f"Counselors: {', '.join(cs)}. Arc: sessions 1-6 under the benchmark's memory. Reruns: session 1 under "
-             f"seeds {args.seeds} (seed 0 is the arc's session 1). Means over counselors; 95% intervals resample members "
-             "within each counselor.", ""]
+             f"seeds {args.seeds}, against another patient server than the arcs; rerun {first} is the rerun design's "
+             "session 1. Means over counselors; 95% intervals resample members within each counselor.", ""]
 
     def row(judge, c, analysis, measure, n, r):
         if r and r.get("diff") is not None:
             rows.append({"judge": judge, "counselor": c, "analysis": analysis, "measure": measure, "N": n,
                          "value": r["diff"], "lo": r["lo"], "hi": r["hi"], "n_counselors": r.get("n_counselors")})
 
-    for judge, (jroot, jl) in JUDGES.items():
-        data = {}
+    for judge, jl in JUDGES.items():
+        data, s0s, others = {}, {}, {}
         for c in cs:
-            arc, reruns, used = load(args.ablation, jroot, c, seeds)
+            arc, reruns, s0, s1_other, used = load(args.ablation, judge, c, seeds)
             inputs += [str(p) for p in used]
             if arc and reruns:
-                data[c] = (arc, reruns)
+                data[c], s0s[c], others[c] = (arc, reruns), s0, s1_other
         if not data:
             continue
-        n_m = {c: sum(1 for m in r if all(k in r[m] for k in [0, *seeds])) for c, (_, r) in data.items()}
-        lines += [f"## {jl}", "", "Members with every rerun judged: " + ", ".join(f"{c} {n}" for c, n in n_m.items()),
-                  ""]
+        complete = {c: [m for m in r if all(k in r[m] for k in seeds)] for c, (_, r) in data.items()}
+        lines += [f"## {jl}", "", "Members with every rerun judged: "
+                  + ", ".join(f"{c} {len(ms)}" for c, ms in complete.items()), ""]
+
+        # serving
+        judge_shift = {c: {m: f(s0s[c][m], "_mqm") - f(o[m], "_mqm") for m in o} for c, o in others.items() if o}
+        patient_shift = {c: {m: mean(f(r[m][k], "_mqm") for k in seeds) - f(s0s[c][m], "_mqm")
+                             for m in complete[c] if m in s0s[c]} for c, (_, r) in data.items()}
+        lines += ["### Serving shifts (session 1, same members and situations)", "",
+                  "| counselor | judge: s1 on reruns' serving minus arc's | patient: mean of reruns minus s1 |",
+                  "|---|---|---|"]
+        for c in data:
+            rj = pool({c: judge_shift[c]}) if judge_shift.get(c) else None
+            rp = pool({c: patient_shift[c]}) if patient_shift.get(c) else None
+            lines.append(f"| {c} | {fmt(rj)} | {fmt(rp)} |")
+            row(jl, c, "serving", "judge shift", 1, rj)
+            row(jl, c, "serving", "patient shift", 1, rp)
+        rj, rp = pool({c: d for c, d in judge_shift.items() if d}), pool({c: d for c, d in patient_shift.items() if d})
+        lines += [f"| mean | {fmt(rj)} | {fmt(rp)} |", ""]
+        row(jl, "mean", "serving", "judge shift", 1, rj)
+        row(jl, "mean", "serving", "patient shift", 1, rp)
 
         # distance and spread
         lines += ["### How far from session 1, and how spread out", "",
-                  "| counselor | sessions 2-6: mean sq. distance from s1 | reruns 1-5 | ratio | sessions 2-6: spread | "
-                  "reruns 1-5: spread | ratio |", "|---|---|---|---|---|---|---|"]
+                  f"| counselor | sessions 2-6: mean sq. distance from s1 | reruns {later[0]}-{later[-1]} from rerun "
+                  f"{first} | ratio | sessions 2-6: spread | reruns {seeds[0]}-{seeds[-1]}: spread | ratio |",
+                  "|---|---|---|---|---|---|---|"]
         for c, (arc, reruns) in data.items():
-            ms = [m for m in arc if all(s in arc[m] for s in ARC) and all(k in reruns.get(m, {}) for k in [0, *seeds])]
+            ms = [m for m in complete[c] if all(s in arc.get(m, {}) for s in ARC)]
             if len(ms) < 10:
                 continue
             da = {m: mean((f(arc[m][s], "_mqm") - f(arc[m][1], "_mqm")) ** 2 for s in ARC[1:]) for m in ms}
-            dr = {m: mean((f(reruns[m][k], "_mqm") - f(reruns[m][0], "_mqm")) ** 2 for k in seeds) for m in ms}
-
-            def spread(xs):
-                mu = mean(xs)
-                return sum((x - mu) ** 2 for x in xs) / (len(xs) - 1)
+            dr = {m: mean((f(reruns[m][k], "_mqm") - f(reruns[m][first], "_mqm")) ** 2 for k in later) for m in ms}
             sa = {m: spread([f(arc[m][s], "_mqm") for s in ARC[1:]]) for m in ms}
             sr = {m: spread([f(reruns[m][k], "_mqm") for k in seeds]) for m in ms}
             ra, rs = ratio_ci(da, dr), ratio_ci(sa, sr)
@@ -150,14 +202,13 @@ def main() -> None:
 
         # change from session 1
         lines += ["### Change from session 1", "",
-                  "| N | sessions 2..N minus s1 | reruns 1..N-1 minus s1 | difference |", "|---|---|---|---|"]
-        for n in range(2, 7):
+                  "| N | sessions 2..N minus s1 | reruns 2..N minus rerun 1 | difference |", "|---|---|---|---|"]
+        for n in range(2, nmax + 1):
             ca, cr, cd = {}, {}, {}
             for c, (arc, reruns) in data.items():
-                ms = [m for m in arc if all(s in arc[m] for s in range(1, n + 1))
-                      and all(k in reruns.get(m, {}) for k in range(n))]
+                ms = [m for m in complete[c] if all(s in arc.get(m, {}) for s in range(1, n + 1))]
                 a = {m: mean(f(arc[m][s], "_mqm") for s in range(2, n + 1)) - f(arc[m][1], "_mqm") for m in ms}
-                r = {m: mean(f(reruns[m][k], "_mqm") for k in range(1, n)) - f(reruns[m][0], "_mqm") for m in ms}
+                r = {m: mean(f(reruns[m][k], "_mqm") for k in seeds[1:n]) - f(reruns[m][first], "_mqm") for m in ms}
                 ca[c], cr[c], cd[c] = a, r, {m: a[m] - r[m] for m in ms}
             pa, pr, pd = pool(ca), pool(cr), pool(cd)
             lines.append(f"| {n} | {fmt(pa)} | {fmt(pr)} | {fmt(pd)} |")
@@ -167,18 +218,17 @@ def main() -> None:
 
         # precision
         lines += ["### Precision: standard error of the counselor's mean (member bootstrap)", "",
-                  "| counselor | " + " | ".join(f"N={n} sessions / reruns" for n in ARC) + " |",
-                  "|---|" + "---|" * 6]
+                  "| counselor | " + " | ".join(f"N={n} sessions / reruns" for n in range(1, nmax + 1)) + " |",
+                  "|---|" + "---|" * nmax]
         for c, (arc, reruns) in data.items():
             cells = []
-            for n in ARC:
-                ms = [m for m in arc if all(s in arc[m] for s in range(1, n + 1))
-                      and all(k in reruns.get(m, {}) for k in range(n))]
+            for n in range(1, nmax + 1):
+                ms = [m for m in complete[c] if all(s in arc.get(m, {}) for s in range(1, n + 1))]
                 if len(ms) < 10:
                     cells.append("-")
                     continue
                 a = se({m: mean(f(arc[m][s], "_mqm") for s in range(1, n + 1)) for m in ms})
-                r = se({m: mean(f(reruns[m][k], "_mqm") for k in range(n)) for m in ms})
+                r = se({m: mean(f(reruns[m][k], "_mqm") for k in seeds[:n]) for m in ms})
                 cells.append(f"{a:.3f} / {r:.3f}")
                 for name, v in (("se sessions", a), ("se reruns", r)):
                     rows.append({"judge": jl, "counselor": c, "analysis": "precision", "measure": name, "N": n,
@@ -187,41 +237,43 @@ def main() -> None:
         lines.append("")
 
         # content
-        lines += ["### What the score is made of (per session)", "",
-                  "| part | session 1 | reruns 1-5 | sessions 2-6 | sessions 2-6 minus reruns |", "|---|---|---|---|---|"]
+        lines += ["### What the score is made of: change from session 1, per session", "",
+                  f"| part | session 1 (arc) | sessions 2-6 minus s1 | reruns {later[0]}-{later[-1]} minus rerun {first} "
+                  "| difference |", "|---|---|---|---|---|"]
         for name, fld in FIELDS.items():
-            s1, rr, ss, dd = {}, {}, {}, {}
+            s1, ss, rr, dd = {}, {}, {}, {}
             for c, (arc, reruns) in data.items():
-                ms = [m for m in arc if 1 in arc[m] and any(s in arc[m] for s in ARC[1:])
-                      and any(k in reruns.get(m, {}) for k in seeds)]
+                ms = [m for m in complete[c] if 1 in arc.get(m, {}) and any(s in arc[m] for s in ARC[1:])]
                 s1[c] = {m: f(arc[m][1], fld) for m in ms}
-                rr[c] = {m: mean(f(reruns[m][k], fld) for k in seeds if k in reruns[m]) for m in ms}
-                ss[c] = {m: mean(f(arc[m][s], fld) for s in ARC[1:] if s in arc[m]) for m in ms}
+                ss[c] = {m: mean(f(arc[m][s], fld) for s in ARC[1:] if s in arc[m]) - f(arc[m][1], fld) for m in ms}
+                rr[c] = {m: mean(f(reruns[m][k], fld) for k in later) - f(reruns[m][first], fld) for m in ms}
                 dd[c] = {m: ss[c][m] - rr[c][m] for m in ms}
-            p1, pr, ps, pd = pool(s1), pool(rr), pool(ss), pool(dd)
-            lv = lambda r: "-" if not r or r.get("diff") is None else f"{r['diff']:.3f}"  # noqa: E731
-            lines.append(f"| {name} | {lv(p1)} | {lv(pr)} | {lv(ps)} | {fmt(pd)} |")
-            for nm, r in (("session 1", p1), ("reruns", pr), ("sessions 2-6", ps), ("sessions minus reruns", pd)):
+            p1, ps, pr, pd = pool(s1), pool(ss), pool(rr), pool(dd)
+            lv = "-" if p1.get("diff") is None else f"{p1['diff']:.3f}"
+            lines.append(f"| {name} | {lv} | {fmt(ps)} | {fmt(pr)} | {fmt(pd)} |")
+            for nm, r in (("session 1", p1), ("sessions 2-6 minus s1", ps), ("reruns minus rerun 1", pr),
+                          ("difference", pd)):
                 row(jl, "mean", "content", f"{name}: {nm}", 6, r)
         lines.append("")
 
         # ranking
-        if len(data) >= 3:
+        cl = [c for c in sorted(data) if not (judge == "deepseek_v4" and c in args.rank_exclude.split(","))]
+        if len(cl) >= 3:
             lines += ["### Do N sessions and N runs of session 1 order the counselors alike?", "",
+                      f"Counselors: {', '.join(cl)}.", "",
                       "| N | tau, sessions vs reruns (all members) | split-half tau: sessions | reruns | across designs | "
                       "across minus within |", "|---|---|---|---|---|---|"]
-            for n in (3, 6):
+            for n in sorted({3, nmax}):
                 common_ms = None
-                for c, (arc, reruns) in data.items():
-                    ms = {m for m in arc if all(s in arc[m] for s in range(1, n + 1))
-                          and all(k in reruns.get(m, {}) for k in range(n))}
+                for c in cl:
+                    arc, _ = data[c]
+                    ms = {m for m in complete[c] if all(s in arc.get(m, {}) for s in range(1, n + 1))}
                     common_ms = ms if common_ms is None else common_ms & ms
                 ms = sorted(common_ms or [])
                 if len(ms) < 20:
                     continue
-                cl = sorted(data)
                 A = {c: {m: mean(f(data[c][0][m][s], "_mqm") for s in range(1, n + 1)) for m in ms} for c in cl}
-                R = {c: {m: mean(f(data[c][1][m][k], "_mqm") for k in range(n)) for m in ms} for c in cl}
+                R = {c: {m: mean(f(data[c][1][m][k], "_mqm") for k in seeds[:n]) for m in ms} for c in cl}
                 full = kendall_tau_b([mean(A[c].values()) for c in cl], [mean(R[c].values()) for c in cl])
                 rng = random.Random(0)
                 taa, trr, tar, gap = [], [], [], []
@@ -248,7 +300,7 @@ def main() -> None:
                              "N": n, "value": full, "lo": None, "hi": None, "n_counselors": len(cl)})
             lines.append("")
         else:
-            lines += [f"Ranking needs three or more counselors ({len(data)} here).", ""]
+            lines += [f"Ranking needs three or more counselors ({len(cl)} here).", ""]
 
     with (args.out / "s1_replicates.csv").open("w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=["judge", "counselor", "analysis", "measure", "N", "value", "lo", "hi",
