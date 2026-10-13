@@ -1,6 +1,14 @@
 """Session 1 run N times against N sessions of an arc: does a later session say more than another first session?
 
     python analysis/s1_replicates.py --ablation <memory_ablation dir> --counselors glm53_nvfp4[,...] --out <dir>
+        [--arcs paper --runs_root <dir> --seeds 1,2,3]
+
+--arcs paper: the N sessions are the paper runs' sessions 1-3 (mindeval_qwen/<c>, whose session 1 the reruns repeat:
+same members and transcript), as every paper judge scored them (judge dirs from runs.yaml), all generated against one
+patient server; the reruns are judged where verdicts exist (DeepSeek on our server, MindJudge, and GPT-6.1 Sol or Hy4
+under judging/<judge>/s1rep/ if they are run). N runs to 3. GLM-5.3 NVFP4, Sonnet 5 and Terra repeat ablation sources
+that are not paper rows: their 3-session source runs as judge_sources.sh judged them stand in (DeepSeek and MindJudge
+only), and the DeepSeek ranking leaves them out (other servings).
 
 Per counselor: its 50 members' arc under the benchmark's memory (main6/<c>/compacted, sessions 1-6) and their session 1
 run again under seeds 1-5 (s1rep/<c>/seed<k>). Session 1 keeps the member's own situation, affect and concealment
@@ -44,11 +52,27 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ablation import pool  # noqa: E402
-from common import BOOT, ci, git_describe, kendall_tau_b, load_verdicts, mean, member_draws  # noqa: E402
+from common import (  # noqa: E402
+    BOOT,
+    ci,
+    git_describe,
+    judge_dir,
+    kendall_tau_b,
+    load_verdicts,
+    mean,
+    member_draws,
+    registry,
+    runs_root,
+)
 from drivers import GROUPS, parts  # noqa: E402
 
-JUDGES = {"deepseek_v4": "DeepSeek-V4.1", "mindjudge": "MindJudge-27B"}
-ARC = range(1, 7)
+JUDGES = {"deepseek_v4": "DeepSeek-V4.1", "mindjudge": "MindJudge-27B", "gpt61_sol": "GPT-6.1 Sol", "hy4": "Hy4-preview"}
+#: Each judge's key in runs.yaml (paper runs) and its directory under the ablation's judging/ for the reruns.
+PAPER_KEY = {"deepseek_v4": "deepseek_v4", "mindjudge": "own", "gpt61_sol": "gpt61_sol", "hy4": "hy4"}
+RERUN_DIR = {"deepseek_v4": "deepseek_v4_own", "mindjudge": "mindjudge", "gpt61_sol": "gpt61_sol", "hy4": "hy4"}
+#: --arcs paper for counselors whose reruns repeat an ablation source that is not a paper row (the paper's GLM-5.3 and
+#: API rows are another harness): their 3-session source runs, as judge_sources.sh judged them, stand in.
+SOURCE_ARC = {"glm53_nvfp4": "glm53", "claude_sonnet5": "claude_sonnet5", "gpt56terra": "gpt56terra"}
 FIELDS = {"MQM": "_mqm", **{f"{g} part": f"group:{g}" for g in GROUPS}}
 
 
@@ -56,25 +80,39 @@ def verdicts(view: Path) -> Path:
     return view / "as_sent" / "judge" / "mindeval2" / "verdicts.jsonl"
 
 
-def paths(root: Path, judge: str, c: str) -> tuple[Path, Path | None, Path]:
-    """The arc's verdicts, session 1 judged again on the reruns' serving (None: the same serving), the reruns' root."""
+def paths(root: Path, judge: str, c: str, paper: dict | None = None) -> tuple[Path, Path | None, Path]:
+    """The arc's verdicts (the file), session 1 judged again on the reruns' serving (None: the same serving), the
+    reruns' root. `paper`: {"root", "runs", "judges"} for paper-run arcs."""
     j = root / "judging"
+    rr = j / RERUN_DIR[judge] / "s1rep" / c
+    if paper is not None:
+        if c in SOURCE_ARC:
+            arc = verdicts(j / judge / "source" / SOURCE_ARC[c]) if judge in ("deepseek_v4", "mindjudge") else Path("-")
+        else:
+            run = next((r for r in paper["runs"] if r["key"] == c), None)
+            arc = judge_dir(paper["root"], run, PAPER_KEY[judge], paper["judges"]) / "verdicts.jsonl" if run \
+                else Path("-")
+        seed0 = j / "deepseek_v4_own" / "s1rep" / c / "seed0"
+        return arc, seed0 if judge == "deepseek_v4" and verdicts(seed0).is_file() else None, rr
+    if judge not in ("deepseek_v4", "mindjudge"):
+        return Path("-"), None, rr
     if judge == "deepseek_v4":
         single = j / "deepseek_v4" / "single" / c / "compacted"
         arc = single if verdicts(single).is_file() else j / "deepseek_v4" / "main6" / c / "compacted"
         seed0 = j / "deepseek_v4_own" / "s1rep" / c / "seed0"
-        return arc, seed0 if verdicts(seed0).is_file() else None, j / "deepseek_v4_own" / "s1rep" / c
-    return j / judge / "main6" / c / "compacted", None, j / judge / "s1rep" / c
+        return verdicts(arc), seed0 if verdicts(seed0).is_file() else None, rr
+    return verdicts(j / judge / "main6" / c / "compacted"), None, rr
 
 
-def load(root: Path, judge: str, c: str, seeds: list[int]) -> tuple[dict, dict, dict, dict, list[Path]]:
+def load(root: Path, judge: str, c: str, seeds: list[int], paper: dict | None = None) -> tuple[dict, dict, dict, dict,
+                                                                                               list[Path]]:
     """arc: member -> session (1-6) -> fields; reruns: member -> seed -> fields; s0: member -> the arc's session 1 on the
     reruns' judge serving; s1_other: the same on the arc's serving, where the two differ."""
-    arc_dir, seed0_dir, rr = paths(root, judge, c)
+    arc_file, seed0_dir, rr = paths(root, judge, c, paper)
     arc, reruns, s0, s1_other, used = {}, {}, {}, {}, []
-    if verdicts(arc_dir).is_file():
-        used.append(verdicts(arc_dir))
-        for (m, e), d in parts(load_verdicts(verdicts(arc_dir))).items():
+    if arc_file.is_file():
+        used.append(arc_file)
+        for (m, e), d in parts(load_verdicts(arc_file)).items():
             arc.setdefault(m, {})[int(e[2:]) + 1] = d
     for k in seeds:
         p = verdicts(rr / f"seed{k}")
@@ -129,16 +167,26 @@ def main() -> None:
     ap.add_argument("--splits", type=int, default=1000)
     ap.add_argument("--rank_exclude", default="claude_sonnet5,gpt56terra",
                     help="left out of the DeepSeek ranking: their arcs were judged on another serving")
+    ap.add_argument("--arcs", choices=("ablation", "paper"), default="ablation")
+    ap.add_argument("--runs_root", help="paper runs' root (else MINDEVAL_RUNS_ROOT); for --arcs paper")
     ap.add_argument("--out", required=True, type=Path)
     args = ap.parse_args()
     cs = args.counselors.split(",")
     seeds = [int(k) for k in args.seeds.split(",")]
+    paper = None
+    if args.arcs == "paper":
+        root = runs_root(args.runs_root)
+        runs, judges_reg = registry(root)
+        paper = {"root": root, "runs": runs, "judges": judges_reg}
+        args.rank_exclude = ",".join(SOURCE_ARC)  # DeepSeek: their source runs were judged on other servings
+    ARC = range(1, 4) if paper else range(1, 7)
     first, later = seeds[0], seeds[1:]
     nmax = min(len(seeds), len(ARC))
     args.out.mkdir(parents=True, exist_ok=True)
     rows, inputs = [], []
     lines = ["# Session 1 run N times against N sessions", "",
-             f"Counselors: {', '.join(cs)}. Arc: sessions 1-6 under the benchmark's memory. Reruns: session 1 under "
+             f"Counselors: {', '.join(cs)}. Arc: " + ("the paper runs' sessions 1-3" if paper else
+                                                     "sessions 1-6 under the benchmark's memory") + ". Reruns: session 1 under "
              f"seeds {args.seeds}, against another patient server than the arcs; rerun {first} is the rerun design's "
              "session 1. Means over counselors; 95% intervals resample members within each counselor.", ""]
 
@@ -150,13 +198,15 @@ def main() -> None:
     for judge, jl in JUDGES.items():
         data, s0s, others = {}, {}, {}
         for c in cs:
-            arc, reruns, s0, s1_other, used = load(args.ablation, judge, c, seeds)
+            arc, reruns, s0, s1_other, used = load(args.ablation, judge, c, seeds, paper)
             inputs += [str(p) for p in used]
             if arc and reruns:
                 data[c], s0s[c], others[c] = (arc, reruns), s0, s1_other
         if not data:
             continue
         complete = {c: [m for m in r if all(k in r[m] for k in seeds)] for c, (_, r) in data.items()}
+        if not any(complete.values()):
+            continue
         lines += [f"## {jl}", "", "Members with every rerun judged: "
                   + ", ".join(f"{c} {len(ms)}" for c, ms in complete.items()), ""]
 
@@ -180,8 +230,8 @@ def main() -> None:
 
         # distance and spread
         lines += ["### How far from session 1, and how spread out", "",
-                  f"| counselor | sessions 2-6: mean sq. distance from s1 | reruns {later[0]}-{later[-1]} from rerun "
-                  f"{first} | ratio | sessions 2-6: spread | reruns {seeds[0]}-{seeds[-1]}: spread | ratio |",
+                  f"| counselor | sessions 2-{ARC[-1]}: mean sq. distance from s1 | reruns {later[0]}-{later[-1]} from "
+                  f"rerun {first} | ratio | sessions 2-{ARC[-1]}: spread | reruns {seeds[0]}-{seeds[-1]}: spread | ratio |",
                   "|---|---|---|---|---|---|---|"]
         for c, (arc, reruns) in data.items():
             ms = [m for m in complete[c] if all(s in arc.get(m, {}) for s in ARC)]
@@ -196,7 +246,7 @@ def main() -> None:
                          f"[{ra[1]:.2f}, {ra[2]:.2f}] | {mean(sa.values()):.3f} | {mean(sr.values()):.3f} | "
                          f"{rs[0]:.2f} [{rs[1]:.2f}, {rs[2]:.2f}] |")
             for name, r in (("distance ratio", ra), ("spread ratio", rs)):
-                rows.append({"judge": jl, "counselor": c, "analysis": "distance", "measure": name, "N": 6,
+                rows.append({"judge": jl, "counselor": c, "analysis": "distance", "measure": name, "N": ARC[-1],
                              "value": r[0], "lo": r[1], "hi": r[2], "n_counselors": 1})
         lines.append("")
 
@@ -238,7 +288,7 @@ def main() -> None:
 
         # content
         lines += ["### What the score is made of: change from session 1, per session", "",
-                  f"| part | session 1 (arc) | sessions 2-6 minus s1 | reruns {later[0]}-{later[-1]} minus rerun {first} "
+                  f"| part | session 1 (arc) | sessions 2-{ARC[-1]} minus s1 | reruns {later[0]}-{later[-1]} minus rerun {first} "
                   "| difference |", "|---|---|---|---|---|"]
         for name, fld in FIELDS.items():
             s1, ss, rr, dd = {}, {}, {}, {}
@@ -251,7 +301,7 @@ def main() -> None:
             p1, ps, pr, pd = pool(s1), pool(ss), pool(rr), pool(dd)
             lv = "-" if p1.get("diff") is None else f"{p1['diff']:.3f}"
             lines.append(f"| {name} | {lv} | {fmt(ps)} | {fmt(pr)} | {fmt(pd)} |")
-            for nm, r in (("session 1", p1), ("sessions 2-6 minus s1", ps), ("reruns minus rerun 1", pr),
+            for nm, r in (("session 1", p1), (f"sessions 2-{ARC[-1]} minus s1", ps), ("reruns minus rerun 1", pr),
                           ("difference", pd)):
                 row(jl, "mean", "content", f"{name}: {nm}", 6, r)
         lines.append("")
