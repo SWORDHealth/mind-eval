@@ -421,6 +421,137 @@ def fig_trajectory_counselors(later: Path, out: Path, judge: str = "DeepSeek-V4.
     save(fig, out, "fig_trajectory_counselors")
 
 
+#: sol_memory.py's comparisons against paper rows from the earlier harness (another session 1 of the same member)
+EARLIER_HARNESS = {"glm53_nvfp4", "claude_sonnet5", "gpt56terra"}
+
+
+def _sol_rows(later: Path) -> list[dict]:
+    return read_csv(later / "sol_memory" / "sol_memory.csv")
+
+
+def _label(c: str) -> str:
+    from common import ablation_counselors
+    lab = {k: v["label"] for k, v in ablation_counselors().items()}.get(c, c).replace(" NVFP4", "")
+    return lab + (" †" if c in EARLIER_HARNESS else "")
+
+
+def fig_sol_memory(later: Path, out: Path) -> None:
+    """Memory's effect under GPT-6.1 Sol: (a) per counselor, each reply counted once; (b) the issues that rise."""
+    rows = _sol_rows(later)
+    ex = [r for r in rows if r["contrast"] == "none minus paper (each reply once)"]
+    by = {}
+    for r in ex:
+        by.setdefault(r["counselor"], {})[r["measure"]] = float(r["diff"])
+    order = sorted((c for c in by if c != "mean"), key=lambda c: by[c]["_mqm"])
+    ys = {c: i for i, c in enumerate(order)}
+    ys["mean"] = len(order) + 0.6
+    plt.rcParams["hatch.linewidth"] = 1.4
+    fig, (a, b) = plt.subplots(1, 2, figsize=(7.2, 3.1), gridspec_kw={"width_ratios": [1.35, 1]})
+    for c, y in ys.items():
+        pos = neg = 0.0
+        for cat, (color, hatch) in EXCLUSIVE_STYLE.items():
+            v = by[c].get(cat, 0.0)
+            left = pos if v >= 0 else neg + v
+            if hatch:
+                a.barh(y, abs(v), left=left, color=color, height=0.64, hatch="////", edgecolor=hatch, linewidth=0,
+                       label=cat if c == order[0] else None)
+                a.barh(y, abs(v), left=left, height=0.64, fill=False, edgecolor="white", linewidth=0.6)
+            else:
+                a.barh(y, abs(v), left=left, color=color, height=0.64, edgecolor="white", linewidth=0.6,
+                       label=cat if c == order[0] else None)
+            pos, neg = (pos + v, neg) if v >= 0 else (pos, neg + v)
+        a.plot(by[c]["_mqm"], y, "D", ms=3.6, color=INK, zorder=4, label="total" if c == order[0] else None)
+    zero(a)
+    a.axhline(len(order) - 0.2, color=GRID, lw=0.8)
+    a.set_yticks(list(ys.values()), [_label(c) if c != "mean" else f"Mean of {len(order)}" for c in ys])
+    a.get_yticklabels()[-1].set_fontweight("bold")
+    a.set_xlabel("MQM, without memory minus the paper sessions 2–3\n(GPT-6.1 Sol; each weighted reply counted once)",
+                 fontsize=7)
+    a.grid(axis="x", color=GRID, lw=0.6)
+    handles, labels = a.get_legend_handles_labels()
+    keep = ["total", "memory only", "memory and exploration", "exploration only", "advice and validation",
+            "style and scope"]
+    pairs = sorted((p for p in zip(handles, labels) if p[1] in keep), key=lambda p: keep.index(p[1]))
+    a.legend(*zip(*pairs), fontsize=6, loc="upper center", bbox_to_anchor=(0.45, -0.3), ncol=3)
+    a.set_title("(a) Without the counselor's memory, per counselor", loc="left", fontsize=7.5)
+    iss = [r for r in rows if r["contrast"] == "none minus paper" and r["measure"].startswith("flag rate ")
+           and r["counselor"] == "mean"]
+    iss = sorted(iss, key=lambda r: -abs(float(r["diff"])))[:6][::-1]
+    names = [r["measure"].replace("flag rate ", "").replace("_", " ") for r in iss]
+    vals = [100 * float(r["diff"]) for r in iss]
+    b.barh(range(len(iss)), vals, color=[BLUE if "memory" in n or "shared" in n else ORANGE if "explor" in n
+                                         or "guiding" in n else GREY for n in names], height=0.6)
+    b.errorbar(vals, range(len(iss)), xerr=[[v - 100 * float(r["lo"]) for v, r in zip(vals, iss)],
+                                            [100 * float(r["hi"]) - v for v, r in zip(vals, iss)]],
+               fmt="none", ecolor=INK, elinewidth=0.8, capsize=0)
+    zero(b)
+    b.set_yticks(range(len(iss)), names)
+    b.set_xlabel("change in % of replies flagged\n(GPT-6.1 Sol, mean of 7)", fontsize=7)
+    b.grid(axis="x", color=GRID, lw=0.6)
+    b.set_title("(b) The issues that rise", loc="left", fontsize=7.5)
+    fig.tight_layout()
+    save(fig, out, "fig_sol_memory")
+
+
+def fig_sol_validity(later: Path, out: Path) -> None:
+    """(a) note use with memory against Sol's memory effect; (b) each judge's memory effect on the same sessions;
+    (c) each judge's penalty on the reply a member answers by repeating."""
+    rows = _sol_rows(later)
+    use = {r["counselor"]: float(r["diff"]) for r in rows if r["contrast"] == "validity" and r["measure"] == "notes used"}
+    eff = {r["counselor"]: (float(r["diff"]), float(r["lo"]), float(r["hi"])) for r in rows
+           if r["contrast"] == "memory effect (judge comparison)" and r["judge"] == "GPT-6.1 Sol"
+           and r["counselor"] != "mean"}
+    fig, (a, b, c3) = plt.subplots(1, 3, figsize=(7.2, 2.5), gridspec_kw={"width_ratios": [1.4, 1, 1]})
+    cs = [c for c in use if c in eff]
+    for c in cs:
+        x, (y, lo, hi) = 100 * use[c], eff[c]
+        hollow = c in EARLIER_HARNESS
+        a.vlines(x, lo, hi, color=BLUE, lw=0.9, alpha=0.6)
+        a.plot(x, y, "o", ms=5, mfc="white" if hollow else BLUE, mec=BLUE, mew=1.2, zorder=3)
+        dx, dy, ha = {"qwen35_27b": (-5, 1, "right"), "qwen38_27b": (5, -3, "left")}.get(c, (4, 2, "left"))
+        a.annotate(_label(c), (x, y), xytext=(dx, dy), textcoords="offset points", fontsize=5.8, color=INK, ha=ha)
+    rho = spearman([use[c] for c in cs], [eff[c][0] for c in cs])
+    a.text(0.03, 0.95, f"Spearman ρ = {rho:+.2f} ({len(cs)} counselors)", transform=a.transAxes, fontsize=6.3,
+           color=MUTED, va="top")
+    zero(a, "y")
+    a.set_xlabel("relevant notes used with memory, sessions 2–3 (%)", fontsize=7)
+    a.set_ylabel("MQM effect of removing memory\n(GPT-6.1 Sol)", fontsize=7)
+    a.grid(color=GRID, lw=0.5)
+    a.set_title("(a) Who loses most without memory", loc="left", fontsize=7.5)
+    judges = ["GPT-6.1 Sol", "DeepSeek-V4.1", "MindJudge-27B"]
+    for ax, pick, title, xl in (
+            (b, lambda r: r["contrast"] == "memory effect (judge comparison)" and r["counselor"] == "mean",
+             "(b) Memory effect, by judge", "MQM, without minus with memory"),
+            (c3, lambda r: r["contrast"] == "dose-response, without memory: reply"
+             and r["measure"].startswith("repeat-forcing"),
+             "(c) Reply forcing a repeat", "extra MQM weight vs other replies")):
+        rr = {r["judge"]: r for r in rows if pick(r)}
+        cols, names = [BLUE, AQUA, GREY], ["Sol", "DeepSeek", "Mind-\nJudge"]
+        keys = list(judges)
+        cal = [r for r in rows if r["contrast"] == "calibration: none minus regenerated" and r["measure"] == "MQM"]
+        if ax is b and cal:  # Sol against the regenerated sessions, where it judged them (the clean contrast)
+            rr["Sol, clean"] = cal[0]
+            keys.insert(1, "Sol, clean")
+            cols.insert(1, "#9cc3ef")
+            names.insert(1, "Sol,\nclean*")
+        vals = [float(rr[j]["diff"]) for j in keys]
+        ax.bar(range(len(keys)), vals, color=cols, width=0.6)
+        ax.errorbar(range(len(keys)), vals, yerr=[[v - float(rr[j]["lo"]) for v, j in zip(vals, keys)],
+                                                  [float(rr[j]["hi"]) - v for v, j in zip(vals, keys)]],
+                    fmt="none", ecolor=INK, elinewidth=0.8)
+        ax.set_xticks(range(len(keys)), names, fontsize=6.3)
+        zero(ax, "y")
+        ax.set_ylabel(xl, fontsize=6.5)
+        ax.grid(axis="y", color=GRID, lw=0.5)
+        ax.set_title(title, loc="left", fontsize=7.5)
+    b.set_ylim(top=0.85)
+    b.text(0.98, 0.98, "Sol: against the paper sessions\nothers and *: against regenerated\nsessions with memory"
+           + ("\n(* two counselors)" if any(r["contrast"].startswith("calibration") for r in rows) else ""),
+           transform=b.transAxes, fontsize=5.3, color=MUTED, ha="right", va="top")
+    fig.tight_layout()
+    save(fig, out, "fig_sol_validity")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--data", required=True, type=Path, help="dashboard_data.py's output directory")
@@ -432,7 +563,8 @@ def main() -> None:
     for f in (fig_change, fig_continuity, fig_ablation, fig_sessions, fig_labelers):
         f(args.data, args.out)
     if args.later:
-        for f in (fig_drivers, fig_dose, fig_memory_share, fig_overlap, fig_trajectory, fig_trajectory_counselors):
+        for f in (fig_drivers, fig_dose, fig_memory_share, fig_overlap, fig_trajectory, fig_trajectory_counselors,
+                  fig_sol_memory, fig_sol_validity):
             f(args.later, args.out)
 
 
