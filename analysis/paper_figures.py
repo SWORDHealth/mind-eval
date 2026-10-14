@@ -609,6 +609,57 @@ def fig_s1_replicates(later: Path, out: Path) -> None:
     save(fig, out, "fig_s1_replicates")
 
 
+def fig_weights_ranks(later: Path, out: Path, judge: str = "GPT-6.1 Sol") -> None:
+    """(a) how often each counselor holds each rank across joint member bootstraps; (b) ranks under three weightings;
+    (c, d) session-averaged Major and Critical rates."""
+    from matplotlib.colors import LinearSegmentedColormap
+    ranks = [r for r in read_csv(later / "weights_ranks" / "ranks.csv") if r["judge"] == judge and r["weighting"] == "0/1/5/10"]
+    wts = {r["counselor"]: r for r in read_csv(later / "weights_ranks" / "weights.csv") if r["judge"] == judge}
+    order = [r["counselor"] for r in sorted(ranks, key=lambda r: float(r["score"]))]
+    n = len(order)
+    fig, axes = plt.subplots(1, 4, figsize=(7.4, 3.9), gridspec_kw={"width_ratios": [2.2, 1.3, 0.8, 0.8]})
+    a, b, c, d = axes
+    cmap = LinearSegmentedColormap.from_list("seq", ["#ffffff", BLUE])
+    grid = [[0.0] * n for _ in range(n)]
+    for i, cn in enumerate(order):
+        r = next(x for x in ranks if x["counselor"] == cn)
+        for k, v in json.loads(r["rank_freq"]).items():
+            grid[i][int(k) - 1] = v
+    a.imshow(grid, cmap=cmap, vmin=0, vmax=1, aspect="auto")
+    for i, cn in enumerate(order):
+        r = next(x for x in ranks if x["counselor"] == cn)
+        a.plot([int(r["rank_lo"]) - 1.4, int(r["rank_hi"]) - 0.6], [i, i], color=INK, lw=0.6, alpha=0.5)
+        a.plot(int(r["rank"]) - 1, i, "o", ms=2.6, color=INK)
+    a.set_yticks(range(n), order, fontsize=6)
+    a.set_xticks(range(0, n, 2), range(1, n + 1, 2), fontsize=6)
+    a.set_xlabel("rank (1 = lowest MQM)", fontsize=6.8)
+    a.set_title(f"(a) Rank across bootstraps ({judge})", loc="left", fontsize=7.2)
+    names = ["0/1/5/10", "0/1/3/10", "0/1/5/25"]
+    for i, cn in enumerate(order):
+        rs = [int(wts[cn][f"rank {w}"]) for w in names]
+        moved = len(set(rs)) > 1
+        b.plot(range(3), rs, "-o", color=ORANGE if moved else GREY, lw=1.2 if moved else 0.7, ms=2.6,
+               alpha=1 if moved else 0.6, zorder=3 if moved else 2)
+    b.set_ylim(n + 0.6, 0.4)
+    b.set_yticks(range(1, n + 1), [], fontsize=6)
+    b.set_xticks(range(3), names, fontsize=6)
+    b.set_xlim(-0.3, 2.3)
+    b.set_xlabel("weights (No concern/Minor/\nMajor/Critical)", fontsize=6.5)
+    b.grid(axis="y", color=GRID, lw=0.4)
+    b.set_title("(b) Rank by weights", loc="left", fontsize=7.2)
+    for ax, key, title, col in ((c, "major_rate", "(c) Major", ORANGE), (d, "critical_rate", "(d) Critical", "#c0392b")):
+        vals = [100 * float(wts[cn][key]) for cn in order]
+        ax.barh(range(n), vals, color=col, height=0.62)
+        ax.set_ylim(n - 0.5, -0.5)
+        ax.set_yticks(range(n), [])
+        ax.set_xlabel("% of replies,\nsession mean", fontsize=6.5)
+        ax.grid(axis="x", color=GRID, lw=0.4)
+        ax.set_title(title, loc="left", fontsize=7.2)
+        ax.tick_params(axis="x", labelsize=6)
+    fig.tight_layout()
+    save(fig, out, "fig_weights_ranks")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--data", required=True, type=Path, help="dashboard_data.py's output directory")
@@ -621,7 +672,7 @@ def main() -> None:
         f(args.data, args.out)
     if args.later:
         for f in (fig_drivers, fig_dose, fig_memory_share, fig_overlap, fig_trajectory, fig_trajectory_counselors,
-                  fig_sol_memory, fig_sol_validity, fig_s1_replicates):
+                  fig_sol_memory, fig_sol_validity, fig_s1_replicates, fig_weights_ranks):
             f(args.later, args.out)
 
 
