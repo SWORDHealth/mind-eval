@@ -16,7 +16,7 @@ from parity import COUNSELOR, SCENARIOS, golden, run
 from test_parity import _first_difference
 
 #: Keys whose values the native path legitimately changes in each call's recorded response metadata (`meta`).
-PATH_KEYS = {"reasoning_items", "model", "response_id"}
+PATH_KEYS = {"reasoning_items", "model", "response_id", "usage"}
 #: The run's record of the two sides' settings (run.json, and each trace's setup line).
 SETTINGS = {"api_base", "temperature", "params", "max_tokens"}
 
@@ -33,6 +33,7 @@ def _without(obj, keys: set[str], under: str | None = None):
 
 def _comparable(result: dict) -> dict:
     files = _without(result["files"], PATH_KEYS, under="meta")
+    files = _without(files, {"completion_tokens"}, under="hygiene_attempts")  # from usage, as above
     for side in ("counselor", "patient", "member"):
         files = _without(files, SETTINGS, under=side)
     files.get("run.json", {}).pop("usersim_models", None)

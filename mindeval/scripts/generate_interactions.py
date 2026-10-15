@@ -140,7 +140,8 @@ def _usersim_models(path: Path, cfg: Config, *, patient_timeout: float, counselo
     patient = CallSpec(**_as_sent(patient_model), timeout=patient_timeout, max_retries=cfg.patient.max_retries,
                        force_move=cfg.patient.provider(patient_model.model_name).force_move)
     cspec = CallSpec(**_as_sent(counselor_model), timeout=counselor_timeout, max_retries=counselor_retries)
-    models = engine.session_models(engine.HandsBack(patient_model), engine.HandsBack(counselor_model))
+    models = engine.session_models(engine.HandsBack(patient_model, patient.timeout),
+                                   engine.HandsBack(counselor_model, cspec.timeout))
     return patient, cspec, models, replay
 
 

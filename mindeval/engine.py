@@ -57,8 +57,9 @@ async def chat(models: dict[str, Any], role: str, messages: list[dict], **kwargs
     if "meta" in call:
         return call["text"], call["meta"]
     meta = _meta_of(reply)  # answered by a facade that is not ours: a hosted run, or the models file's (HandsBack)
-    if call.get("finish_reason"):
-        meta["finish_reason"] = call["finish_reason"]
+    for key in ("finish_reason", "usage"):
+        if call.get(key):
+            meta[key] = call[key]
     return reply.get("content") or "", meta
 
 
@@ -184,8 +185,8 @@ class HandsBack:
     goes back to mindeval's own retry loop at once, as `Facade`'s do, instead of being retried inside `acall_llm`
     first: retries, their backoff and what counts as a call stay mindeval's on both paths."""
 
-    def __init__(self, model: Any) -> None:
-        self.model = model
+    def __init__(self, model: Any, timeout: float | None = None) -> None:
+        self.model, self.timeout = model, timeout
 
     @property
     def model_name(self) -> str:
@@ -196,6 +197,8 @@ class HandsBack:
 
     async def acompletion(self, messages: list, **kwargs: Any) -> Any:
         call = _CALL.get()
+        if kwargs.get("timeout") is None and self.timeout is not None:  # the side's timeout, as Facade sends it
+            kwargs["timeout"] = self.timeout
         try:
             response = await self.model.acompletion(messages, **kwargs)
         except Exception as e:
@@ -205,6 +208,10 @@ class HandsBack:
             raise _HandedBack(f"{self.model_name}: the call failed and goes back to mindeval") from None
         if call is not None:  # acall_llm's reply leaves it out; mindeval's cut-off check reads it
             call["finish_reason"] = response.choices[0].finish_reason if response.choices else None
+            u = response.usage  # also left out of the reply; litellm's names, as the traces record them
+            if u is not None:
+                call["usage"] = {"prompt_tokens": u.input_tokens, "completion_tokens": u.output_tokens,
+                                 "total_tokens": u.total_tokens, "reasoning_tokens": u.reasoning_tokens}
         return response
 
 
