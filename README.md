@@ -79,6 +79,37 @@ python mindeval/scripts/generate_interactions.py --output_dir runs/<counselor>
 >`usersim eval --trajectories runs/<counselor>/usersim --out <dir>` reads them; the MQM judge below reads
 >the traces.
 
+### On UserSim's own models
+When both sides are served from OpenAI-compatible chat-completions endpoints (vLLM, NIM, and the like),
+the run can also go through UserSim's own model layer instead of litellm, configured by a UserSim
+models file:
+```bash
+python mindeval/scripts/generate_interactions.py --output_dir runs/<counselor> --usersim_models models.toml
+```
+```toml
+providers = [{ name = "host", endpoint = "https://<host>/v1", provider_type = "openai", api_key = "HOST_API_KEY" }]
+models = [
+  { alias = "user_model", model = "<patient>", provider = "host", temperature = 1.0, top_p = 1.0,
+    extra_body = { chat_template_kwargs = { enable_thinking = true } } },
+  { alias = "assistant_model", model = "<counselor>", provider = "host", temperature = 1.0, top_p = 1.0,
+    replay_reasoning = true },
+]
+```
+>`user_model` is the patient and `assistant_model` the counselor; `api_key` names the environment
+>variable holding the key. Members, schedule, prompts, seeds, the patient's moves and the judge are
+>unchanged, and so are the files a run writes.
+
+>The file sets everything sent besides the conversation, so `--counselor_temperature`,
+>`--counselor_max_tokens`, `--counselor_params` and `--patient_params` are refused with it. State
+>mindeval's settings on each alias as above: a model UserSim's catalog does not list otherwise gets
+>UserSim's defaults (temperature 0.7, top_p 0.95). `run.json` records the settings each side was sent,
+>and the file's hash: a different file is a different run.
+
+>`replay_reasoning = true` on `assistant_model` gives the counselor its earlier replies' reasoning back,
+>as the litellm path does. UserSim's model layer carries reasoning as `reasoning_content` only, so a
+>counselor that needs Anthropic thinking blocks, the Responses API's reasoning items, or a Vertex
+>endpoint stays on the litellm path.
+
 >The member can be railed by the Guard from MindSim, mindeval's patient harness: seven pure rules over
 >each committed move's disclosure level, which veto a move that gives away more, or less, than this
 >member would at this point of the session, and clamp it after `max_retries`. It is off; set
