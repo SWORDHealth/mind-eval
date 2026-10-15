@@ -6,9 +6,7 @@ import asyncio
 import json
 from pathlib import Path
 
-import pytest
 from usersim.engine.config import ConversationSimulatorConfig
-from usersim.engine.core.episode_runtime import EpisodeContractError
 from usersim.testing import ScriptedModel, assert_hosted_parity
 
 from mindeval.arc import counselor_memory
@@ -68,9 +66,6 @@ def test_a_session_runs_the_same_when_hosted():
                                      model_factory=ContentPatient))
 
 
-@pytest.mark.xfail(strict=True, raises=EpisodeContractError,
-                   reason="UserSim's hosted runtime records tool calls only from the assistant (episode_runtime.py, "
-                          "_validate_recorded_response), and mindeval's patient commits its move as one")
 def test_a_patient_committing_by_tool_call_can_be_hosted():
     persona, data = _session()
     asyncio.run(assert_hosted_parity("mindeval", config=CONFIG, persona=persona, data=data,
