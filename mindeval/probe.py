@@ -176,10 +176,14 @@ class Runner:
     holds each session once."""
 
     def __init__(self, patient: CallSpec, counselor: CallSpec, *, max_turns: int, rows_dir: Path | None = None,
-                 run_id: str = "0", provenance: dict | None = None) -> None:
-        self.models = engine.facades(patient, counselor)
+                 run_id: str = "0", provenance: dict | None = None, models: dict[str, Any] | None = None,
+                 replay_reasoning: bool = False) -> None:
+        # The models every call of the run goes through: mindeval's litellm facades by default, or, with
+        # `--usersim_models`, the ones UserSim builds from a models file (`engine.session_models`).
+        self.models = models if models is not None else engine.facades(patient, counselor)
         self.generator = ConversationSimulatorGenerator.with_models(
-            ConversationSimulatorConfig(name="conversation", max_turns=max_turns, context_compression=False),
+            ConversationSimulatorConfig(name="conversation", max_turns=max_turns, context_compression=False,
+                                        replay_assistant_reasoning=replay_reasoning),
             self.models)
         self.rows_dir, self.run_id, self.provenance = rows_dir, run_id, provenance or {}
 

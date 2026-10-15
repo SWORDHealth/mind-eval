@@ -56,7 +56,10 @@ async def chat(models: dict[str, Any], role: str, messages: list[dict], **kwargs
         _CALL.reset(token)
     if "meta" in call:
         return call["text"], call["meta"]
-    return reply.get("content") or "", _meta_of(reply)  # answered by a facade that is not ours: a hosted run
+    meta = _meta_of(reply)  # answered by a facade that is not ours: a hosted run, or the models file's (HandsBack)
+    if call.get("finish_reason"):
+        meta["finish_reason"] = call["finish_reason"]
+    return reply.get("content") or "", meta
 
 
 async def pause(seconds: float) -> None:
@@ -172,6 +175,42 @@ class Unused:
 
 
 def facades(patient: CallSpec, counselor: CallSpec) -> dict[str, Any]:
-    """The models UserSim's engine runs a mindeval session with."""
-    return {PATIENT: Facade(patient), COUNSELOR: Facade(counselor),
+    """The models UserSim's engine runs a mindeval session with, through litellm."""
+    return session_models(Facade(patient), Facade(counselor))
+
+
+class HandsBack:
+    """A model UserSim built from a models file (`usersim.engine.external.model_facades`), wrapped so a failed call
+    goes back to mindeval's own retry loop at once, as `Facade`'s do, instead of being retried inside `acall_llm`
+    first: retries, their backoff and what counts as a call stay mindeval's on both paths."""
+
+    def __init__(self, model: Any) -> None:
+        self.model = model
+
+    @property
+    def model_name(self) -> str:
+        return self.model.model_name
+
+    def __getattr__(self, name: str) -> Any:  # anything else UserSim reads from a model
+        return getattr(self.model, name)
+
+    async def acompletion(self, messages: list, **kwargs: Any) -> Any:
+        call = _CALL.get()
+        try:
+            response = await self.model.acompletion(messages, **kwargs)
+        except Exception as e:
+            if call is None:
+                raise
+            call["error"] = e  # chat re-raises it; the caller decides whether to retry
+            raise _HandedBack(f"{self.model_name}: the call failed and goes back to mindeval") from None
+        if call is not None:  # acall_llm's reply leaves it out; mindeval's cut-off check reads it
+            call["finish_reason"] = response.choices[0].finish_reason if response.choices else None
+        return response
+
+
+def session_models(patient: Any, counselor: Any) -> dict[str, Any]:
+    """The models dict UserSim's engine needs for a mindeval session: the patient and the counselor, and the roles
+    mindeval never calls. Either side can be a `Facade` or a model UserSim builds from a models file
+    (`usersim.engine.external.model_facades`)."""
+    return {PATIENT: patient, COUNSELOR: counselor,
             **{role: Unused(role) for role in (MODEL_JUDGE, MODEL_API_RESPONSE, MODEL_SUMMARY)}}
