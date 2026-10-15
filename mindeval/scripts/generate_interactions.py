@@ -17,11 +17,12 @@ import sys
 import time
 import traceback
 from pathlib import Path
+from typing import Any
 
 from jsonargparse import CLI
 from pydantic import ValidationError
 
-from mindeval import __version__, env, llm
+from mindeval import __version__, engine, env, llm
 from mindeval.arc import counselor_memory, member_seed, run_arc, set_aside_partial
 from mindeval.config import PACKAGE_DIR, SEED_FINGERPRINT, CallSpec, Config, load_config
 from mindeval.member import build_member
@@ -37,7 +38,7 @@ DEFAULT_COUNSELOR = PACKAGE_DIR.parent / "examples" / "counselor_system.j2"
 IDENTITY = ("mindeval_version", "fingerprint", "seed_namespace", "patient.model", "counselor.model",
             "counselor.system_prompt_sha256", "counselor.temperature", "counselor.max_tokens",
             "counselor.params", "patient.params", "patient.max_tokens", "patient.force_move",
-            "profiles.sha256", "sessions", "max_turns", "seed")
+            "profiles.sha256", "sessions", "max_turns", "seed", "usersim_models.sha256")
 
 
 def _missing(names: list[str]) -> InputError:
@@ -108,6 +109,41 @@ def run_manifest(counselor_system_prompt_path: Path, profiles_path: Path, sessio
     }
 
 
+def _as_sent(model: Any) -> dict:
+    """What every request to a models-file alias carries besides the call's own messages, tools and seed, as a
+    CallSpec's fields: on this path the run records these, not mindeval's defaults."""
+    sent = model.consolidate_kwargs()
+    sent.pop("extra_headers", None)  # may carry a credential
+    return {"model": model.model_name, "api_base": model.model_provider.endpoint,
+            "temperature": sent.pop("temperature", None), "max_tokens": sent.pop("max_tokens", None), "params": sent}
+
+
+def _usersim_models(path: Path, cfg: Config, *, patient_timeout: float, counselor_timeout: float,
+                    counselor_retries: int, flags: dict) -> tuple[CallSpec, CallSpec, dict, bool]:
+    """The patient and counselor from a UserSim models file: their CallSpecs (mindeval's own policy and the run's
+    record; what is sent comes from the file), the models every call goes through, and whether the counselor's
+    reasoning is replayed."""
+    from usersim.cli._errors import ConfigError
+    from usersim.engine.external import model_facades, replays_assistant_reasoning
+
+    if not path.is_file():
+        raise InputError(f"--usersim_models: {path} not found")
+    given = [flag for flag, value in flags.items() if value]
+    if given:
+        raise InputError(f"{', '.join(given)} do not apply with --usersim_models: set them on the alias in {path}")
+    try:
+        facades = model_facades(path, aliases=("user_model", "assistant_model"))
+        replay = replays_assistant_reasoning(path)
+    except ConfigError as e:
+        raise InputError(f"--usersim_models {path}: {e}") from None
+    patient_model, counselor_model = facades["user_model"], facades["assistant_model"]
+    patient = CallSpec(**_as_sent(patient_model), timeout=patient_timeout, max_retries=cfg.patient.max_retries,
+                       force_move=cfg.patient.provider(patient_model.model_name).force_move)
+    cspec = CallSpec(**_as_sent(counselor_model), timeout=counselor_timeout, max_retries=counselor_retries)
+    models = engine.session_models(engine.HandsBack(patient_model), engine.HandsBack(counselor_model))
+    return patient, cspec, models, replay
+
+
 def check_identity(out: Path, manifest: dict) -> dict | None:
     """The existing run.json, if this invocation may resume it; raises if it may not."""
     path = out / "run.json"
@@ -160,7 +196,7 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
          counselor_params: dict | None = None, counselor_timeout: float = 600, counselor_retries: int = 5,
          patient_timeout: float = 600, patient_params: dict | None = None, profiles_path: Path = DEFAULT_PROFILES,
          members: int = 50, sessions: int = 3, max_turns: int = 30, seed: int = 0, max_workers: int = 16,
-         dry_run: bool = False) -> int:
+         usersim_models: Path | None = None, dry_run: bool = False) -> int:
     """Runs every member of the profile file through its sessions against one counselor.
 
     The transcripts are written under output_dir. Rerun with the same output_dir to resume: finished
@@ -168,7 +204,8 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
 
     Models, endpoints and keys come from the environment (or a .env file in the working directory):
     MINDEVAL_PATIENT_MODEL and MINDEVAL_COUNSELOR_MODEL, each with optional _API_BASE and _API_KEY. See
-    .env.example.
+    .env.example. With --usersim_models they come from a UserSim models file instead, and every call
+    goes through UserSim's own model layer (see the README).
 
     Args:
         output_dir: output directory; rerun with the same one to resume
@@ -188,6 +225,9 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
         max_turns: counselor replies per session, at most
         seed: base seed; each member's is derived from it
         max_workers: members run concurrently
+        usersim_models: a UserSim models file naming the patient (user_model) and the counselor
+            (assistant_model); their settings, providers and keys come from it, and replay_reasoning on
+            assistant_model gives the counselor its earlier reasoning back
         dry_run: validate and render prompts; no model calls, no writes
 
     Returns:
@@ -210,21 +250,34 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
         for flag, value in (("--patient_timeout", patient_timeout), ("--counselor_timeout", counselor_timeout)):
             if value <= 0:
                 raise InputError(f"{flag} must be positive")
-        missing: list[str] = []
-        pe, ce = env.endpoint("PATIENT", missing), env.endpoint("COUNSELOR", missing)
-        if missing:
-            raise _missing(missing)
-        rows = load_members(profiles_path, members, cfg)
-        provider = cfg.patient.provider(pe.model)
-        patient = CallSpec(model=pe.model, api_base=pe.api_base, api_key=pe.api_key,
-                           temperature=cfg.patient.temperature, max_tokens=provider.max_tokens,
-                           timeout=patient_timeout, max_retries=cfg.patient.max_retries,
-                           # deep, not shallow: a --patient_params extra_body must not silently drop
-                           # provider.params' own extra_body keys (e.g. chat_template_kwargs for vLLM)
-                           params=deep_merge(provider.params, patient_params), force_move=provider.force_move)
-        cspec = CallSpec(model=ce.model, api_base=ce.api_base, api_key=ce.api_key,
-                         temperature=counselor_temperature, max_tokens=counselor_max_tokens,
-                         timeout=counselor_timeout, max_retries=counselor_retries, params=counselor_params)
+        models, replay = None, False
+        if usersim_models is not None:
+            patient, cspec, models, replay = _usersim_models(usersim_models, cfg, patient_timeout=patient_timeout,
+                                                             counselor_timeout=counselor_timeout,
+                                                             counselor_retries=counselor_retries,
+                                                             flags={"--counselor_params": counselor_params,
+                                                                    "--patient_params": patient_params,
+                                                                    "--counselor_max_tokens": counselor_max_tokens,
+                                                                    "--counselor_temperature":
+                                                                        None if counselor_temperature == 1.0
+                                                                        else counselor_temperature})
+            rows = load_members(profiles_path, members, cfg)
+        else:
+            missing: list[str] = []
+            pe, ce = env.endpoint("PATIENT", missing), env.endpoint("COUNSELOR", missing)
+            if missing:
+                raise _missing(missing)
+            rows = load_members(profiles_path, members, cfg)
+            provider = cfg.patient.provider(pe.model)
+            patient = CallSpec(model=pe.model, api_base=pe.api_base, api_key=pe.api_key,
+                               temperature=cfg.patient.temperature, max_tokens=provider.max_tokens,
+                               timeout=patient_timeout, max_retries=cfg.patient.max_retries,
+                               # deep, not shallow: a --patient_params extra_body must not silently drop
+                               # provider.params' own extra_body keys (e.g. chat_template_kwargs for vLLM)
+                               params=deep_merge(provider.params, patient_params), force_move=provider.force_move)
+            cspec = CallSpec(model=ce.model, api_base=ce.api_base, api_key=ce.api_key,
+                             temperature=counselor_temperature, max_tokens=counselor_max_tokens,
+                             timeout=counselor_timeout, max_retries=counselor_retries, params=counselor_params)
         text = counselor_system_prompt_path.read_text(encoding="utf-8")
         try:
             counselor = Counselor.from_text(cspec, text)
@@ -232,6 +285,9 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
             raise InputError(f"{counselor_system_prompt_path}: {e}") from None
         manifest = run_manifest(counselor_system_prompt_path, profiles_path, sessions, max_turns, seed, max_workers,
                                 cfg, patient, cspec, rows)
+        if usersim_models is not None:  # absent otherwise, so a litellm run's run.json is as it was
+            manifest["usersim_models"] = {"path": str(usersim_models), "sha256": _sha(usersim_models.read_bytes()),
+                                          "replay_reasoning": replay}
         old = check_identity(output_dir, manifest)
 
         arc_dirs = {m.member_id: output_dir / "members" / m.member_id / "arc" for m in rows}
@@ -263,7 +319,8 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
                             run_id=str(int(datetime.datetime.fromisoformat(manifest["started"]).timestamp())),
                             provenance={"git": manifest["git"], "bank_version": {
                                 "seed_namespace": SEED_FINGERPRINT, "profiles_sha256": manifest["profiles"]["sha256"],
-                                "counselor_system_prompt_sha256": manifest["counselor"]["system_prompt_sha256"]}})
+                                "counselor_system_prompt_sha256": manifest["counselor"]["system_prompt_sha256"]}},
+                            models=models, replay_reasoning=replay)
             counts = {"done": 0, "failed": 0}
 
             async def one(row: MemberRow, slots: asyncio.Semaphore) -> None:
