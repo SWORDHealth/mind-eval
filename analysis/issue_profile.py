@@ -7,7 +7,9 @@ directory whose judge/mindeval2/ holds the verdicts). Per run: the share of repl
 the severity mix, session MQM by session (mean over members, 95% member-bootstrap interval) and MQM by issue group
 with every weighted reply counted once (drivers.exclusive_parts). Every run is read on the members it shares with the
 others. Needs matplotlib for the figure (any Python that has it).
-Writes issue_profile.csv, report.md, issue_profile.png/.pdf.
+Also per issue: its part of MQM (each reply's weight split equally over its flags, so the parts sum to MQM) with a
+95% member-bootstrap interval, and the share of the replies flagged with it that are rated Major or worse.
+Writes issue_profile.csv, report.md, issue_profile.png/.pdf, issue_breakdown.png/.pdf.
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import BOOT, ISSUES, WEIGHT, ci, load_verdicts, mean, member_draws  # noqa: E402
-from drivers import EXCLUSIVE, exclusive_parts  # noqa: E402
+from drivers import EXCLUSIVE, exclusive_parts, parts  # noqa: E402
 
 LEVELS = ("No concern", "Minor", "Major", "Critical")
 
@@ -66,7 +68,26 @@ def main() -> None:
             by_ep[e] = (mean(sm.values()), lo, hi)
         ex = exclusive_parts({k: v for k, v in r["v"].items() if v["member"] in members})
         groups = {cat: mean(d[cat] for d in ex.values()) for cat in ["_mqm", *EXCLUSIVE]}
-        prof[label] = {"issue": issue, "severity": sev, "by_session": by_ep, "groups": groups}
+        # per issue: its part of MQM (each reply's weight split equally over its flags; the parts sum to MQM), per
+        # member the mean over sessions, with a member-bootstrap interval; and how severe its flags are
+        pp = parts({k: v for k, v in r["v"].items() if v["member"] in members})
+        contrib = {}
+        for i in [*ISSUES, "(no flag)"]:
+            pm = {m: mean(pp[m, e].get(i, 0.0) for e in eps if (m, e) in pp) for m in members}
+            lo, hi = ci([mean(pm[m] for m in d) for d in draws])
+            contrib[i] = (mean(pm.values()), lo, hi)
+        issue_sev = {}
+        for i in ISSUES:
+            fl = [v["severity"] for v in vs if v.get(i) == 1]
+            issue_sev[i] = {lv: (sum(x == lv for x in fl) / len(fl)) if fl else None for lv in LEVELS} | {"n": len(fl)}
+        prof[label] = {"issue": issue, "severity": sev, "by_session": by_ep, "groups": groups, "contrib": contrib,
+                       "issue_sev": issue_sev}
+        for i, (x, lo, hi) in contrib.items():
+            rows.append({"run": label, "measure": f"MQM part {i}", "value": x, "lo": lo, "hi": hi})
+        for i, d in issue_sev.items():
+            if d["n"]:
+                rows.append({"run": label, "measure": f"major or worse among {i} flags",
+                             "value": d["Major"] + d["Critical"]})
         for i, x in issue.items():
             rows.append({"run": label, "measure": f"flag rate {i}", "value": x})
         for lv, x in sev.items():
@@ -92,6 +113,26 @@ def main() -> None:
               "| part | " + " | ".join(labels) + " |", "|---|" + "---|" * len(labels)]
     for g in ["_mqm", *EXCLUSIVE]:
         lines.append(f"| {'MQM' if g == '_mqm' else g} | " + " | ".join(f"{prof[lab]['groups'][g]:.2f}" for lab in labels) + " |")
+    lines += ["", "## MQM by issue: each reply's weight split equally over its flagged issues (sums to MQM) [95% CI]", "",
+              "| issue | " + " | ".join(labels) + " |", "|---|" + "---|" * len(labels)]
+    order = sorted([*ISSUES, "(no flag)"], key=lambda i: -max(prof[lab]["contrib"][i][0] for lab in labels))
+    for i in order:
+        if max(prof[lab]["contrib"][i][0] for lab in labels) < 0.005:
+            continue
+        lines.append(f"| {i.replace('_', ' ')} | " + " | ".join("{:.2f} [{:.2f}, {:.2f}]".format(*prof[lab]["contrib"][i])
+                                                             for lab in labels) + " |")
+    lines.append("| **MQM** | " + " | ".join(f"**{sum(prof[lab]['contrib'][i][0] for i in prof[lab]['contrib']):.2f}**"
+                                             for lab in labels) + " |")
+    lines += ["", "## How severe each issue's flags are: Major or worse among the replies flagged with it (n)", "",
+              "| issue | " + " | ".join(labels) + " |", "|---|" + "---|" * len(labels)]
+    for i in order:
+        if i == "(no flag)":
+            continue
+        cells = []
+        for lab in labels:
+            d = prof[lab]["issue_sev"][i]
+            cells.append("-" if not d["n"] else f"{100 * (d['Major'] + d['Critical']):.0f}% ({d['n']})")
+        lines.append(f"| {i.replace('_', ' ')} | " + " | ".join(cells) + " |")
     with (args.out / "issue_profile.csv").open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=["run", "measure", "value", "lo", "hi"])
         w.writeheader()
@@ -99,6 +140,45 @@ def main() -> None:
     (args.out / "report.md").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))
     plot(prof, labels, eps, args.out)
+    plot_breakdown(prof, labels, args.out)
+
+
+def plot_breakdown(prof: dict, labels: list[str], out: Path) -> None:
+    """(a) MQM by issue with 95% intervals; (b) the share of each issue's flags rated Major or worse."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    colors = ["#e34948", "#2a78d6", "#1baf7a", "#eda100", "#9a9893", "#4a3aa7"][: len(labels)]
+    muted, grid = "#52514e", "#e4e3df"
+    plt.rcParams.update({"font.size": 7, "axes.spines.top": False, "axes.spines.right": False, "axes.edgecolor": muted,
+                         "xtick.color": muted, "ytick.color": muted, "legend.frameon": False, "savefig.dpi": 220,
+                         "savefig.bbox": "tight", "pdf.fonttype": 42})
+    issues = [i for i in sorted([*ISSUES, "(no flag)"], key=lambda i: max(prof[lab]["contrib"][i][0] for lab in labels))
+              if max(prof[lab]["contrib"][i][0] for lab in labels) >= 0.01]
+    fig, (a, b) = plt.subplots(1, 2, figsize=(7.4, 4.2), gridspec_kw={"width_ratios": [1.5, 1]}, sharey=True)
+    h = 0.8 / len(labels)
+    for k, (lab, col) in enumerate(zip(labels, colors)):
+        ys = [y + ((len(labels) - 1) / 2 - k) * h for y in range(len(issues))]
+        vals = [prof[lab]["contrib"][i] for i in issues]
+        a.barh(ys, [v for v, _, _ in vals], height=h * 0.92, color=col, label=lab)
+        a.hlines(ys, [lo for _, lo, _ in vals], [hi for *_, hi in vals], color="#0b0b0b", lw=0.6)
+        sev = [prof[lab]["issue_sev"].get(i) for i in issues]
+        b.plot([100 * (d["Major"] + d["Critical"]) if d and d["n"] >= 10 else float("nan") for d in sev], ys, "o",
+               ms=3.2, color=col, mec="white", mew=0.4)
+    a.set_yticks(range(len(issues)), [i.replace("_", " ") for i in issues])
+    a.set_xlabel("MQM part (each reply's weight split over its flags; sums to MQM)")
+    a.grid(axis="x", color=grid, lw=0.5)
+    a.legend(fontsize=6, loc="lower right")
+    a.set_title("(a) MQM by issue, 95% CI", loc="left", fontsize=7.5)
+    b.set_xlim(0, 100)
+    b.set_xlabel("% of the issue's flags rated Major or worse\n(issues with 10+ flags)")
+    b.grid(axis="x", color=grid, lw=0.5)
+    b.set_title("(b) How severe the flags are", loc="left", fontsize=7.5)
+    fig.tight_layout()
+    fig.savefig(out / "issue_breakdown.png")
+    fig.savefig(out / "issue_breakdown.pdf")
+    plt.close(fig)
+    print("issue_breakdown: png, pdf")
 
 
 def plot(prof: dict, labels: list[str], eps: list[str], out: Path) -> None:
