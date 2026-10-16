@@ -149,12 +149,14 @@ unchanged on the [`legacy`](https://github.com/SWORDHealth/mind-eval/tree/legacy
 ## Cite
 MindEval 2:
 ```bibtex
-@misc{mendonca2026mindeval2,
-      title={MindEval2: Benchmarking Language Models on Multi-Session Mental Health Support},
-      author={John Mendonça and Daniel Tschernutter and José Pombal and Areti Vassilopoulos and Catarina Botelho and Maya D'Eon and Nuno Guerreiro and Ricardo Rei},
+@misc{mendonça2026mindeval2clinicallygroundedpatients,
+      title={MindEval2: Clinically Grounded Patients and Rubrics for Evaluating Language Models in Mental Health Support}, 
+      author={John Mendonça and Daniel Tschernutter and José Pombal and Areti Vassilopoulos and Catarina Botelho and Ignacio Sarasua and Maya D'Eon and Nuno Guerreiro and Ricardo Rei},
       year={2026},
-      note={Preprint},
-      url={https://github.com/SWORDHealth/mind-eval},
+      eprint={2610.22314},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2610.22314}, 
 }
 ```
 
