@@ -33,8 +33,7 @@ uv sync
 source .venv/bin/activate
 cp .env.example .env
 ```
->Python 3.12; [uv](https://docs.astral.sh/uv/). `uv sync` also installs NeMo UserSim, from GitHub at the
->commit pinned in `pyproject.toml`.
+>Python 3.12; [uv](https://docs.astral.sh/uv/). `uv sync` also installs NeMo UserSim (`usersim`, from PyPI).
 
 >Fill in `.env` with the model, endpoint and key of the patient, the counselor and the judge. They
 >are read from the environment only, and keys are never written to the outputs.
@@ -76,8 +75,7 @@ python mindeval/scripts/generate_interactions.py --output_dir runs/<counselor>
 >through the `usersim.probes` entry point, so `usersim smoke` lists it): it runs the whole session itself,
 >member and counselor alternating, and every model call goes through UserSim's `acall_llm`. A session's
 >UserSim row carries everything it reads except keys, so a host can also run it through UserSim's hosted
->runtime, provided its patient answers the move as JSON content: that runtime takes tool calls only from
->the assistant. The rows are written under `usersim/` (see Outputs), where
+>runtime, including a patient that commits its move as a tool call. The rows are written under `usersim/` (see Outputs), where
 >`usersim eval --trajectories runs/<counselor>/usersim --out <dir>` reads them; the MQM judge below reads
 >the traces.
 
