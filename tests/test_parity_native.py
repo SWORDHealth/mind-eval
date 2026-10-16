@@ -98,3 +98,24 @@ def test_a_flag_the_models_file_replaces_is_refused_unless_at_its_default(tmp_pa
     # the file leaves max_parallel_requests at UserSim's 4, under the default 16 workers: said, not silent
     assert "fewer than --max_workers 16" in capsys.readouterr().err
 
+
+def test_the_readme_models_file_loads(tmp_path, monkeypatch):
+    """The README's example models file is valid and gives both sides the settings it shows."""
+    from pathlib import Path
+
+    from usersim.engine.external import model_facades, replays_assistant_reasoning
+
+    readme = (Path(__file__).parents[1] / "README.md").read_text()
+    section = readme[readme.index("### On UserSim's own models"):]
+    example = section[section.index("```toml") + len("```toml"):section.index("```", section.index("```toml") + 7)]
+    path = tmp_path / "models.toml"
+    path.write_text(example)
+    monkeypatch.setenv("HOST_API_KEY", "not-a-real-key")
+
+    facades = model_facades(path, aliases=("user_model", "assistant_model"))
+    patient, counselor = (facades[a].consolidate_kwargs() for a in ("user_model", "assistant_model"))
+    assert (patient["temperature"], patient["top_p"], patient["max_tokens"]) == (1.0, 1.0, 32768)
+    assert patient["extra_body"] == {"chat_template_kwargs": {"enable_thinking": True}}
+    assert (counselor["temperature"], counselor["top_p"]) == (1.0, 1.0)
+    assert all(f.max_parallel_requests == 16 for f in facades.values())
+    assert replays_assistant_reasoning(path)
