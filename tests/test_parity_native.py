@@ -6,19 +6,21 @@ order with the same messages, and the same files. What may differ is only what t
 
 - a counselor's OpenAI Responses reasoning items, which UserSim's model layer does not carry (a counselor that needs
   them stays on the litellm path);
-- each call's response metadata (`model`, `response_id`), which comes from another client;
-- what the run records about the two sides' settings (endpoint, temperature, params, max_tokens), which on this
-  path are the models file's, not mindeval's flags.
+- each call's response metadata (`model`, `response_id`, and `usage`, which the scripted litellm responses
+  leave out), which comes from another client;
+- what the run records about the two sides' settings (adapter, endpoint, temperature, params, max_tokens), which on
+  this path are the models file's, not mindeval's flags.
 """
 
 import pytest
+from conftest import interactions
 from parity import COUNSELOR, SCENARIOS, golden, run
 from test_parity import _first_difference
 
 #: Keys whose values the native path legitimately changes in each call's recorded response metadata (`meta`).
 PATH_KEYS = {"reasoning_items", "model", "response_id", "usage"}
 #: The run's record of the two sides' settings (run.json, and each trace's setup line).
-SETTINGS = {"api_base", "temperature", "params", "max_tokens"}
+SETTINGS = {"adapter", "api_base", "temperature", "params", "max_tokens"}
 
 
 def _without(obj, keys: set[str], under: str | None = None):
@@ -68,3 +70,31 @@ def test_the_native_path_sends_what_the_models_file_and_mindeval_ask_for():
         assert {(r["temperature"], r["top_p"]) for r in requests} == {(record[side]["temperature"],
                                                                        record[side]["params"]["top_p"])}
     assert record["patient"]["params"]["extra_body"] == {"chat_template_kwargs": {"enable_thinking": True}}
+    # mindeval's --*_timeout reaches the HTTP request (compaction keeps its own), and traces name the path
+    assert {r["timeout"] for r in counselor} == {600}
+    assert {r["timeout"] for r in patient} == {600, 1800}
+    setups = [line["setup"] for name, lines in result["files"].items() if name.endswith("trace.jsonl")
+              for line in lines if isinstance(line, dict) and "setup" in line]
+    assert setups and {s["counselor"]["adapter"] for s in setups} == {"usersim"}
+
+
+@pytest.mark.parametrize("flag, value", [("--counselor_temperature", "0"), ("--counselor_temperature", "null"),
+                                         ("--counselor_temperature", "0.5"), ("--counselor_max_tokens", "100"),
+                                         ("--counselor_params", '{"top_p": 0.9}'),
+                                         ("--patient_params", '{"top_p": 0.9}')])
+def test_a_flag_the_models_file_replaces_is_refused_unless_at_its_default(tmp_path, monkeypatch, capsys, flag, value):
+    """With --usersim_models the file decides what is sent, so a flag that would also set it is refused; at its
+    default it is ignored (an explicit default is indistinguishable from none)."""
+    models = tmp_path / "models.toml"
+    models.write_text('providers = [{ name = "h", endpoint = "http://203.0.113.1/v1", provider_type = "openai", '
+                      'api_key = "K" }]\nmodels = [{ alias = "user_model", model = "x/patient", provider = "h" }, '
+                      '{ alias = "assistant_model", model = "x/counselor", provider = "h" }]\n')
+    monkeypatch.setenv("K", "not-a-real-key")
+    monkeypatch.chdir(tmp_path)
+    base = ["--output_dir", str(tmp_path / "out"), "--usersim_models", str(models), "--dry_run", "true"]
+    assert interactions(*base, flag, value) == 2
+    assert flag in capsys.readouterr().err
+    assert interactions(*base) == 0
+    # the file leaves max_parallel_requests at UserSim's 4, under the default 16 workers: said, not silent
+    assert "fewer than --max_workers 16" in capsys.readouterr().err
+

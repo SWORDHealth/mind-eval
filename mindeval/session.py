@@ -206,7 +206,8 @@ async def run_session(cfg: Config, row: MemberRow, situation: Situation, knobs: 
 
     def record(term: str, error: str | None = None) -> SessionRecord:
         return _session_record(cfg, row, situation, knobs, session_id, run_id, seed, turns, term, member,
-                               counselor, counselor_prompt, todos, patient, max_turns, error)
+                               counselor, counselor_prompt, todos, patient, max_turns, error,
+                               adapter=engine.adapter_of(models, engine.COUNSELOR))
 
     with TraceWriter(trace_path) as trace:
         try:
@@ -254,7 +255,7 @@ async def run_session(cfg: Config, row: MemberRow, situation: Situation, knobs: 
 def _session_record(cfg: Config, row: MemberRow, situation: Situation, knobs: Knobs, session_id: str,
                     run_id: str, seed: int, turns: list[TurnRecord], termination: str, member, counselor,
                     counselor_prompt: str, todos: Todos, patient: CallSpec, max_turns: int,
-                    error: str | None) -> SessionRecord:
+                    error: str | None, adapter: str = "litellm") -> SessionRecord:
     flags = sorted({f for t in turns for f in t.flags})
     messages = []
     for t in turns:
@@ -273,7 +274,7 @@ def _session_record(cfg: Config, row: MemberRow, situation: Situation, knobs: Kn
             "opening_speaker": "member",
             "member": {"model": patient.model, "api_base": patient.api_base, "temperature": patient.temperature,
                        "max_tokens": patient.max_tokens, "timeout": patient.timeout, "params": patient.params},
-            "counselor": {"adapter": "litellm", "model": counselor.spec.model,
+            "counselor": {"adapter": adapter, "model": counselor.spec.model,
                           "temperature": counselor.spec.temperature, "max_tokens": counselor.spec.max_tokens,
                           "params": counselor.spec.params},
             "knob_instructions": cfg.knob_lines(knobs),

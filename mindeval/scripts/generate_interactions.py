@@ -114,21 +114,23 @@ def _as_sent(model: Any) -> dict:
     CallSpec's fields: on this path the run records these, not mindeval's defaults."""
     sent = model.consolidate_kwargs()
     sent.pop("extra_headers", None)  # may carry a credential
+    sent.pop("timeout", None)  # the side's timeout is mindeval's --*_timeout on this path too (HandsBack sends it)
     return {"model": model.model_name, "api_base": model.model_provider.endpoint,
             "temperature": sent.pop("temperature", None), "max_tokens": sent.pop("max_tokens", None), "params": sent}
 
 
 def _usersim_models(path: Path, cfg: Config, *, patient_timeout: float, counselor_timeout: float,
-                    counselor_retries: int, flags: dict) -> tuple[CallSpec, CallSpec, dict, bool]:
+                    counselor_retries: int, max_workers: int, flags: dict) -> tuple[CallSpec, CallSpec, dict, bool]:
     """The patient and counselor from a UserSim models file: their CallSpecs (mindeval's own policy and the run's
     record; what is sent comes from the file), the models every call goes through, and whether the counselor's
-    reasoning is replayed."""
+    reasoning is replayed. `flags` maps each flag the file replaces to (value, default): any value other than its
+    default is refused, since the file, not the flag, decides what is sent."""
     from usersim.cli._errors import ConfigError
     from usersim.engine.external import model_facades, replays_assistant_reasoning
 
     if not path.is_file():
         raise InputError(f"--usersim_models: {path} not found")
-    given = [flag for flag, value in flags.items() if value]
+    given = [flag for flag, (value, default) in flags.items() if value != default]
     if given:
         raise InputError(f"{', '.join(given)} do not apply with --usersim_models: set them on the alias in {path}")
     try:
@@ -137,6 +139,11 @@ def _usersim_models(path: Path, cfg: Config, *, patient_timeout: float, counselo
     except ConfigError as e:
         raise InputError(f"--usersim_models {path}: {e}") from None
     patient_model, counselor_model = facades["user_model"], facades["assistant_model"]
+    for alias, model in facades.items():
+        if model.max_parallel_requests < max_workers:
+            print(f"mindeval: {alias} allows {model.max_parallel_requests} requests at a time "
+                  f"(max_parallel_requests in {path}), fewer than --max_workers {max_workers}: members will "
+                  "wait for each other's calls", file=sys.stderr)
     patient = CallSpec(**_as_sent(patient_model), timeout=patient_timeout, max_retries=cfg.patient.max_retries,
                        force_move=cfg.patient.provider(patient_model.model_name).force_move)
     cspec = CallSpec(**_as_sent(counselor_model), timeout=counselor_timeout, max_retries=counselor_retries)
@@ -256,12 +263,13 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
             patient, cspec, models, replay = _usersim_models(usersim_models, cfg, patient_timeout=patient_timeout,
                                                              counselor_timeout=counselor_timeout,
                                                              counselor_retries=counselor_retries,
-                                                             flags={"--counselor_params": counselor_params,
-                                                                    "--patient_params": patient_params,
-                                                                    "--counselor_max_tokens": counselor_max_tokens,
+                                                             max_workers=max_workers,
+                                                             flags={"--counselor_params": (counselor_params, {}),
+                                                                    "--patient_params": (patient_params, {}),
+                                                                    "--counselor_max_tokens":
+                                                                        (counselor_max_tokens, None),
                                                                     "--counselor_temperature":
-                                                                        None if counselor_temperature == 1.0
-                                                                        else counselor_temperature})
+                                                                        (counselor_temperature, 1.0)})
             rows = load_members(profiles_path, members, cfg)
         else:
             missing: list[str] = []

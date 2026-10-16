@@ -264,7 +264,7 @@ def _native_world(tmp: Path, script: Script, patient_model: str):
     from data_designer.engine.models.clients.adapters.http_model_client import HttpModelClient
 
     async def answer(self, route, payload, extra_headers, model_name, timeout=None):
-        script.sent.append(_request(dict(payload)))
+        script.sent.append({**_request(dict(payload)), "timeout": getattr(timeout, "read", timeout)})
         return _openai_json(script._answer(_as_text(payload)))
 
     env = {k: v for k, v in os.environ.items() if not k.startswith("MINDEVAL_")}

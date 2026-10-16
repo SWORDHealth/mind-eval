@@ -14,7 +14,10 @@ something other than `chat` called the facade.
 
 Retries stay mindeval's: each call site has its own (a patient server under load is waited out, an empty or cut-off
 reply is asked for again), so a failed request reaches `chat` as it failed, neither retried again inside `acall_llm`
-nor counted there as a call: UserSim's accounting sees the calls that answered.
+nor counted there as a call: UserSim's accounting sees the calls that answered. On the models-file path one layer
+sits below that: Data Designer's HTTP client retries a 502, 503, 504 or dropped connection (3 times, with backoff)
+before the failure reaches mindeval; a 429 comes back at once, and Data Designer lowers how many requests it
+sends that model at a time.
 """
 
 from __future__ import annotations
@@ -183,7 +186,9 @@ def facades(patient: CallSpec, counselor: CallSpec) -> dict[str, Any]:
 class HandsBack:
     """A model UserSim built from a models file (`usersim.engine.external.model_facades`), wrapped so a failed call
     goes back to mindeval's own retry loop at once, as `Facade`'s do, instead of being retried inside `acall_llm`
-    first: retries, their backoff and what counts as a call stay mindeval's on both paths."""
+    first. Data Designer's transport retries (module docstring) still come before it. It also sends the side's
+    timeout when a call names none, and carries the reply's `finish_reason` and `usage`, which `acall_llm`'s reply
+    leaves out, into the meta."""
 
     def __init__(self, model: Any, timeout: float | None = None) -> None:
         self.model, self.timeout = model, timeout
@@ -213,6 +218,12 @@ class HandsBack:
                 call["usage"] = {"prompt_tokens": u.input_tokens, "completion_tokens": u.output_tokens,
                                  "total_tokens": u.total_tokens, "reasoning_tokens": u.reasoning_tokens}
         return response
+
+
+def adapter_of(models: dict[str, Any], role: str) -> str:
+    """How `role`'s calls reach its model, as a session's setup records it: `usersim` for a model built from a
+    models file (`HandsBack`), `litellm` for mindeval's own `Facade`."""
+    return "usersim" if isinstance(models.get(role), HandsBack) else "litellm"
 
 
 def session_models(patient: Any, counselor: Any) -> dict[str, Any]:
