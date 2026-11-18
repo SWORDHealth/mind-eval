@@ -6,6 +6,8 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
+
+# UserSim's per-model call counts, which no public name reads as of 0.3.2.
 from usersim.engine.core import llm as usersim_llm
 
 from mindeval import engine, llm
@@ -110,6 +112,39 @@ def test_a_reply_from_a_facade_that_is_not_ours_still_reads_as_meta():
     text, meta = asyncio.run(engine.chat({engine.PATIENT: Host()}, engine.PATIENT, [{"role": "user", "content": "x"}]))
     assert text == "" and meta == {"reasoning_content": "why",
                                    "tool_calls": [{"id": "c9", "name": "commit_move", "arguments": "{}"}]}
+
+
+def _cut_off_by(reason):
+    """A model as Data Designer builds it whose every reply stops with `reason` and no reasoning."""
+    class Built:
+        model_name = "built/counselor"
+
+        async def acompletion(self, messages, **kw):
+            message = SimpleNamespace(content="I hear th", reasoning_content=None, tool_calls=None)
+            usage = SimpleNamespace(input_tokens=9, output_tokens=4, total_tokens=13, reasoning_tokens=None)
+            return SimpleNamespace(message=message, choices=[SimpleNamespace(message=message, finish_reason=reason)],
+                                   usage=usage)
+
+    return {engine.COUNSELOR: engine.HandsBack(Built())}
+
+
+@pytest.mark.parametrize(("given", "read"), [("max_tokens", "length"), ("end_turn", "stop"), ("stop_sequence", "stop"),
+                                             ("tool_use", "tool_calls"), ("length", "length"), ("refusal", "refusal")])
+def test_a_models_file_model_reports_anthropics_stop_reasons_in_openais_terms(given, read):
+    """Data Designer passes an Anthropic `stop_reason` through. The native path maps the four with an exact OpenAI
+    equivalent, so a cut-off reads `length` as it does through litellm; anything else passes through unchanged (where
+    litellm maps more, e.g. `refusal` to `content_filter`)."""
+    _, meta = asyncio.run(engine.chat(_cut_off_by(given), engine.COUNSELOR, [{"role": "user", "content": "x"}]))
+    assert meta["finish_reason"] == read
+
+
+def test_an_anthropic_cut_off_on_the_native_path_is_not_a_reply():
+    """The cut-off check reads `length`: a reply Anthropic stopped at `max_tokens` is retried, never recorded."""
+    spec = CallSpec(model="built/counselor", api_base=None, temperature=None, max_tokens=None, timeout=30,
+                    max_retries=1, params={})
+    with pytest.raises(llm.TextCallError, match="cut off"):
+        asyncio.run(engine.retry_text(_cut_off_by("max_tokens"), engine.COUNSELOR,
+                                      [{"role": "user", "content": "x"}], spec=spec))
 
 
 def test_the_roles_mindeval_never_calls_refuse(monkeypatch):

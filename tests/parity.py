@@ -69,6 +69,7 @@ class Script:
         self.requests: list[dict] = []
         self.seen: Counter = Counter()
         self.down: set[str] = set()  # call kinds that currently fail every attempt
+        self.sent: list[dict] = []  # native path only: each request as UserSim's model layer sent it
 
     # litellm's two entry points: the sync one today, the async one once the runtime is async.
     def completion(self, **kw):
@@ -194,7 +195,90 @@ def _world(tmp: Path, script: Script, patient_model: str):
         stack.enter_context(mock.patch.object(engine, "pause", no_pause))
         os.chdir(tmp)
         try:
-            yield
+            yield []
+        finally:
+            os.chdir(cwd)
+
+
+#: What config/patient.yaml sends for each kind of patient on the litellm path, as the models file carries it on
+#: the native path (`--usersim_models`), where the file is what UserSim sends.
+_NATIVE_PATIENT_EXTRA = {"hosted_vllm/": 'extra_body = { chat_template_kwargs = { enable_thinking = true } }',
+                         "claude": ""}
+#: mindeval's temperature for both sides, as models-file fields. Without them, a model UserSim's catalog doesn't
+#: know gets UserSim's defaults (temperature 0.7, top_p 0.95).
+_NATIVE_SETTINGS = "temperature = 1.0, top_p = 1.0"
+
+
+def _models_file(tmp: Path, patient_model: str) -> Path:
+    """A UserSim models file for the scenario: the same patient and counselor names, served from a fake endpoint."""
+    extra = next((v for k, v in _NATIVE_PATIENT_EXTRA.items() if k in patient_model), "")
+    path = tmp / "models.toml"
+    path.write_text(
+        'providers = [{ name = "scripted", endpoint = "http://scripted.invalid/v1", provider_type = "openai", '
+        'api_key = "PARITY_KEY" }]\n'
+        "models = [\n"
+        f'  {{ alias = "user_model", model = "{patient_model}", provider = "scripted", {_NATIVE_SETTINGS}'
+        + (f", {extra}" if extra else "") + " },\n"
+        f'  {{ alias = "assistant_model", model = "{COUNSELOR}", provider = "scripted", {_NATIVE_SETTINGS}, '
+        "replay_reasoning = true },\n"
+        "]\n")
+    return path
+
+
+def _openai_json(response) -> dict:
+    """A litellm-shaped scripted response as the JSON an OpenAI-compatible endpoint returns."""
+    choice = response.choices[0]
+    m = choice.message
+    calls = [{"id": c.id, "type": "function", "function": {"name": c.function.name, "arguments": c.function.arguments}}
+             for c in (m.tool_calls or [])]
+    message = {"role": "assistant", "content": m.content, **({"tool_calls": calls} if calls else {})}
+    return {"id": "r", "object": "chat.completion", "model": response.model,
+            "choices": [{"index": 0, "message": message, "finish_reason": choice.finish_reason}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}}
+
+
+def _as_text(payload: dict) -> dict:
+    """The request as a server reads it, in the form the Script was written for. UserSim's model layer sends each
+    message's content as a list of text parts (an empty list for a tool-call-only turn), and a tool result without
+    its `name`; a server matches a tool result to its call by `tool_call_id`, so the name is recovered from the
+    call it answers. The recorded request keeps what was sent."""
+    def text(content):
+        if isinstance(content, list):
+            return "".join(part.get("text", "") for part in content if isinstance(part, dict)) or None
+        return content
+
+    names = {c["id"]: c["function"]["name"] for m in payload["messages"] for c in m.get("tool_calls") or []}
+    messages = []
+    for m in payload["messages"]:
+        m = {**m, "content": text(m.get("content"))}
+        if m["role"] == "tool" and "name" not in m and m.get("tool_call_id") in names:
+            m["name"] = names[m["tool_call_id"]]
+        messages.append(m)
+    return {**payload, "messages": messages}
+
+
+@contextlib.contextmanager
+def _native_world(tmp: Path, script: Script, patient_model: str):
+    """`_world` for the native path: no MINDEVAL_* endpoints, a models file instead, and the Script answering at
+    Data Designer's HTTP layer, so every request goes through UserSim's model layer as it would to a real server."""
+    from data_designer.engine.models.clients.adapters.http_model_client import HttpModelClient
+
+    async def answer(self, route, payload, extra_headers, model_name, timeout=None):
+        script.sent.append({**_request(dict(payload)), "timeout": getattr(timeout, "read", timeout)})
+        return _openai_json(script._answer(_as_text(payload)))
+
+    env = {k: v for k, v in os.environ.items() if not k.startswith("MINDEVAL_")}
+    env["PARITY_KEY"] = "scripted"
+    cwd = os.getcwd()
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(mock.patch.dict(os.environ, env, clear=True))
+        stack.enter_context(mock.patch.object(HttpModelClient, "_apost", answer))
+        stack.enter_context(mock.patch.object(member_mod, "_pause", no_pause))
+        stack.enter_context(mock.patch.object(arc_mod, "_pause", no_pause))
+        stack.enter_context(mock.patch.object(engine, "pause", no_pause))
+        os.chdir(tmp)
+        try:
+            yield ["--usersim_models", str(_models_file(tmp, patient_model))]
         finally:
             os.chdir(cwd)
 
@@ -204,50 +288,54 @@ def _args(out: Path, members: int, sessions: int, max_turns: int) -> list[str]:
             "--max_turns", str(max_turns), "--max_workers", "1"]
 
 
-def _two_members(tmp: Path) -> dict:
+def _two_members(tmp: Path, native: bool = False) -> dict:
     """Two members through three sessions each: the plain path, compaction and evolution twice per arc."""
     script, out = Script(), tmp / "run"
-    with _world(tmp, script, "hosted_vllm/patient"):
-        codes = [interactions(*_args(out, 2, 3, 3))]
-    return {"codes": codes, "requests": script.requests, "files": _files(out)}
+    with (_native_world if native else _world)(tmp, script, "hosted_vllm/patient") as extra:
+        codes = [interactions(*_args(out, 2, 3, 3), *extra)]
+    return {"codes": codes, "requests": script.requests, "files": _files(out),
+            **({"sent": script.sent} if native else {})}
 
 
-def _every_path(tmp: Path) -> dict:
+def _every_path(tmp: Path, native: bool = False) -> dict:
     """One session in which each turn takes a different path, ending with the member leaving."""
     plan = {2: {"commit": "content_json"}, 3: {"commit": "invalid", "speak": "stray"}, 4: {"speak": "todos"},
             5: {"speak": "dirty"}, 6: {"commit": "leave"}}
     script, out = Script(plan), tmp / "run"
-    with _world(tmp, script, "hosted_vllm/patient"):
-        codes = [interactions(*_args(out, 1, 1, 8))]
-    return {"codes": codes, "requests": script.requests, "files": _files(out)}
+    with (_native_world if native else _world)(tmp, script, "hosted_vllm/patient") as extra:
+        codes = [interactions(*_args(out, 1, 1, 8), *extra)]
+    return {"codes": codes, "requests": script.requests, "files": _files(out),
+            **({"sent": script.sent} if native else {})}
 
 
-def _auto_commit(tmp: Path) -> dict:
+def _auto_commit(tmp: Path, native: bool = False) -> dict:
     """A patient config/patient.yaml offers the move to as `auto`, with its provider params."""
     script, out = Script(), tmp / "run"
-    with _world(tmp, script, "anthropic/claude-patient"):
-        codes = [interactions(*_args(out, 1, 1, 2))]
-    return {"codes": codes, "requests": script.requests, "files": _files(out)}
+    with (_native_world if native else _world)(tmp, script, "anthropic/claude-patient") as extra:
+        codes = [interactions(*_args(out, 1, 1, 2), *extra)]
+    return {"codes": codes, "requests": script.requests, "files": _files(out),
+            **({"sent": script.sent} if native else {})}
 
 
-def _dies_then_resumes(tmp: Path) -> dict:
+def _dies_then_resumes(tmp: Path, native: bool = False) -> dict:
     """The second session dies mid-turn (the patient stops answering), and the next invocation resumes it."""
     script, out = Script({2: {"speak": "fail"}}), tmp / "run"
-    with _world(tmp, script, "hosted_vllm/patient"):
+    with (_native_world if native else _world)(tmp, script, "hosted_vllm/patient") as extra:
         script.down = {"speak"}
-        codes = [interactions(*_args(out, 1, 2, 3))]
+        codes = [interactions(*_args(out, 1, 2, 3), *extra)]
         script.down = set()
-        codes.append(interactions(*_args(out, 1, 2, 3)))
-    return {"codes": codes, "requests": script.requests, "files": _files(out)}
+        codes.append(interactions(*_args(out, 1, 2, 3), *extra))
+    return {"codes": codes, "requests": script.requests, "files": _files(out),
+            **({"sent": script.sent} if native else {})}
 
 
 SCENARIOS = {"two_members": _two_members, "every_path": _every_path, "auto_commit": _auto_commit,
              "dies_then_resumes": _dies_then_resumes}
 
 
-def run(name: str) -> dict:
+def run(name: str, native: bool = False) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
-        return json.loads(json.dumps(SCENARIOS[name](Path(tmp)), ensure_ascii=False, default=str))
+        return json.loads(json.dumps(SCENARIOS[name](Path(tmp), native), ensure_ascii=False, default=str))
 
 
 def golden(name: str) -> dict:

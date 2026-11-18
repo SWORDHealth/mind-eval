@@ -79,6 +79,67 @@ python mindeval/scripts/generate_interactions.py --output_dir runs/<counselor>
 >`usersim eval --trajectories runs/<counselor>/usersim --out <dir>` reads them; the MQM judge below reads
 >the traces.
 
+### On UserSim's own models
+When both sides are served from OpenAI-compatible chat-completions endpoints (vLLM, NIM, and the like),
+the run can also go through UserSim's own model layer instead of litellm, configured by a UserSim
+models file:
+```bash
+python mindeval/scripts/generate_interactions.py --output_dir runs/<counselor> --usersim_models models.toml
+```
+```toml
+[[providers]]
+name = "host"
+endpoint = "https://<host>/v1"
+provider_type = "openai"
+api_key = "HOST_API_KEY"  # the environment variable holding the key
+
+[[models]]  # the patient
+alias = "user_model"
+model = "<patient>"
+provider = "host"
+temperature = 1.0
+top_p = 1.0
+max_tokens = 32768
+max_parallel_requests = 16
+extra_body = { chat_template_kwargs = { enable_thinking = true } }
+
+[[models]]  # the counselor
+alias = "assistant_model"
+model = "<counselor>"
+provider = "host"
+temperature = 1.0
+top_p = 1.0
+max_parallel_requests = 16
+replay_reasoning = true
+```
+>Members, schedule, prompts, seeds, the patient's moves and the judge are unchanged, and so are the
+>files a run writes. Every call goes through UserSim's model layer, the between-session ones included.
+
+>The file sets everything sent besides the conversation, so `--counselor_temperature`,
+>`--counselor_max_tokens`, `--counselor_params` and `--patient_params` are refused with it unless left at
+>their defaults. `--patient_timeout` and `--counselor_timeout` still apply. State every setting the run
+>depends on in the file:
+>- **Sampling.** A model UserSim's catalog does not list gets UserSim's defaults (temperature 0.7, top_p
+>  0.95); one it does list gets the catalog's (which can include `max_tokens` and thinking switches).
+>  The example sets mindeval's.
+>- **`max_tokens` on the patient.** With none sent, some providers cap a reply's output (8192 tokens is
+>  common), and a patient that reasons at length can spend all of it before writing the log it is
+>  compacting, which fails that member. The litellm path has the same exposure.
+>- **`max_parallel_requests`.** UserSim allows 4 requests at a time per model by default, which makes
+>  `--max_workers` beyond 4 wait; the run says so when the file allows fewer than `--max_workers`.
+>
+>`run.json` records the settings each side was sent, and the file's hash: a different file is a
+>different run.
+
+>`replay_reasoning = true` on `assistant_model` gives the counselor its earlier replies' reasoning back,
+>as the litellm path does. UserSim's model layer carries reasoning as `reasoning_content` only, so a
+>counselor that needs Anthropic thinking blocks, the Responses API's reasoning items, or a Vertex
+>endpoint stays on the litellm path.
+
+>Below mindeval's own retries, UserSim's model layer retries a 502, 503, 504 or dropped connection
+>itself (3 times, with backoff). A 429 comes straight back to mindeval, and the model layer lowers how
+>many requests it sends that model at a time.
+
 >The member can be railed by the Guard from MindSim, mindeval's patient harness: seven pure rules over
 >each committed move's disclosure level, which veto a move that gives away more, or less, than this
 >member would at this point of the session, and clamp it after `max_retries`. It is off; set
