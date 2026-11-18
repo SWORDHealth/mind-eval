@@ -125,7 +125,8 @@ def _usersim_models(path: Path, cfg: Config, *, patient_timeout: float, counselo
     record; what is sent comes from the file), the models every call goes through, and whether the counselor's
     reasoning is replayed. `flags` maps each flag the file replaces to (value, default): any value other than its
     default is refused, since the file, not the flag, decides what is sent."""
-    from usersim.cli._errors import ConfigError
+    # `ConfigError`, which both raise, is not in UserSim's public API as of 0.3.2.
+    from usersim.engine.errors import ConfigError
     from usersim.engine.external import model_facades, replays_assistant_reasoning
 
     if not path.is_file():

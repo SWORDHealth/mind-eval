@@ -29,8 +29,9 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
-from usersim.engine.config import MODEL_API_RESPONSE, MODEL_ASSISTANT, MODEL_JUDGE, MODEL_SUMMARY, MODEL_USER
-from usersim.engine.core.llm import acall_llm
+# Not in UserSim's extension API (`usersim.extension`) as of 0.3.2: the aliases of the roles mindeval never calls.
+from usersim.engine.config import MODEL_API_RESPONSE, MODEL_SUMMARY
+from usersim.extension import MODEL_ASSISTANT, MODEL_JUDGE, MODEL_USER, acall_llm
 
 from mindeval import llm
 from mindeval.config import CallSpec

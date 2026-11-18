@@ -6,7 +6,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from usersim.engine.config import ConversationSimulatorConfig
+from usersim.extension import ConversationSimulatorConfig
 from usersim.testing import ScriptedModel, assert_hosted_parity
 
 from mindeval.arc import counselor_memory

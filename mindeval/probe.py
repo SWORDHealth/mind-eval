@@ -28,13 +28,25 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
-from usersim.engine.config import ConversationSimulatorConfig
-from usersim.engine.core.llm import get_current_outcome_builder, set_conversation_id, set_current_outcome_builder
-from usersim.engine.core.outcomes import FailureAttribution, FailureClass, OutcomeBuilder, OutcomeStatus
-from usersim.engine.core.probes import BaseProbe, assistant_message, register_probe
-from usersim.engine.core.simulation import ConversationState, make_result
+
+# Not in UserSim's extension API (`usersim.extension`) as of 0.3.2: the generator that runs a row, the debug log's
+# conversation label, and writing rows in the layout `usersim eval` reads.
+from usersim.engine.core.llm import set_conversation_id
 from usersim.engine.core.storage import run_subroot, write_partitioned_dataset
 from usersim.engine.generator import ConversationSimulatorGenerator
+from usersim.extension import (
+    BaseProbe,
+    ConversationSimulatorConfig,
+    ConversationState,
+    FailureAttribution,
+    FailureClass,
+    OutcomeBuilder,
+    OutcomeStatus,
+    assistant_message,
+    make_result,
+    outcome_builder_scope,
+    register_probe,
+)
 
 from mindeval import engine
 from mindeval.config import CallSpec, load_config
@@ -88,11 +100,17 @@ class SessionInput(BaseModel):
         return CallSpec(**self.patient)
 
 
-@register_probe(family=LABEL, prompt_version=load_config().fingerprint, variants=("default",))
+@register_probe
 class MindEvalProbe(BaseProbe):
     """One mindeval session. The member is UserSim's simulated user and the counselor its assistant under test."""
 
     label = LABEL
+    description = ("One session of a multi-session counseling benchmark. The member, played from a clinical "
+                   "formulation and a situation that evolves between sessions, picks each move with a tool call "
+                   "before it writes its turn, and remembers earlier sessions; the counselor's replies are judged "
+                   "afterwards.")
+    prompt_version = load_config().fingerprint
+    variants = ("default",)
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -120,9 +138,7 @@ class MindEvalProbe(BaseProbe):
     async def run_dispatch(self, *, models: dict[str, Any], data: dict[str, Any], cfg: Any,
                            state: ConversationState | None = None, seed_state: bool = True) -> dict:
         builder = self._outcome_builder or OutcomeBuilder(provenance=self._provenance)
-        previous = get_current_outcome_builder()
-        set_current_outcome_builder(builder)
-        try:
+        with outcome_builder_scope(builder):
             state = state or ConversationState(outcome=builder)
             if seed_state:
                 self.seed_state_metadata(state)
@@ -159,8 +175,6 @@ class MindEvalProbe(BaseProbe):
             result = make_result(state.messages, state.metadata, True, outcome=outcome, traces=builder.traces())
             result.update(self.build_result_extras(state))
             return result
-        finally:
-            set_current_outcome_builder(previous)
 
 
 def trajectory_id(member_id: str, arc_id: str, episode: int, attempt: int) -> str:

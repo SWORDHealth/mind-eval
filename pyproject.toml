@@ -12,7 +12,7 @@ dependencies = [
     "jinja2>=3.1",
     "jsonargparse[signatures]>=4.34.1",
     # The interaction runtime runs on NeMo UserSim's engine (mindeval/probe.py).
-    "usersim>=0.2.0rc1",
+    "usersim>=0.3.2,<0.4",
 ]
 
 [project.entry-points."usersim.probes"]

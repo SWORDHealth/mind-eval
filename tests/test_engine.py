@@ -6,6 +6,8 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
+
+# UserSim's per-model call counts, which no public name reads as of 0.3.2.
 from usersim.engine.core import llm as usersim_llm
 
 from mindeval import engine, llm
