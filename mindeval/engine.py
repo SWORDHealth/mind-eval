@@ -184,6 +184,13 @@ def facades(patient: CallSpec, counselor: CallSpec) -> dict[str, Any]:
     return session_models(Facade(patient), Facade(counselor))
 
 
+#: Anthropic's stop reasons with an exact OpenAI equivalent, as NeMo UserSim's `acall_llm` maps them. Data Designer's
+#: Anthropic adapter passes `stop_reason` through as `finish_reason`; mindeval's cut-off checks read OpenAI's
+#: `length`. Other values pass through unchanged (litellm maps more, e.g. `refusal` to `content_filter`).
+_ANTHROPIC_FINISH_REASONS = {"end_turn": "stop", "stop_sequence": "stop", "max_tokens": "length",
+                             "tool_use": "tool_calls"}
+
+
 class HandsBack:
     """A model UserSim built from a models file (`usersim.engine.external.model_facades`), wrapped so a failed call
     goes back to mindeval's own retry loop at once, as `Facade`'s do, instead of being retried inside `acall_llm`
@@ -213,7 +220,8 @@ class HandsBack:
             call["error"] = e  # chat re-raises it; the caller decides whether to retry
             raise _HandedBack(f"{self.model_name}: the call failed and goes back to mindeval") from None
         if call is not None:  # acall_llm's reply leaves it out; mindeval's cut-off check reads it
-            call["finish_reason"] = response.choices[0].finish_reason if response.choices else None
+            reason = response.choices[0].finish_reason if response.choices else None
+            call["finish_reason"] = _ANTHROPIC_FINISH_REASONS.get(reason, reason)
             u = response.usage  # also left out of the reply; litellm's names, as the traces record them
             if u is not None:
                 call["usage"] = {"prompt_tokens": u.input_tokens, "completion_tokens": u.output_tokens,
