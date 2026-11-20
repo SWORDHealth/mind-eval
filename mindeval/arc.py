@@ -4,9 +4,10 @@ Before the first session the member's schedule is drawn: the gaps between sessio
 anchor, the beat of each stretch in between, and the concealment and affect per session. The draws
 are seeded by the member and the seed alone, so every counselor meets the same schedule.
 
-Between sessions the patient model makes two calls. Compaction folds the session into one running
-log, which is the whole of memory: the member carries it into the next session and the counselor
-walks in with the same log under `# Memory`. Evolution writes the next session's situation from the
+Between sessions the session writer (the patient model, unless the run names another) makes two
+calls. Compaction folds the session into one running log, which is the whole of memory: the
+member carries it into the next session and the counselor walks in with the same log under
+`# Memory`. Evolution writes the next session's situation from the
 member's formulation, the last situation, the last conversation, the time that has passed and the
 drawn beat; its opening message is the member's first line next time.
 
@@ -23,7 +24,7 @@ import time
 from pathlib import Path
 from typing import NamedTuple
 
-from mindeval import llm
+from mindeval import llm, psim
 from mindeval.config import REGISTER_KNOBS, CallSpec, Config, EpisodeFile, provider_seed, render, turn_seed
 from mindeval.models import ArcRecord, ArcShape, EpisodeRef, MemberRow, SessionRecord, Situation
 from mindeval.session import Counselor, input_hash, read_trace, run_session
@@ -306,7 +307,9 @@ def set_aside_partial(arc_dir: Path) -> str | None:
 # -- the run ---------------------------------------------------------------------------------------
 
 def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, patient: CallSpec, sessions: int,
-            max_turns: int, arc_seed: int, out: Path) -> ArcRecord:
+            max_turns: int, arc_seed: int, out: Path, writer: CallSpec | None = None) -> ArcRecord:
+    """`writer` writes the log and the next situation; the patient model when it is None."""
+    writer = writer or patient
     arc_id = arc_id_of(row, arc_seed, cfg.fingerprint)
     shape = draw_shape(cfg.episode, row, arc_seed, arc_id, sessions)
     anchor = Anchor(shape.anchor_weekday, shape.anchor_hour)
@@ -330,7 +333,7 @@ def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, patient: CallS
         evolve_ms = None
         if ep > 0:
             t0 = time.monotonic()
-            situation = evolve_situation(cfg, row, situation, done_sessions[-1], gap, patient, arc_seed=arc_seed,
+            situation = evolve_situation(cfg, row, situation, done_sessions[-1], gap, writer, arc_seed=arc_seed,
                                          arc_id=arc_id, episode_id=ep, now_line=f"It is now {describe_ts(anchor, clock)}.",
                                          beat=shape.beats[ep - 1])
             evolve_ms = round((time.monotonic() - t0) * 1000, 1)
@@ -345,13 +348,15 @@ def run_arc(cfg: Config, row: MemberRow, counselor: Counselor, *, patient: CallS
                              seed=ep_seed, trace_path=trace_path,
                              memory_text=member_memory(log) if ep > 0 else None,
                              counselor_memory=counselor_memory(log if ep > 0 else []),
-                             time_context=describe_now(anchor, clock, prev_close))
+                             time_context=describe_now(anchor, clock, prev_close),
+                             calendar=[psim.local_time(*anchor, e.opened_ts) for e in episodes] + [
+                                 psim.local_time(*anchor, clock)])
         turns, _ = read_trace(trace_path)
         turn_ts = [clock + i * spacing_hours for i in range(len(turns))]
         closed = turn_ts[-1] if turn_ts else clock
 
         t0 = time.monotonic()
-        log = compact_log(log, record, patient, max_entries=cfg.patient.log_max_entries, arc_seed=arc_seed,
+        log = compact_log(log, record, writer, max_entries=cfg.patient.log_max_entries, arc_seed=arc_seed,
                           arc_id=arc_id, episode_id=ep)
         compact_ms = round((time.monotonic() - t0) * 1000, 1)
         rendered = render_log(log)

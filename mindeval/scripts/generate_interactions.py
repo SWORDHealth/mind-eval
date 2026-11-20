@@ -20,7 +20,7 @@ from pathlib import Path
 from jsonargparse import CLI
 from pydantic import ValidationError
 
-from mindeval import __version__, env, llm
+from mindeval import __version__, env, llm, psim
 from mindeval.arc import counselor_memory, member_seed, run_arc, set_aside_partial
 from mindeval.config import PACKAGE_DIR, CallSpec, Config, load_config
 from mindeval.member import build_member
@@ -35,6 +35,7 @@ DEFAULT_COUNSELOR = PACKAGE_DIR.parent / "examples" / "counselor_system.j2"
 IDENTITY = ("mindeval_version", "fingerprint", "patient.model", "counselor.model",
             "counselor.system_prompt_sha256", "counselor.temperature", "counselor.max_tokens",
             "counselor.params", "patient.params", "patient.max_tokens", "patient.force_move",
+            "patient.protocol", "patient.protocol_sha256", "writer.model", "writer.params",
             "profiles.sha256", "sessions", "max_turns", "seed")
 
 
@@ -85,12 +86,18 @@ def _get(d: dict, dotted: str):
 
 def run_manifest(counselor_system_prompt_path: Path, profiles_path: Path, sessions: int, max_turns: int, seed: int,
                  max_workers: int, cfg: Config, patient: CallSpec, counselor: CallSpec,
-                 rows: list[MemberRow]) -> dict:
+                 rows: list[MemberRow], writer: CallSpec | None = None) -> dict:
+    writer = writer or patient
     return {
         "mindeval_version": __version__, "git": _git_describe(), "fingerprint": cfg.fingerprint,
         "patient": {"model": patient.model, "api_base": patient.api_base, "temperature": patient.temperature,
                     "max_retries": patient.max_retries, "timeout": patient.timeout, "params": patient.params,
-                    "max_tokens": patient.max_tokens, "force_move": patient.force_move},
+                    "max_tokens": patient.max_tokens, "force_move": patient.force_move,
+                    "protocol": patient.protocol, "protocol_dir": patient.protocol_dir,
+                    "protocol_sha256": (psim.protocol_sha256(patient.protocol_dir)
+                                        if patient.protocol == psim.PROTOCOL else None)},
+        "writer": {"model": writer.model, "api_base": writer.api_base, "temperature": writer.temperature,
+                   "max_tokens": writer.max_tokens, "params": writer.params, "timeout": writer.timeout},
         "counselor": {"model": counselor.model, "api_base": counselor.api_base,
                       "system_prompt": str(counselor_system_prompt_path),
                       "system_prompt_sha256": _sha(counselor_system_prompt_path.read_bytes()),
@@ -123,13 +130,26 @@ def check_identity(out: Path, manifest: dict) -> dict | None:
 
 def preflight(cfg: Config, row: MemberRow, counselor: Counselor, patient: CallSpec) -> None:
     """Two real calls before any member starts: a counselor reply, and one `commit_move`, which must come
-    back as a tool call. Some servers reject a forced function or answer it in prose."""
+    back as a tool call. Some servers reject a forced function or answer it in prose. Under the
+    patient-sim protocol, the member's opening declaration and one whole turn instead."""
     opening = row.situation.opening_message
     try:
         text, _ = counselor.respond(counselor.prompt_with(counselor_memory([])),
                                     [{"role": "assistant", "content": opening}])
     except Exception as e:  # noqa: BLE001
         raise InputError(f"preflight: the counselor did not answer: {e}") from None
+    if patient.protocol == psim.PROTOCOL:
+        member = psim.build_member(cfg, row, row.situation, row.knobs, patient, memory_text=None,
+                                   start=psim.CALENDAR_START, earlier=[])
+        _, meta, _ = member.open(opening, seed=0)
+        try:
+            words, intent, *_ = member.speak(text, seed=0)
+        except Exception as e:  # noqa: BLE001
+            raise InputError(f"preflight: the patient-sim member did not complete a turn: {e}") from None
+        if meta["intent"] is None or intent is None:
+            raise InputError("preflight: the patient-sim member did not call expose_intent; the server must parse "
+                             "tool calls (--enable-auto-tool-choice and the model's tool-call parser)")
+        return
     member = build_member(cfg, row, row.situation, row.knobs, patient)
     member.said(opening)
     member.hears(text)
@@ -153,7 +173,9 @@ def _write_json(path: Path, obj: dict) -> None:
 def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELOR,
          counselor_temperature: float | None = 1.0, counselor_max_tokens: int | None = None,
          counselor_params: dict | None = None, counselor_timeout: float = 600, counselor_retries: int = 5,
-         patient_timeout: float = 600, patient_params: dict | None = None, profiles_path: Path = DEFAULT_PROFILES,
+         patient_timeout: float = 600, patient_params: dict | None = None, patient_max_tokens: int | None = None,
+         patient_protocol: str = "mindsim", patient_protocol_dir: Path | None = None,
+         profiles_path: Path = DEFAULT_PROFILES,
          members: int = 50, sessions: int = 3, max_turns: int = 30, seed: int = 0, max_workers: int = 16,
          dry_run: bool = False) -> int:
     """Runs every member of the profile file through its sessions against one counselor.
@@ -163,7 +185,8 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
 
     Models, endpoints and keys come from the environment (or a .env file in the working directory):
     MINDEVAL_PATIENT_MODEL and MINDEVAL_COUNSELOR_MODEL, each with optional _API_BASE and _API_KEY. See
-    .env.example.
+    .env.example. MINDEVAL_WRITER_MODEL (with its own _API_BASE and _API_KEY) gives the log and the
+    next situation to another model than the patient's.
 
     Args:
         output_dir: output directory; rerun with the same one to resume
@@ -177,6 +200,10 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
         patient_timeout: seconds per request (compaction has its own 1800)
         patient_params: JSON merged over the settings config/patient.yaml gives this kind of model,
             e.g. '{"reasoning_effort": "high"}' for a model it does not list
+        patient_max_tokens: per patient call; config/patient.yaml's for this kind of model when omitted
+        patient_protocol: mindsim (the default member) or patient_sim (the turn protocol of a
+            patient-simulator model, mindeval/psim.py)
+        patient_protocol_dir: for patient_sim, the directory of the model's harness (patient_sim.py)
         profiles_path: JSONL of members
         members: run the first N members of the file
         sessions: sessions per member
@@ -211,12 +238,32 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
         pe, ce = env.endpoint("PATIENT", missing), env.endpoint("COUNSELOR", missing)
         if missing:
             raise _missing(missing)
+        if patient_protocol not in ("mindsim", psim.PROTOCOL):
+            raise InputError(f"--patient_protocol is mindsim or {psim.PROTOCOL}")
+        if patient_protocol == psim.PROTOCOL:
+            if patient_protocol_dir is None or not (patient_protocol_dir / "patient_sim.py").is_file():
+                raise InputError(f"--patient_protocol {psim.PROTOCOL} needs --patient_protocol_dir, the directory "
+                                 "holding the model's patient_sim.py")
         rows = load_members(profiles_path, members, cfg)
         provider = cfg.patient.provider(pe.model)
         patient = CallSpec(model=pe.model, api_base=pe.api_base, api_key=pe.api_key,
-                           temperature=cfg.patient.temperature, max_tokens=provider.max_tokens,
+                           temperature=cfg.patient.temperature,
+                           max_tokens=patient_max_tokens if patient_max_tokens is not None else provider.max_tokens,
                            timeout=patient_timeout, max_retries=cfg.patient.max_retries,
-                           params={**provider.params, **patient_params}, force_move=provider.force_move)
+                           params={**provider.params, **patient_params}, force_move=provider.force_move,
+                           protocol=patient_protocol,
+                           protocol_dir=str(patient_protocol_dir) if patient_protocol_dir else None)
+        # The session writer (the log between sessions and the next situation): the patient model unless
+        # MINDEVAL_WRITER_MODEL names another.
+        writer = None
+        if os.environ.get(env.PREFIX + "WRITER_MODEL", "").strip():
+            we = env.endpoint("WRITER", missing)
+            if missing:
+                raise _missing(missing)
+            wp = cfg.patient.provider(we.model)
+            writer = CallSpec(model=we.model, api_base=we.api_base, api_key=we.api_key,
+                              temperature=cfg.patient.temperature, max_tokens=wp.max_tokens, timeout=patient_timeout,
+                              max_retries=cfg.patient.max_retries, params=dict(wp.params))
         cspec = CallSpec(model=ce.model, api_base=ce.api_base, api_key=ce.api_key,
                          temperature=counselor_temperature, max_tokens=counselor_max_tokens,
                          timeout=counselor_timeout, max_retries=counselor_retries, params=counselor_params)
@@ -226,7 +273,7 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
         except ValueError as e:
             raise InputError(f"{counselor_system_prompt_path}: {e}") from None
         manifest = run_manifest(counselor_system_prompt_path, profiles_path, sessions, max_turns, seed, max_workers,
-                                cfg, patient, cspec, rows)
+                                cfg, patient, cspec, rows, writer)
         old = check_identity(output_dir, manifest)
 
         arc_dirs = {m.member_id: output_dir / "members" / m.member_id / "arc" for m in rows}
@@ -236,7 +283,11 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
 
         if dry_run:
             for m in rows:
-                build_member(cfg, m, m.situation, m.knobs, patient)
+                if patient.protocol == psim.PROTOCOL:
+                    psim.build_member(cfg, m, m.situation, m.knobs, patient, memory_text=None,
+                                      start=psim.CALENDAR_START, earlier=[])
+                else:
+                    build_member(cfg, m, m.situation, m.knobs, patient)
             print(f"dry run: {len(rows)} profiles valid, session-1 prompts render; counselor prompt "
                   f"{manifest['counselor']['system_prompt_sha256'][:12]}; would write to {output_dir}"
                   + ("" if old is None else " (resuming)"))
@@ -266,7 +317,7 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
             try:
                 moved = set_aside_partial(arc_dir)
                 arc = run_arc(cfg, row, counselor, patient=patient, sessions=sessions, max_turns=max_turns,
-                              arc_seed=member_seed(row.member_id, seed), out=arc_dir)
+                              arc_seed=member_seed(row.member_id, seed), out=arc_dir, writer=writer)
                 outcome = "done"
                 detail = " ".join(e.termination.replace("member_terminated", "left").replace("max_turns", "cap")
                                   for e in arc.episodes)

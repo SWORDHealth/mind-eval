@@ -286,7 +286,9 @@ def test_generate_interactions_flag_names(tmp_path):
         "--output_dir", str(tmp_path / "run"), "--counselor_system_prompt_path", str(tmp_path / "counselor.j2"),
         "--counselor_temperature", "0.5", "--counselor_max_tokens", "111", "--counselor_params", '{"a": 1}',
         "--counselor_timeout", "12", "--counselor_retries", "2", "--patient_timeout", "13",
-        "--patient_params", '{"b": 2}', "--profiles_path", str(tmp_path / "profiles.jsonl"), "--members", "7",
+        "--patient_params", '{"b": 2}', "--patient_max_tokens", "8192", "--patient_protocol", "patient_sim",
+        "--patient_protocol_dir", str(tmp_path / "harness"), "--profiles_path", str(tmp_path / "profiles.jsonl"),
+        "--members", "7",
         "--sessions", "4", "--max_turns", "9", "--seed", "3", "--max_workers", "5", "--dry_run", "true",
     ]
     assert CLI([stub], as_positional=False, args=args) == 0
@@ -294,6 +296,7 @@ def test_generate_interactions_flag_names(tmp_path):
         "output_dir": tmp_path / "run", "counselor_system_prompt_path": tmp_path / "counselor.j2",
         "counselor_temperature": 0.5, "counselor_max_tokens": 111, "counselor_params": {"a": 1},
         "counselor_timeout": 12.0, "counselor_retries": 2, "patient_timeout": 13.0, "patient_params": {"b": 2},
+        "patient_max_tokens": 8192, "patient_protocol": "patient_sim", "patient_protocol_dir": tmp_path / "harness",
         "profiles_path": tmp_path / "profiles.jsonl", "members": 7, "sessions": 4, "max_turns": 9, "seed": 3,
         "max_workers": 5, "dry_run": True,
     }

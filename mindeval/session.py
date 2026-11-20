@@ -18,7 +18,7 @@ from pathlib import Path
 from jinja2 import Environment, StrictUndefined, Template, TemplateSyntaxError, nodes
 from pydantic import BaseModel, ValidationError
 
-from mindeval import llm
+from mindeval import llm, psim
 from mindeval.config import CallSpec, Config, turn_seed
 from mindeval.member import Todos, build_member, member_turn
 from mindeval.models import Knobs, MemberRow, SessionRecord, Situation, TurnRecord
@@ -192,10 +192,18 @@ def _run_id(row: MemberRow, situation: Situation, seed: int, fingerprint: str) -
 def run_session(cfg: Config, row: MemberRow, situation: Situation, knobs: Knobs, counselor: Counselor, *,
                 patient: CallSpec, max_turns: int, seed: int, trace_path: Path,
                 counselor_memory: str, memory_text: str | None = None,
-                time_context: str | None = None) -> SessionRecord:
+                time_context: str | None = None, calendar: list | None = None) -> SessionRecord:
     """Run one session and return its record. A failure is written to the trace (and the turn it died
-    on beside it) and re-raised."""
-    member = build_member(cfg, row, situation, knobs, patient, memory_text=memory_text, time_context=time_context)
+    on beside it) and re-raised. `calendar` is when the earlier sessions and this one opened, on the
+    member's clock; only the patient-sim protocol reads it (its stamps)."""
+    simulated = patient.protocol == psim.PROTOCOL
+    if simulated:
+        calendar = calendar or [psim.CALENDAR_START]
+        member = psim.build_member(cfg, row, situation, knobs, patient, memory_text=memory_text,
+                                   start=calendar[-1], earlier=calendar[:-1])
+    else:
+        member = build_member(cfg, row, situation, knobs, patient, memory_text=memory_text,
+                              time_context=time_context)
     todos = Todos(situation)
     run_id = _run_id(row, situation, seed, cfg.fingerprint)
     session_id = f"{run_id}-s0"
@@ -219,9 +227,12 @@ def run_session(cfg: Config, row: MemberRow, situation: Situation, knobs: Knobs,
             rec = blank_record(0, "opening_message")
             rec.utterance = situation.opening_message
             rec.flags = ["opening_message"]
+            if simulated:
+                psim.opening_turn(cfg, member, rec)
+            else:
+                member.said(rec.utterance)
             turns.append(rec)
             trace.write_turn(rec)
-            member.said(rec.utterance)
             transcript.append({"role": "assistant", "content": rec.utterance})
 
             for turn in range(1, max_turns + 1):
@@ -229,8 +240,11 @@ def run_session(cfg: Config, row: MemberRow, situation: Situation, knobs: Knobs,
                 text, cmeta = counselor.respond(counselor_prompt, transcript)
                 counselor_ms = round((time.monotonic() - c0) * 1000, 1)
                 transcript.append({"role": "user", "content": text, **carried(cmeta)})
-                member.hears(text)
-                rec = member_turn(cfg, member, text, cmeta, turn, session_id, seed, blank_record, todos)
+                if simulated:
+                    rec = psim.member_turn(cfg, member, text, cmeta, turn, blank_record)
+                else:
+                    member.hears(text)
+                    rec = member_turn(cfg, member, text, cmeta, turn, session_id, seed, blank_record, todos)
                 rec.timings["counselor_ms"] = counselor_ms
                 turns.append(rec)
                 trace.write_turn(rec)
@@ -270,7 +284,8 @@ def _session_record(cfg: Config, row: MemberRow, situation: Situation, knobs: Kn
             "max_turns": max_turns,
             "opening_speaker": "member",
             "member": {"model": patient.model, "api_base": patient.api_base, "temperature": patient.temperature,
-                       "max_tokens": patient.max_tokens, "timeout": patient.timeout, "params": patient.params},
+                       "max_tokens": patient.max_tokens, "timeout": patient.timeout, "params": patient.params,
+                       "protocol": patient.protocol, "protocol_dir": patient.protocol_dir},
             "counselor": {"adapter": "litellm", "model": counselor.spec.model,
                           "temperature": counselor.spec.temperature, "max_tokens": counselor.spec.max_tokens,
                           "params": counselor.spec.params},

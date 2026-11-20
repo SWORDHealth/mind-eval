@@ -208,7 +208,9 @@ class Config:
 class CallSpec:
     """One side's model, endpoint and call policy. `temperature` and `max_tokens` of None are not
     sent; `params` is merged into the litellm request. `force_move` (the patient only) names
-    `commit_move` in `tool_choice` rather than offering it as `auto`. `api_key` is never recorded."""
+    `commit_move` in `tool_choice` rather than offering it as `auto`. `protocol` (the patient only) is
+    `mindsim`, the default member, or `patient_sim`, the turn protocol of a patient-simulator model
+    whose harness is in `protocol_dir` (mindeval/psim.py). `api_key` is never recorded."""
 
     model: str
     api_base: str | None
@@ -219,6 +221,8 @@ class CallSpec:
     params: dict = field(default_factory=dict)
     force_move: bool = True
     api_key: str | None = field(default=None, repr=False)
+    protocol: str = "mindsim"
+    protocol_dir: str | None = None
 
 
 def _fingerprint() -> str:
