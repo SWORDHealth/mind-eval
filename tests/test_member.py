@@ -11,8 +11,8 @@ from conftest import _response
 
 import mindeval.member as member_mod
 from mindeval import llm
-from mindeval.config import CallSpec, load_config
-from mindeval.member import Member, build_member, move_tool
+from mindeval.config import CallSpec, load_config, provider_seed
+from mindeval.member import Member, MemberError, build_member, move_tool
 from mindeval.models import MemberRow
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -199,3 +199,163 @@ def test_build_member_never_names_an_avoided_move_in_the_prompt():
         for move in avoided:
             assert f"`{move}`" not in member.system_prompt and f"({move})" not in member.system_prompt, (
                 f"{row.member_id} ({row.archetype}) still names avoided move {move!r} in its prompt")
+
+
+# -- a leaked terminal control field is retried and never substituted into a valid turn ------------
+
+@pytest.mark.parametrize("text", [
+    "I've been okay. Work and the rescue are the same as always.\n\nend_conversation: False",
+    "end_conversation: true",
+    "  'end_conversation': 'False',  ",
+    '\"end_conversation\": \"null\"}',
+    "end_conversation: None",
+    "end_conversation: yes",
+    "end_conversation: off",
+    "end_conversation: 0",
+    '{\"reasoning\": \"done\", \"end_conversation\": false}',
+    'I am okay.\n{\"reasoning\": \"done\", \"end_conversation\": \"unexpected\"}',
+    '{\n  \"reasoning\": \"done\",\n  \"end_conversation\": null\n}',
+])
+def test_has_control_field_recognizes_standalone_yaml_and_json(text):
+    assert member_mod._has_control_field(text)
+    assert member_mod.CONTROL_FIELD_PROBLEM in member_mod._hygiene_problems(text)
+
+
+@pytest.mark.parametrize("text", [
+    "I'm trying to explain what end_conversation: false means in my code.",
+    "My script prints {\"end_conversation\": false} when it starts.",
+    "`end_conversation: False`",
+    '\"end_conversation: False\"',
+    "'end_conversation: False'",
+    "end_conversation: False alarm",
+    "end_conversations: false",
+    "```yaml\nend_conversation: False\n```\nI copied this from a script.",
+    "~~~json\n{\"end_conversation\": false}\n~~~",
+    "> end_conversation: false\nI am quoting the documentation.",
+    '{\"example\": {\"end_conversation\": false}}',
+    '{\n  \"example\": {\n    \"end_conversation\": false\n  }\n}',
+    '{\"message\": \"end_conversation: False\"}',
+    "No, I don't think that's what I meant.",
+])
+def test_has_control_field_allows_inline_or_quoted_discussion(text):
+    assert not member_mod._has_control_field(text)
+    assert member_mod.CONTROL_FIELD_PROBLEM not in member_mod._hygiene_problems(text)
+
+
+def test_control_field_retry_keeps_full_raw_evidence_and_native_requested_seeds(monkeypatch):
+    pauses, requests = [], []
+    monkeypatch.setattr(member_mod, "_pause", pauses.append)
+    dirty = "  I'm okay. " + " ".join(f"detail{n}" for n in range(90)) + "\n\nend_conversation: False\n  "
+    assert len(dirty) > 400
+
+    def completion(**kw):
+        requests.append(kw)
+        return _response(dirty if len(requests) == 1 else "Work's been quiet this week.")
+
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
+    m = _member(max_retries=2)
+    seed = 2 ** 63 + 2 ** 31 - 2
+    said, records = m.speak(seed=seed)
+    expected = [provider_seed(seed + 1), provider_seed(seed + 2)]
+    assert [kw["seed"] for kw in requests] == expected
+    assert pauses == [1]
+    assert said == "Work's been quiet this week."
+    assert m.convo[-1] == {"role": "assistant", "content": said}
+    assert all(dirty not in [msg.get("content") for msg in kw["messages"]] for kw in requests)
+    rejected, = records[-1]["hygiene_attempts"]
+    assert rejected["text"] == dirty
+    assert rejected["request_seed"] == expected[0]
+    assert rejected["problems"] == [member_mod.CONTROL_FIELD_PROBLEM]
+    assert records[-1]["request_seed"] == expected[1]
+    assert records[-1]["seed"] == seed
+    assert "hygiene_dropped" not in records[-1]
+
+
+@pytest.mark.parametrize("last_output", ["end_conversation: true", "**SUMMARY: Fine."])
+def test_exhausted_control_retry_is_member_error_even_if_final_problem_changes(monkeypatch, last_output):
+    requests = []
+    monkeypatch.setattr(member_mod, "_pause", lambda attempt: None)
+    dirty = "I've been okay.\n\nend_conversation: False\n"
+
+    def completion(**kw):
+        requests.append(kw)
+        return _response(dirty if len(requests) == 1 else last_output)
+
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
+    m = _member(max_retries=2)
+    with pytest.raises(MemberError, match="speaking failed after 2 attempts") as caught:
+        m.speak(seed=9)
+    assert len(requests) == 2
+    assert m.convo == [{"role": "system", "content": "be a member"}]
+    failure, = caught.value.calls
+    assert failure["name"] == "speak" and failure["error"]
+    assert failure["result"] is None and "hygiene_dropped" not in failure
+    assert failure["hygiene_attempts"][0]["text"] == dirty
+    assert [a["request_seed"] for a in failure["hygiene_attempts"]] == [10, 11]
+    assert failure["request_seed"] == 11
+
+
+def test_control_then_transport_failure_keeps_distinct_attempt_evidence(monkeypatch):
+    requests = []
+    monkeypatch.setattr(member_mod, "_pause", lambda attempt: None)
+
+    def completion(**kw):
+        requests.append(kw)
+        if len(requests) == 1:
+            return _response("Fine.\nend_conversation: False\n")
+        raise RuntimeError("server unavailable")
+
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
+    m = _member(max_retries=2)
+    with pytest.raises(MemberError, match="server unavailable") as caught:
+        m.speak(seed=20)
+    first, second = caught.value.calls[0]["hygiene_attempts"]
+    assert first["problems"] == [member_mod.CONTROL_FIELD_PROBLEM]
+    assert second["problems"] == ["RuntimeError"]
+    assert second["text"] == "" and second["request_seed"] == 22
+    assert m.convo == [{"role": "system", "content": "be a member"}]
+
+
+def test_other_exhausted_hygiene_retains_the_legacy_fallback(monkeypatch):
+    monkeypatch.setattr(member_mod, "_pause", lambda attempt: None)
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=lambda **kw: _response("**SUMMARY: Fine.")))
+    m = _member(max_retries=2)
+    said, records = m.speak(seed=30)
+    assert said == member_mod.FALLBACK_UTTERANCE
+    assert records[-1]["hygiene"] == ["markdown formatting"]
+    assert records[-1]["hygiene_dropped"] == "**SUMMARY: Fine."
+    assert records[-1]["request_seed"] == 32
+
+
+@pytest.mark.parametrize("tool_name,offset", [("complete_todo", 7), (member_mod.STRAY_COMMIT, 13)])
+def test_control_retry_evidence_survives_an_accepted_bookkeeping_tool(monkeypatch, tool_name, offset):
+    requests, handled = [], []
+    monkeypatch.setattr(member_mod, "_pause", lambda attempt: None)
+    dirty = "  I'm okay. " + " ".join(f"detail{n}" for n in range(90)) + "\nend_conversation: False\n "
+
+    def completion(**kw):
+        requests.append(kw)
+        if len(requests) == 1:
+            return _response(dirty)
+        if len(requests) == 2:
+            if tool_name == member_mod.STRAY_COMMIT:
+                return _response(tool_call=json.dumps({"reasoning": "again", "move": "do_answer_question"}))
+            response = _response(tool_call=json.dumps({"todo": "the quiet shift"}))
+            response.choices[0].message.tool_calls[0].function.name = tool_name
+            return response
+        return _response("I went home after work.")
+
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
+    m = _member(max_retries=2)
+    said, records = m.speak(seed=100, on_todo=lambda name, todo: handled.append((name, todo)) or "noted")
+    assert said == "I went home after work."
+    assert [request["seed"] for request in requests] == [101, 102, 101 + offset]
+    bookkeeping, speech = records
+    assert bookkeeping["name"] == tool_name
+    rejected, = bookkeeping["hygiene_attempts"]
+    assert rejected["text"] == dirty and rejected["request_seed"] == 101
+    assert rejected["problems"] == [member_mod.CONTROL_FIELD_PROBLEM]
+    assert bookkeeping["request_seed"] == 102
+    assert speech["request_seed"] == 101 + offset
+    assert all(message.get("content") != dirty for message in m.convo)
+    assert handled == ([] if tool_name == member_mod.STRAY_COMMIT else [("complete_todo", "the quiet shift")])

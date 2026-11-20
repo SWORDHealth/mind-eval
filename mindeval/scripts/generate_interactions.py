@@ -35,7 +35,7 @@ DEFAULT_COUNSELOR = PACKAGE_DIR.parent / "examples" / "counselor_system.j2"
 IDENTITY = ("mindeval_version", "fingerprint", "seed_namespace", "patient.model", "counselor.model",
             "counselor.system_prompt_sha256", "counselor.temperature", "counselor.max_tokens",
             "counselor.params", "patient.params", "patient.max_tokens", "patient.force_move",
-            "profiles.sha256", "sessions", "max_turns", "seed")
+            "profiles.sha256", "sessions", "max_turns", "seed", "patient_style.path", "patient_style.sha256")
 
 
 def _missing(names: list[str]) -> InputError:
@@ -103,6 +103,8 @@ def run_manifest(counselor_system_prompt_path: Path, profiles_path: Path, sessio
                      "rows": sum(1 for line in profiles_path.read_text().splitlines() if line.strip())},
         "members": len(rows), "member_ids": [m.member_id for m in rows], "sessions": sessions,
         "max_turns": max_turns, "seed": seed, "workers": max_workers,
+        **({"patient_style": {"path": cfg.patient_style_path, "sha256": cfg.patient_style_sha256}}
+           if cfg.patient_style_path is not None else {}),
     }
 
 
@@ -158,7 +160,8 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
          counselor_params: dict | None = None, counselor_timeout: float = 600, counselor_retries: int = 5,
          patient_timeout: float = 600, patient_params: dict | None = None, profiles_path: Path = DEFAULT_PROFILES,
          members: int = 50, sessions: int = 3, max_turns: int = 30, seed: int = 0, max_workers: int = 16,
-         dry_run: bool = False) -> int:
+         dry_run: bool = False, patient_style_path: Path | None = None,
+         patient_force_move: bool | None = None) -> int:
     """Runs every member of the profile file through its sessions against one counselor.
 
     The transcripts are written under output_dir. Rerun with the same output_dir to resume: finished
@@ -180,6 +183,10 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
         patient_timeout: seconds per request (compaction has its own 1800)
         patient_params: JSON merged over the settings config/patient.yaml gives this kind of model,
             e.g. '{"reasoning_effort": "high"}' for a model it does not list
+        patient_force_move: true for a named commit_move tool_choice, false for auto; omitted
+            uses the provider default. The selected mode is recorded and must match on resume.
+        patient_style_path: optional complete Style2File YAML; content and resolved path are part of
+            run identity, so use a fresh output directory when changing it; arcs and seeds stay pinned
         profiles_path: JSONL of members
         members: run the first N members of the file
         sessions: sessions per member
@@ -195,10 +202,15 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
     try:
         counselor_params = counselor_params or {}
         patient_params = patient_params or {}
+        if patient_force_move is not None and not isinstance(patient_force_move, bool):
+            raise InputError("--patient_force_move must be true, false or omitted")
         for flag, params in (("--counselor_params", counselor_params), ("--patient_params", patient_params)):
             check_params(flag, params)
 
-        cfg = load_config()
+        try:
+            cfg = load_config(patient_style_path)
+        except (OSError, ValueError) as e:
+            raise InputError(f"--patient_style_path: {e}") from None
         if not counselor_system_prompt_path.is_file():
             raise InputError(f"counselor system prompt not found: {counselor_system_prompt_path}")
         for flag, value in (("--sessions", sessions), ("--max_turns", max_turns), ("--max_workers", max_workers),
@@ -219,7 +231,8 @@ def main(output_dir: Path, counselor_system_prompt_path: Path = DEFAULT_COUNSELO
                            timeout=patient_timeout, max_retries=cfg.patient.max_retries,
                            # deep, not shallow: a --patient_params extra_body must not silently drop
                            # provider.params' own extra_body keys (e.g. chat_template_kwargs for vLLM)
-                           params=deep_merge(provider.params, patient_params), force_move=provider.force_move)
+                           params=deep_merge(provider.params, patient_params),
+                           force_move=provider.force_move if patient_force_move is None else patient_force_move)
         cspec = CallSpec(model=ce.model, api_base=ce.api_base, api_key=ce.api_key,
                          temperature=counselor_temperature, max_tokens=counselor_max_tokens,
                          timeout=counselor_timeout, max_retries=counselor_retries, params=counselor_params)

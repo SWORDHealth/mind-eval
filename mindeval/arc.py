@@ -198,13 +198,14 @@ def _conversation(messages: list[dict], member_label: str) -> str:
 def _trim_log(entries: list[str], max_entries: int) -> list[str]:
     """At most `max_entries`, keeping the newest — entries are oldest first, so a model that
     overshoots the limit must not lose the session that just ended — and never dropping an `[open]`
-    entry while an untagged one in the kept range could go instead. A defensive backstop: the prompt
+    entry while an untagged one in the kept range could go instead. The exact `[open]` tag
+    is recognized anywhere in an entry. A defensive backstop: the prompt
     already asks the model to do this itself (compact_log.j2, rule 6)."""
     if len(entries) <= max_entries:
         return entries
     order = list(enumerate(entries))
-    opens = [i for i, e in order if e.startswith("[open]")]
-    others = [i for i, e in order if not e.startswith("[open]")]
+    opens = [i for i, e in order if "[open]" in e]
+    others = [i for i, e in order if "[open]" not in e]
     keep = set(opens[-max_entries:])  # more open entries than room: keep the newest of those too
     room = max_entries - len(keep)
     if room > 0:

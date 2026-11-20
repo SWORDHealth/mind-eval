@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from conftest import _response
 
 import mindeval.arc as arc_mod
@@ -150,3 +151,39 @@ def test_evolve_situation_sees_the_log_and_the_next_sessions_conduct(monkeypatch
                              2.0, PATIENT, arc_seed=0, arc_id="a", episode_id=1, now_line="now", beat=beat,
                              log=[], knobs=guarded)
     assert "Their log so far" not in prompts[-1]  # no log yet: no empty section
+
+
+@pytest.mark.parametrize("entry", [
+    "[open] Member will call their sister.",
+    "Member will call their sister. [open]",
+    "Member will [open] call their sister.",
+])
+def test_trim_log_preserves_open_tag_in_any_documented_position(entry):
+    entries = [entry, "ordinary old fact", "ordinary new fact"]
+    assert arc_mod._trim_log(entries, 2) == [entry, "ordinary new fact"]
+    assert arc_mod._trim_log(entries, 3) == entries
+
+
+def test_trim_log_keeps_newest_mixed_position_opens_when_all_are_open():
+    entries = ["[open] old plan", "middle [open] plan", "new plan [open]"]
+    assert arc_mod._trim_log(entries, 2) == entries[-2:]
+
+
+def test_trim_log_does_not_promote_untagged_or_similarly_named_text():
+    entries = ["an open question", "[opened] ordinary fact", "new ordinary fact"]
+    assert arc_mod._trim_log(entries, 2) == entries[-2:]
+
+
+def test_compact_log_preserves_suffix_open_when_native_output_overshoots(monkeypatch):
+    log = "- Member will call their sister. [open]\n- Older ordinary fact.\n- New ordinary fact."
+    calls = []
+
+    def completion(**kwargs):
+        calls.append(kwargs)
+        return _response(log)
+
+    monkeypatch.setattr(llm, "_LIB", SimpleNamespace(completion=completion))
+    session = SimpleNamespace(member_messages=[{"role": "assistant", "content": "hi"}])
+    entries = arc_mod.compact_log([], session, PATIENT, max_entries=2, arc_seed=0, arc_id="a", episode_id=0)
+    assert entries == ["Member will call their sister. [open]", "New ordinary fact."]
+    assert len(calls) == 1

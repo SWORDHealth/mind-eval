@@ -52,10 +52,13 @@ python mindeval/scripts/generate_interactions.py --output_dir runs/<counselor>
 >replies; the member may leave sooner), `--max_workers 16`, `--seed 0`. See `--help`.
 
 >The patient is DeepSeek-V4.1-Flash by default, served by vLLM (`hosted_vllm/`) with tool calling that
->honours a named `tool_choice`. When a situation carries an agenda (most do), the member is also
+>uses a named `tool_choice` by default. For a served model that only accepts automatic tool choice,
+>pass `--patient_force_move false`; use `true` to explicitly request a named `commit_move`. The
+>preflight requires a real tool call in either mode, and the selected mode must match on resume.
+>When a situation carries an agenda (most do), the member is also
 >offered `complete_todo`/`add_todo` with `tool_choice: "auto"` between the move and the words, so a
 >vLLM patient needs `--enable-auto-tool-choice` (and a matching `--tool-call-parser`) for that path
->too, not just a named `tool_choice`; the preflight only exercises the named path. Another model can
+>too; the preflight only exercises the selected commit path. Another model can
 >play it: set `MINDEVAL_PATIENT_MODEL`, e.g. `vertex_ai/claude-sonnet-4-6`. Add anything else a model
 >needs with `--patient_params`. A `vertex_ai/` model needs `uv sync --extra vertex`.
 
@@ -67,6 +70,114 @@ python mindeval/scripts/generate_interactions.py --output_dir runs/<counselor>
 >`--counselor_params '{"include": ["reasoning.encrypted_content"], "store": false}'`.
 
 >Rerun the same command to resume: finished members are kept, and unfinished sessions restart.
+
+>For a style experiment, pass `--patient_style_path <file.yaml>` with a complete alternative to
+>`mindeval/config/style2.yaml`. It may add `move_descriptions: {do_answer_question: "..."}` for existing
+>moves; archetype exclusions still apply. The selected file's contents change the config fingerprint,
+>and its resolved path and SHA-256 are recorded in `run.json` and session injections. Changing the
+>selection or its contents requires a fresh output directory; the seed namespace and arcs stay pinned.
+>Omitting the flag preserves the benchmark's default style and fingerprint.
+
+The optional candidates in `experiments/patient_styles/` are `nemotron_context.yaml`,
+`nemotron_agency.yaml`, and `nemotron_private_notes.yaml`. Context removes universal
+under-answering; agency adds a cue for the patient's practical concern and relevant corrections;
+private notes keeps the context policy and treats the assigned story as background rather than
+an ordered script. The context candidate was selected for validation on unused synthetic profiles
+after a matched development comparison; the private-note cue did not show a supported advantage.
+Select it with `--patient_style_path experiments/patient_styles/nemotron_context.yaml`. This does
+not establish parity with the historical Sonnet/DeepSeek table.
+
+Patient speech containing a standalone `end_conversation` YAML/JSON field is rejected and retried
+within the native budget. Rejected text and requested retry seeds remain in the trace. If valid
+speech cannot be recovered, the session fails without inserting a fabricated patient reply.
+Inline mentions, quoted literals and fenced examples remain allowed.
+
+## Audit patient realism (experimental)
+
+The patient audit in `experiments/realism/` reviews delivered patient turns using causal prefixes
+(turns 1, 4, 8 and the last), then complete sessions, then recurring patterns across sessions.
+It hides model labels and private profiles from the judge, verifies exact quoted evidence, and
+reports failed audits and coverage. MindSim JSONL needs one terminal, non-error session footer
+for full-session and cross-session eligibility; live/failed prefixes receive causal turn audits only
+and are reported as incomplete. Duplicate or out-of-order turns fail loading. Generic delivered
+JSON/JSONL is complete by input convention, with termination unverified. Short answers, guarded
+disclosure, fluent language and quick relief are not automatic failures. This is a new, unvalidated patient rubric, separate from the
+counselor MQM score; using Dawn's judge endpoint does not validate the new rubric. Development
+audits showed ceiling scores, missed failures and source allegations that did not survive manual
+checks. Review the cited preceding counselor turn and full assigned source before accepting a finding;
+keep uncertain allegations and invalid judge results visible.
+
+Create a manifest in your ignored run directory; paths resolve relative to the manifest:
+```json
+{"groups": {"candidate": [{"path": "members/example/arc/ep000/trace.jsonl", "case_id": "example"}]}}
+```
+Run from the repository root, first with `--dry-run` to verify inputs without API calls:
+```bash
+python -m experiments.realism.hierarchical_realism --manifest runs/<experiment>/patient_manifest.json \
+  --output-dir runs/<experiment>/patient_audit --api-base http://<judge-host>:<port>/v1 \
+  --judge-model dawn-judge --dry-run
+```
+Remove `--dry-run` to judge. The runner sends one user message at temperature 0 with a 16,384-token
+output limit, retains invalid attempts, and caches by input bytes, rendered prompt and judge settings.
+Supply endpoint credentials through `MINDEVAL_JUDGE_API_KEY` (or `--api-key-env`). Keep human-reference
+transcripts and judge outputs in ignored local run directories; use development references while
+iterating, and freeze the candidate before evaluating a held-out pool.
+
+A separate `experiments.realism.patient_grounding` runner compares completed MindSim JSONL traces
+with assigned YAML sources. Add `profile_path` and `situation_path` to each manifest item and pass the
+same command flags. Unsourced human controls are not applicable. It distinguishes contradiction,
+source recitation and committed-move mismatch from ordinary added detail or a concern that was never
+surfaced; those observations do not lower the source-free realism score.
+
+The isolated continuity pilot in `experiments/continuity/` replays the first completed sessions
+of a paired development smoke run. It records exact prompts, source hashes, native call settings,
+seeds, raw attempts and failure coverage for the original and candidate memory prompts:
+```bash
+python -m experiments.continuity.replay_compaction --smoke runs/<paired-smoke> \
+  --out runs/<memory-replay> --synthetic
+```
+This prepares inputs without model calls; add `--execute` to run. The current input layout is
+`{dawn_agency,glm53_agency}/members/{m000004,m000013}/arc/ep000/` plus each arm's `run.json` and
+`arc.json`. Three optional hand-written ambiguity/commitment probes are counted separately from
+these four completed conversations. This compaction runner does not execute evolution or alter
+benchmark defaults.
+
+A separate paired evolution replay uses the same four smoke histories to generate session 2
+situations. Preparation proves the original request matches `evolve_situation`, freezes the runtime
+and inputs, and makes no model calls:
+
+```bash
+python -m experiments.continuity.replay_evolution --smoke runs/<paired-smoke> \
+  --out runs/<evolution-replay>
+python runs/<evolution-replay>/snapshot/runtime/experiments/continuity/replay_evolution.py \
+  --smoke runs/<paired-smoke> --out runs/<evolution-replay> --execute
+```
+
+Execution uses one serial worker and retains native phase seeds, call policy, raw attempts, parsed
+situations and actual HTTP payload audits. Review newly generated events against the full inputs;
+ordinary details and small plan changes are allowed. These four previously reviewed cases do not
+establish broader realism or prompt efficacy, particularly when the original does not reproduce a
+historical error. The default evolution prompt remains unchanged.
+
+The opt-in [complete spoken history package](experiments/continuity/full_history/README.md)
+retains every earlier patient/counselor message with session and speaker labels, without a model
+summary call. It provides hard-fail history budgets and an optional source-evidence calendar solver
+for a frozen three-session research pipeline. The original eight-arc, 24-session comparison was
+reviewed on two familiar synthetic profiles. The current optional package adds chronology
+metadata and source/call binding guards, verified offline; behavior on fresh generated dialogues
+remains untested. Availability does not promote it to the benchmark default.
+
+
+The separate [fresh-campaign runner](experiments/continuity/fresh_campaign.py) prepares and
+verifies a registered eight-profile, four-arm, three-session comparison (32 arcs/96 sessions).
+Preparation binds the exact selection, source/calendar review, candidate code, native call policies,
+templates and installed runtime. Verification uses local files with networking denied before SDK
+imports. Future execution requires a separately reviewed authorization bound to the exact campaign;
+each attempted case preserves complete or failed output evidence and refuses implicit replay.
+
+```bash
+python -m experiments.continuity.fresh_campaign verify --root <frozen-campaign>
+```
 
 ## Run judgments
 ```bash

@@ -90,8 +90,9 @@ def _pause(attempt: int) -> None:
 
 
 # Utterance hygiene. A dirty completion is retried like a transport error, and when the retries run
-# out the words are replaced by `FALLBACK_UTTERANCE` rather than spoken: once in the member's
-# conversation, dirty text is prompt for every later turn.
+# out the words are replaced by `FALLBACK_UTTERANCE` rather than spoken, except for leaked control
+# fields, which fail the turn. Once in the member's conversation, dirty text is prompt for every
+# later turn.
 _CJK = re.compile(r"[　-ヿ㐀-鿿가-힯＀-￯]")
 _MD_HEADER = re.compile(r"(?m)^#{1,6}\s|\*\*[A-Z]")
 #: Chat-template or tool-call markup in the spoken text: any angle-bracket token. People typing on a
@@ -104,6 +105,60 @@ _PROTOCOL_LEAK = re.compile(
 #: A stage direction about the agenda, in brackets, instead of a spoken turn.
 _STAGE_DIRECTION = re.compile(r"\[[^\]]{0,120}(?:\bt\d\b|complete|todo|checkpoint)[^\]]{0,120}\]?",
                               re.I)
+#: A standalone serialization of the private terminal flag is protocol, even after ordinary prose.
+#: A literal discussed inline, in a code fence, or in a blockquote is not itself a control field.
+CONTROL_FIELD_PROBLEM = "a standalone end_conversation control field in the spoken text"
+_CONTROL_FIELD = re.compile(
+    r"^[ \t]*(?:\{[ \t]*)?(?:end_conversation|'end_conversation'|\"end_conversation\")[ \t]*:"
+    r"[ \t]*(?:true|false|null|none|yes|no|on|off|0|1|'(?:true|false|null|none|yes|no|on|off|0|1)'"
+    r"|\"(?:true|false|null|none|yes|no|on|off|0|1)\")[ \t]*(?:[,}][ \t]*)?$",
+    re.I,
+)
+_CONTROL_JSON_START = re.compile(r"(?m)^[ \t]*(?=\{)")
+_CODE_FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,})(.*)$")
+
+
+def _has_control_field(text: str) -> bool:
+    """Recognize standalone terminal fields, without banning ordinary mentions of their name."""
+    active = []
+    fence = None
+    for line in text.splitlines():
+        if line.lstrip().startswith(">"):
+            active.append("")
+            continue
+        match = _CODE_FENCE.match(line)
+        if fence is not None:
+            if match and match[1][0] == fence[0] and len(match[1]) >= len(fence) and not match[2].strip():
+                fence = None
+            active.append("")
+            continue
+        if match:
+            fence = match[1]
+            active.append("")
+            continue
+        active.append(line)
+    visible = "\n".join(active)
+    decoder = json.JSONDecoder()
+    objects = []
+    for start in _CONTROL_JSON_START.finditer(visible):
+        if any(lo <= start.end() < hi for lo, hi in objects):
+            continue  # a nested object is data, not a standalone top-level control object
+        try:
+            obj, length = decoder.raw_decode(visible[start.end():])
+        except json.JSONDecodeError:
+            continue
+        objects.append((start.end(), start.end() + length))
+        if isinstance(obj, dict) and "end_conversation" in obj:
+            return True
+    offset = 0
+    for line in active:
+        if _CONTROL_FIELD.fullmatch(line) and not any(lo <= offset + len(line) - len(line.lstrip()) < hi
+                                                      for lo, hi in objects):
+            return True
+        offset += len(line) + 1
+    return False
+
+
 MAX_UTTERANCE_CHARS = 2000
 #: What the member says when every attempt came back dirty: the most ordinary thing a person says,
 #: which reads as having nothing to say rather than as a visible seam.
@@ -112,6 +167,8 @@ FALLBACK_UTTERANCE = "i don't know"
 
 def _hygiene_problems(text: str) -> list[str]:
     out = []
+    if _has_control_field(text):
+        out.append(CONTROL_FIELD_PROBLEM)
     if _CJK.search(text):
         out.append("non-English characters")
     if _MD_HEADER.search(text):
@@ -297,13 +354,15 @@ class Member:
                 # Reset per attempt, not per while-iteration: an attempt that raises early (a stray
                 # commit already at MAX_STRAY_COMMITS) must not leave `stray` (or `hygiene`) for a
                 # later, clean attempt to be mistaken by, as commit() does inside its attempt loop.
-                text, meta, calls, hygiene, stray = "", {}, [], [], None
+                text, raw_text, meta, calls, hygiene, stray = "", "", {}, [], [], None
+                request_seed = provider_seed(seed + attempt + todo_calls * 7 + strays * 13)
                 try:
                     text, meta = llm.call_messages(
                         self.convo, self.spec.model, self.spec.api_base, self.spec.temperature,
                         self.spec.max_tokens, self.spec.timeout,
-                        seed=provider_seed(seed + attempt + todo_calls * 7 + strays * 13),
+                        seed=request_seed,
                         tools=tools, tool_choice=choice, params=self.spec.params, api_key=self.spec.api_key)
+                    raw_text = text
                     text, meta = llm.split_inline_trace(text, meta)
                     calls = [c for c in (meta.get("tool_calls") or [])
                              if c.get("name") in ("complete_todo", "add_todo")] if allow_todos else []
@@ -315,21 +374,28 @@ class Member:
                         raise ValueError(f"empty model output (finish_reason={meta.get('finish_reason')})")
                     hygiene = [] if calls else _hygiene_problems(text.strip())
                     if hygiene:
-                        attempts.append({**_attempt_record(attempt, "", meta, text), "problems": hygiene})
-                    if hygiene and attempt < self.spec.max_retries:
+                        rejected = {**_attempt_record(attempt, "", meta, text), "problems": hygiene,
+                                    "request_seed": request_seed}
+                        if CONTROL_FIELD_PROBLEM in hygiene:
+                            rejected["text"] = raw_text  # keep complete rejected evidence, including whitespace
+                        attempts.append(rejected)
+                    control_rejected = any(CONTROL_FIELD_PROBLEM in a["problems"] for a in attempts)
+                    if hygiene and (attempt < self.spec.max_retries or control_rejected):
                         raise ValueError("utterance failed hygiene: " + "; ".join(hygiene))
                     last = None
                     break
                 except Exception as e:  # noqa: BLE001
                     last = e
                     if not hygiene:
-                        attempts.append(_attempt_record(attempt, type(e).__name__, meta, text))
+                        attempts.append({**_attempt_record(attempt, type(e).__name__, meta, text),
+                                         "request_seed": request_seed})
                     if attempt < self.spec.max_retries:
                         _pause(attempt)
             if last is not None:
                 failed = self._record("speak", seed, None, None, "completion", f"{type(last).__name__}: {last}",
                                       meta, t0)
                 failed["hygiene_attempts"] = attempts
+                failed["request_seed"] = request_seed
                 raise MemberError(f"speaking failed after {self.spec.max_retries} attempts: "
                                   f"{type(last).__name__}: {last}", calls=[*records, failed]) from last
 
@@ -339,8 +405,12 @@ class Member:
                 self._append_call(stray.get("arguments") or "", cid)
                 self.convo.append({"role": "tool", "tool_call_id": cid or "call_0",
                                    "name": TOOL_NAME, "content": ALREADY_COMMITTED})
-                records.append(self._record(STRAY_COMMIT, seed, stray.get("arguments"),
-                                            ALREADY_COMMITTED, "tool_call", None, meta, t0))
+                record = self._record(STRAY_COMMIT, seed, stray.get("arguments"),
+                                      ALREADY_COMMITTED, "tool_call", None, meta, t0)
+                if any(CONTROL_FIELD_PROBLEM in a["problems"] for a in attempts):
+                    record["hygiene_attempts"] = attempts
+                    record["request_seed"] = request_seed
+                records.append(record)
                 strays += 1
                 continue
 
@@ -356,8 +426,12 @@ class Member:
                 result = on_todo(call["name"], todo)
                 self.convo.append({"role": "tool", "tool_call_id": call.get("id") or "call_0",
                                    "name": call["name"], "content": result})
-                records.append(self._record(call["name"], seed, call.get("arguments"),
-                                            result, "tool_call", None, meta, t0))
+                record = self._record(call["name"], seed, call.get("arguments"),
+                                      result, "tool_call", None, meta, t0)
+                if any(CONTROL_FIELD_PROBLEM in a["problems"] for a in attempts):
+                    record["hygiene_attempts"] = attempts
+                    record["request_seed"] = request_seed
+                records.append(record)
                 todo_calls += 1
                 continue
 
@@ -368,6 +442,7 @@ class Member:
             for at in reversed(stray_at):
                 del self.convo[at:at + 2]  # the stray call and its answer; the trace keeps them
             record = self._record("speak", seed, None, said, "completion", None, meta, t0)
+            record["request_seed"] = request_seed
             if hygiene:
                 record["hygiene"] = hygiene
                 record["hygiene_dropped"] = dropped
@@ -455,7 +530,7 @@ def _drop_moves(sentence: str, avoided: set[str]) -> str | None:
     return s
 
 
-def _without_avoided_moves(text: str, avoided: set[str]) -> str:
+def _without_avoided_moves(text: str | None, avoided: set[str]) -> str | None:
     """The text with every avoided move taken out of it. An archetype removes a move from the tool
     enum and the vocab check, but knobs.yaml and style2.yaml still name moves in prose to describe
     when a member reaches for them; left alone, that keeps telling the member to use a move it can no
@@ -466,7 +541,7 @@ def _without_avoided_moves(text: str, avoided: set[str]) -> str:
     the list; one with its own "when ..." takes it along; a parenthetical `(do_x)` just disappears. A
     sentence goes whole only when nothing sensible would be left of it. A line naming no avoided move
     is returned unchanged."""
-    if not avoided or not any(m in text for m in avoided):
+    if text is None or not avoided or not any(m in text for m in avoided):
         return text
     paragraphs = []
     for para in text.split("\n"):
@@ -519,7 +594,17 @@ def build_member(cfg: Config, row: MemberRow, situation: Situation, knobs: Knobs
     knob_lines, verbosity_line, style_rule, style_examples, write_cue = _style(cfg, knobs, knob_lines)
     knob_lines = [_without_avoided_moves(line, avoided) for line in knob_lines]
     secondary_note = _without_avoided_moves(cfg.style2.secondary_note, avoided)
-    repertoire = {name: desc for name, desc in cfg.moves.moves.items() if name not in avoided}
+    # Override descriptions only: the base vocabulary and archetype exclusions still own the enum.
+    repertoire = {
+        name: (_without_avoided_moves(cfg.style2.move_descriptions[name], avoided)
+               if name in cfg.style2.move_descriptions else desc)
+        for name, desc in cfg.moves.moves.items() if name not in avoided
+    }
+    if cfg.patient_style_path is not None:
+        verbosity_line = _without_avoided_moves(verbosity_line, avoided)
+        style_rule = _without_avoided_moves(style_rule, avoided)
+        style_examples = _without_avoided_moves(style_examples, avoided)
+        write_cue = _without_avoided_moves(write_cue, avoided)
     move_lines = [f"`{name}` — {desc}" for name, desc in repertoire.items()]
     # The depth moves the member can reach, least to most.
     depth_moves = [cfg.moves.canonical_move_by_level[level] for level in ("minimize", "partial", "full")
@@ -554,6 +639,12 @@ def build_member(cfg: Config, row: MemberRow, situation: Situation, knobs: Knobs
         "archetype_avoided": sorted(avoided),
         "write_cue": write_cue,
     }
+    if cfg.patient_style_path is not None:
+        injections["patient_style"] = {"path": cfg.patient_style_path, "sha256": cfg.patient_style_sha256}
+    if cfg.style2.move_descriptions:
+        injections["move_descriptions"] = {
+            name: repertoire[name] for name in cfg.style2.move_descriptions if name in repertoire
+        }
     return Member(
         tool=move_tool(repertoire),
         vocab=frozenset(repertoire),

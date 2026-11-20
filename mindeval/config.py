@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
@@ -94,6 +94,23 @@ class Style2File(_Strict):
     write_cue: dict[VerbosityLevel, str]
     write_rule: dict[WritingStyle, str]
     secondary_note: str | None = None
+    move_descriptions: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _complete(self) -> Style2File:
+        styles, levels = {"formal", "plain", "casual"}, {"low", "medium"}
+        for name, expected in (("orthography", styles), ("verbosity", levels),
+                               ("examples", levels), ("write_cue", levels), ("write_rule", styles)):
+            missing = expected - set(getattr(self, name))
+            if missing:
+                raise ValueError(f"{name} missing required entries: {sorted(missing)}")
+        for level, examples in self.examples.items():
+            missing = styles - set(examples)
+            if missing:
+                raise ValueError(f"examples.{level} missing required styles: {sorted(missing)}")
+        if any(not description.strip() for description in self.move_descriptions.values()):
+            raise ValueError("move_descriptions must contain nonempty descriptions")
+        return self
 
 
 def _sums_to_one(dist, info: ValidationInfo):
@@ -180,6 +197,9 @@ class Config:
     episode: EpisodeFile
     patient: PatientFile
     fingerprint: str
+    #: External style selection; absent by default so original run identities stay unchanged.
+    patient_style_path: str | None = None
+    patient_style_sha256: str | None = None
 
     def knob_line(self, knobs: Knobs, name: str) -> str:
         return getattr(self.knob_text, name)[getattr(knobs, name)]
@@ -219,7 +239,7 @@ def _read(name: str, model: type[BaseModel]):
 
 
 @lru_cache(maxsize=1)
-def load_config() -> Config:
+def _load_default_config() -> Config:
     moves = _read("moves.yaml", MovesFile)
     archetypes = _read("archetypes.yaml", ArchetypesFile)
     for aid, arch in archetypes.archetypes.items():
@@ -229,6 +249,37 @@ def load_config() -> Config:
     return Config(moves=moves, archetypes=archetypes, knob_text=_read("knobs.yaml", KnobText),
                   style2=_read("style2.yaml", Style2File), episode=_read("episode.yaml", EpisodeFile),
                   patient=_read("patient.yaml", PatientFile), fingerprint=_fingerprint())
+
+
+def load_config(patient_style_path: str | Path | None = None) -> Config:
+    """Load the benchmark; an explicit alternative style is read afresh on every invocation.
+
+    The default remains cached with its original fingerprint. External style bytes change only
+    the config identity; arc ids and per-call seeds still use the pinned seed namespace.
+    """
+    cfg = _load_default_config()
+    if patient_style_path is None:
+        return cfg
+    path = Path(patient_style_path).expanduser().resolve()
+    payload = path.read_bytes()
+    try:
+        contents = yaml.safe_load(payload)
+    except yaml.YAMLError as e:
+        raise ValueError(f"{path}: invalid style YAML: {e}") from None
+    style = Style2File.model_validate(contents)
+    unknown = set(style.move_descriptions) - set(cfg.moves.moves)
+    if unknown:
+        raise ValueError(f"{path}: move_descriptions name unknown moves: {sorted(unknown)}")
+    source_sha = hashlib.sha256(payload).hexdigest()
+    identity = b"patient_style\x00" + cfg.fingerprint.encode() + b"\x00" + payload
+    return replace(cfg, style2=style, fingerprint=hashlib.sha256(identity).hexdigest()[:16],
+                   patient_style_path=str(path), patient_style_sha256=source_sha)
+
+
+# Preserve the default loader's public cache controls; external styles are never cached.
+load_config.cache_clear = _load_default_config.cache_clear
+load_config.cache_info = _load_default_config.cache_info
+load_config.cache_parameters = _load_default_config.cache_parameters
 
 
 @lru_cache(maxsize=1)
