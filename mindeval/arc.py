@@ -26,6 +26,7 @@ import re
 import time
 from pathlib import Path
 
+# Not in UserSim's extension API (`usersim.extension`) as of 0.3.2: the debug log's conversation label.
 from usersim.engine.core.llm import flush_debug_log, set_conversation_id
 
 from mindeval import engine, llm

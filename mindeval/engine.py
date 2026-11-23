@@ -14,7 +14,10 @@ something other than `chat` called the facade.
 
 Retries stay mindeval's: each call site has its own (a patient server under load is waited out, an empty or cut-off
 reply is asked for again), so a failed request reaches `chat` as it failed, neither retried again inside `acall_llm`
-nor counted there as a call: UserSim's accounting sees the calls that answered.
+nor counted there as a call: UserSim's accounting sees the calls that answered. On the models-file path one layer
+sits below that: Data Designer's HTTP client retries a 502, 503, 504 or dropped connection (3 times, with backoff)
+before the failure reaches mindeval; a 429 comes back at once, and Data Designer lowers how many requests it
+sends that model at a time.
 """
 
 from __future__ import annotations
@@ -26,8 +29,9 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
-from usersim.engine.config import MODEL_API_RESPONSE, MODEL_ASSISTANT, MODEL_JUDGE, MODEL_SUMMARY, MODEL_USER
-from usersim.engine.core.llm import acall_llm
+# Not in UserSim's extension API (`usersim.extension`) as of 0.3.2: the aliases of the roles mindeval never calls.
+from usersim.engine.config import MODEL_API_RESPONSE, MODEL_SUMMARY
+from usersim.extension import MODEL_ASSISTANT, MODEL_JUDGE, MODEL_USER, acall_llm
 
 from mindeval import llm
 from mindeval.config import CallSpec
@@ -56,7 +60,11 @@ async def chat(models: dict[str, Any], role: str, messages: list[dict], **kwargs
         _CALL.reset(token)
     if "meta" in call:
         return call["text"], call["meta"]
-    return reply.get("content") or "", _meta_of(reply)  # answered by a facade that is not ours: a hosted run
+    meta = _meta_of(reply)  # answered by a facade that is not ours: a hosted run, or the models file's (HandsBack)
+    for key in ("finish_reason", "usage"):
+        if call.get(key):
+            meta[key] = call[key]
+    return reply.get("content") or "", meta
 
 
 async def pause(seconds: float) -> None:
@@ -172,6 +180,64 @@ class Unused:
 
 
 def facades(patient: CallSpec, counselor: CallSpec) -> dict[str, Any]:
-    """The models UserSim's engine runs a mindeval session with."""
-    return {PATIENT: Facade(patient), COUNSELOR: Facade(counselor),
+    """The models UserSim's engine runs a mindeval session with, through litellm."""
+    return session_models(Facade(patient), Facade(counselor))
+
+
+#: Anthropic's stop reasons with an exact OpenAI equivalent, as NeMo UserSim's `acall_llm` maps them. Data Designer's
+#: Anthropic adapter passes `stop_reason` through as `finish_reason`; mindeval's cut-off checks read OpenAI's
+#: `length`. Other values pass through unchanged (litellm maps more, e.g. `refusal` to `content_filter`).
+_ANTHROPIC_FINISH_REASONS = {"end_turn": "stop", "stop_sequence": "stop", "max_tokens": "length",
+                             "tool_use": "tool_calls"}
+
+
+class HandsBack:
+    """A model UserSim built from a models file (`usersim.engine.external.model_facades`), wrapped so a failed call
+    goes back to mindeval's own retry loop at once, as `Facade`'s do, instead of being retried inside `acall_llm`
+    first. Data Designer's transport retries (module docstring) still come before it. It also sends the side's
+    timeout when a call names none, and carries the reply's `finish_reason` and `usage`, which `acall_llm`'s reply
+    leaves out, into the meta."""
+
+    def __init__(self, model: Any, timeout: float | None = None) -> None:
+        self.model, self.timeout = model, timeout
+
+    @property
+    def model_name(self) -> str:
+        return self.model.model_name
+
+    def __getattr__(self, name: str) -> Any:  # anything else UserSim reads from a model
+        return getattr(self.model, name)
+
+    async def acompletion(self, messages: list, **kwargs: Any) -> Any:
+        call = _CALL.get()
+        if kwargs.get("timeout") is None and self.timeout is not None:  # the side's timeout, as Facade sends it
+            kwargs["timeout"] = self.timeout
+        try:
+            response = await self.model.acompletion(messages, **kwargs)
+        except Exception as e:
+            if call is None:
+                raise
+            call["error"] = e  # chat re-raises it; the caller decides whether to retry
+            raise _HandedBack(f"{self.model_name}: the call failed and goes back to mindeval") from None
+        if call is not None:  # acall_llm's reply leaves it out; mindeval's cut-off check reads it
+            reason = response.choices[0].finish_reason if response.choices else None
+            call["finish_reason"] = _ANTHROPIC_FINISH_REASONS.get(reason, reason)
+            u = response.usage  # also left out of the reply; litellm's names, as the traces record them
+            if u is not None:
+                call["usage"] = {"prompt_tokens": u.input_tokens, "completion_tokens": u.output_tokens,
+                                 "total_tokens": u.total_tokens, "reasoning_tokens": u.reasoning_tokens}
+        return response
+
+
+def adapter_of(models: dict[str, Any], role: str) -> str:
+    """How `role`'s calls reach its model, as a session's setup records it: `usersim` for a model built from a
+    models file (`HandsBack`), `litellm` for mindeval's own `Facade`."""
+    return "usersim" if isinstance(models.get(role), HandsBack) else "litellm"
+
+
+def session_models(patient: Any, counselor: Any) -> dict[str, Any]:
+    """The models dict UserSim's engine needs for a mindeval session: the patient and the counselor, and the roles
+    mindeval never calls. Either side can be a `Facade` or a model UserSim builds from a models file
+    (`usersim.engine.external.model_facades`)."""
+    return {PATIENT: patient, COUNSELOR: counselor,
             **{role: Unused(role) for role in (MODEL_JUDGE, MODEL_API_RESPONSE, MODEL_SUMMARY)}}

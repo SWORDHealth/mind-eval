@@ -1,5 +1,5 @@
-"""What UserSim sees of a run: one row per session, stored as `usersim simulate` stores a run, read back the way
-`usersim evaluate` reads one; and the probe found through its entry point."""
+"""What UserSim sees of a run: one row per session, stored as `usersim simulate` stores a run, read back with
+UserSim's public run readers; and the probe found through its entry point."""
 
 import contextlib
 import io
@@ -10,8 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 from parity import _dies_then_resumes
-from usersim.engine.core.probes import known_probes
-from usersim.engine.core.storage import is_partitioned_directory, materialize_to_temp_file, resolve_run, run_subroot
+from usersim.extension import latest_run_id, probe_description, read_partitioned_dataset
 
 
 def test_every_session_is_a_usersim_row_and_the_trace_is_its_conversation():
@@ -20,9 +19,9 @@ def test_every_session_is_a_usersim_row_and_the_trace_is_its_conversation():
             assert _dies_then_resumes(Path(tmp))["codes"] == [1, 0]
         out = Path(tmp) / "run"
         root = out / "usersim"
-        run_id = resolve_run(root, None)  # as `usersim evaluate --trajectories <root>` resolves it
-        assert run_id is not None and is_partitioned_directory(run_subroot(root, run_id))
-        rows = pd.read_parquet(materialize_to_temp_file(run_subroot(root, run_id))).sort_values("episode")
+        run_id = latest_run_id(root)  # the run `usersim eval --trajectories <root>` reads by default
+        assert run_id is not None
+        rows = read_partitioned_dataset(root, run=run_id).sort_values("episode")
 
         # each session once: session 2 as it ran again; the attempt that died is set aside, a trajectory of its own
         assert list(zip(rows.episode, rows.conversation_status)) == [(0, True), (1, True)]
@@ -55,4 +54,4 @@ def test_every_session_is_a_usersim_row_and_the_trace_is_its_conversation():
 
 def test_usersim_finds_the_probe_through_its_entry_point():
     (point,) = [e for e in entry_points(group="usersim.probes") if e.name == "mindeval"]
-    assert point.value == "mindeval.probe" and "mindeval" in known_probes()
+    assert point.value == "mindeval.probe" and probe_description("mindeval")
